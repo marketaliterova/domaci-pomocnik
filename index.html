@@ -263,6 +263,9 @@ const saveState = (s) => {
       childPhoto: s.childPhoto,
       choresList: s.choresList,
       weeklyChores: s.weeklyChores,
+      // v7 sync
+      syncUrl: s.syncUrl,
+      lastSyncTime: s.lastSyncTime,
     };
     localStorage.setItem(LS_KEY, JSON.stringify(persistable));
   } catch(e) {}
@@ -620,6 +623,13 @@ function App() {
   const [praiseShown, setPraiseShown] = useState(null);
   const [rikiDancing, setRikiDancing] = useState(false);
   const [parentPin, setParentPin] = useState((persisted && persisted.parentPin) || '1234');
+  // v7 sync state
+  const [syncUrl, setSyncUrl] = useState((persisted && persisted.syncUrl) || '');
+  const [syncStatus, setSyncStatus] = useState('idle'); // idle | syncing | ok | error | disabled
+  const [lastSyncTime, setLastSyncTime] = useState(persisted && persisted.lastSyncTime || null);
+  const [syncError, setSyncError] = useState(null);
+  const lastPushedStateRef = useRef(null);
+  const initialPullDoneRef = useRef(false);
   // weekEvents: pole 7 polí (Po..Ne), každé je list eventů {id, time, dur, emoji, title, type}
   const [weekEvents, setWeekEvents] = useState((persisted && persisted.weekEvents) || WEEK_EVENTS.map(arr => arr.slice()));
   const [worryMessages, setWorryMessages] = useState((persisted && persisted.worryMessages) || []);
@@ -667,6 +677,7 @@ function App() {
       streakDays, streakLastDate, eveningStreakDays, eveningStreakLast,
       moodLog, lastMoodDate, parentPin, childName,
       weekEvents, worryMessages, readingList, stickers, childPhoto, choresList, weeklyChores,
+      syncUrl, lastSyncTime,
     });
   }, [theme, points, totalXp, streak, morning, evening, doneM, doneE, whoHome, departMin,
       shopItems, shopState, choreState, pendingApprovals, packState, packAwarded,
@@ -674,7 +685,8 @@ function App() {
       mascotName, soundOn, ttsOn, bedtime, wakeTime, praiseMessages,
       streakDays, streakLastDate, eveningStreakDays, eveningStreakLast,
       moodLog, lastMoodDate, parentPin, childName,
-      weekEvents, worryMessages, readingList, stickers, childPhoto, choresList, weeklyChores]);
+      weekEvents, worryMessages, readingList, stickers, childPhoto, choresList, weeklyChores,
+      syncUrl, lastSyncTime]);
 
   // --- helpers
   const tv = useMemo(() => THEMES[theme] || THEMES.cisto, [theme]);
@@ -1344,6 +1356,177 @@ function App() {
     reader.readAsText(file);
   }, [showToast]);
 
+  // ====================================================================
+  // v7 SYNC LOGIKA
+  // ====================================================================
+
+  // Hesla a funkce které ze stavu sestavují snapshot na server.
+  // Necháváme tam jen "data" pole (ne UI prefence jako theme).
+  const buildSnapshot = useCallback(() => ({
+    points, totalXp,
+    morning, evening, doneM, doneE,
+    whoHome, departMin,
+    shopItems, shopState,
+    choreState, pendingApprovals,
+    packState, packAwarded,
+    weeklyDone, challenges,
+    rozvrh, buttonConfig,
+    mascotName, soundOn, ttsOn, bedtime, wakeTime,
+    praiseMessages,
+    streakDays, streakLastDate, eveningStreakDays, eveningStreakLast,
+    moodLog, lastMoodDate, parentPin, childName,
+    weekEvents, worryMessages, readingList, stickers, childPhoto,
+    choresList, weeklyChores,
+  }), [
+    points, totalXp, morning, evening, doneM, doneE, whoHome, departMin,
+    shopItems, shopState, choreState, pendingApprovals, packState, packAwarded,
+    weeklyDone, challenges, rozvrh, buttonConfig,
+    mascotName, soundOn, ttsOn, bedtime, wakeTime, praiseMessages,
+    streakDays, streakLastDate, eveningStreakDays, eveningStreakLast,
+    moodLog, lastMoodDate, parentPin, childName,
+    weekEvents, worryMessages, readingList, stickers, childPhoto,
+    choresList, weeklyChores,
+  ]);
+
+  const applySnapshot = useCallback((s) => {
+    if (!s) return;
+    if (s.points != null) setPoints(s.points);
+    if (s.totalXp != null) setTotalXp(s.totalXp);
+    if (s.morning) setMorning(s.morning);
+    if (s.evening) setEvening(s.evening);
+    if (s.doneM) setDoneM(s.doneM);
+    if (s.doneE) setDoneE(s.doneE);
+    if (s.whoHome) setWhoHome(s.whoHome);
+    if (s.departMin != null) setDepartMin(s.departMin);
+    if (s.shopItems) setShopItems(s.shopItems);
+    if (s.shopState) setShopState(s.shopState);
+    if (s.choreState) setChoreState(s.choreState);
+    if (s.pendingApprovals) setPendingApprovals(s.pendingApprovals);
+    if (s.packState) setPackState(s.packState);
+    if (s.packAwarded != null) setPackAwarded(s.packAwarded);
+    if (s.weeklyDone) setWeeklyDone(s.weeklyDone);
+    if (s.challenges) setChallenges(s.challenges);
+    if (s.rozvrh) setRozvrh(s.rozvrh);
+    if (s.buttonConfig) setButtonConfig(s.buttonConfig);
+    if (s.mascotName) setMascotName(s.mascotName);
+    if (s.soundOn !== undefined) setSoundOn(s.soundOn);
+    if (s.ttsOn !== undefined) setTtsOn(s.ttsOn);
+    if (s.bedtime) setBedtime(s.bedtime);
+    if (s.wakeTime) setWakeTime(s.wakeTime);
+    if (s.praiseMessages) setPraiseMessages(s.praiseMessages);
+    if (s.streakDays != null) setStreakDays(s.streakDays);
+    if (s.streakLastDate !== undefined) setStreakLastDate(s.streakLastDate);
+    if (s.eveningStreakDays != null) setEveningStreakDays(s.eveningStreakDays);
+    if (s.eveningStreakLast !== undefined) setEveningStreakLast(s.eveningStreakLast);
+    if (s.moodLog) setMoodLog(s.moodLog);
+    if (s.lastMoodDate !== undefined) setLastMoodDate(s.lastMoodDate);
+    if (s.parentPin) setParentPin(s.parentPin);
+    if (s.childName !== undefined) setChildName(s.childName);
+    if (s.weekEvents) setWeekEvents(s.weekEvents);
+    if (s.worryMessages) setWorryMessages(s.worryMessages);
+    if (s.readingList) setReadingList(s.readingList);
+    if (s.stickers) setStickers(s.stickers);
+    if (s.childPhoto !== undefined) setChildPhoto(s.childPhoto);
+    if (s.choresList) setChoresList(s.choresList);
+    if (s.weeklyChores) setWeeklyChores(s.weeklyChores);
+  }, []);
+
+  // PULL ze serveru (manuální nebo periodicky)
+  const pullFromServer = useCallback(async (silent) => {
+    if (!syncUrl) return;
+    if (!silent) setSyncStatus('syncing');
+    try {
+      const r = await fetch(syncUrl, {
+        method: 'POST',
+        // Content-Type text/plain aby se vyhnulo CORS preflight (Apps Script vzor)
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({ action: 'pull' }),
+      });
+      const j = await r.json();
+      if (!j.ok) throw new Error(j.error || 'pull failed');
+      if (j.state) {
+        const remoteState = typeof j.state === 'string' ? JSON.parse(j.state) : j.state;
+        // Pouze přijmi pokud je server novější než to co jsem naposled pushnul
+        if (!lastPushedStateRef.current || j.updated !== lastPushedStateRef.current) {
+          applySnapshot(remoteState);
+          lastPushedStateRef.current = j.updated;
+        }
+      }
+      setLastSyncTime(j.updated || new Date().toISOString());
+      setSyncStatus('ok');
+      setSyncError(null);
+    } catch (e) {
+      setSyncStatus('error');
+      setSyncError(e.message || String(e));
+    }
+  }, [syncUrl, applySnapshot]);
+
+  // PUSH na server
+  const pushToServer = useCallback(async () => {
+    if (!syncUrl) return;
+    setSyncStatus('syncing');
+    try {
+      const snap = buildSnapshot();
+      const r = await fetch(syncUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({ action: 'push', state: snap }),
+      });
+      const j = await r.json();
+      if (!j.ok) throw new Error(j.error || 'push failed');
+      lastPushedStateRef.current = j.updated;
+      setLastSyncTime(j.updated);
+      setSyncStatus('ok');
+      setSyncError(null);
+    } catch (e) {
+      setSyncStatus('error');
+      setSyncError(e.message || String(e));
+    }
+  }, [syncUrl, buildSnapshot]);
+
+  // Init pull při prvním načtení nebo změně URL
+  useEffect(() => {
+    if (!syncUrl) { setSyncStatus('disabled'); initialPullDoneRef.current = false; return; }
+    if (initialPullDoneRef.current) return;
+    initialPullDoneRef.current = true;
+    pullFromServer(false);
+    // eslint-disable-next-line
+  }, [syncUrl]);
+
+  // Periodický pull každých 30s
+  useEffect(() => {
+    if (!syncUrl) return;
+    const id = setInterval(() => pullFromServer(true), 30000);
+    return () => clearInterval(id);
+  }, [syncUrl, pullFromServer]);
+
+  // Debounced push při změně stavu (3s po poslední změně)
+  useEffect(() => {
+    if (!syncUrl || !initialPullDoneRef.current) return;
+    const t = setTimeout(() => { pushToServer(); }, 3000);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line
+  }, [
+    points, totalXp, doneM, doneE, choreState, pendingApprovals,
+    shopState, weeklyDone, challenges, packState, packAwarded,
+    streakDays, eveningStreakDays, moodLog,
+    worryMessages, readingList, stickers,
+    morning, evening, shopItems, choresList, weeklyChores,
+    weekEvents, rozvrh, buttonConfig,
+    mascotName, childName, childPhoto, soundOn, ttsOn,
+    bedtime, wakeTime, praiseMessages, parentPin,
+    whoHome, departMin,
+  ]);
+
+  // Funkce pro testovací sync (z UI)
+  const manualSync = useCallback(async () => {
+    if (!syncUrl) { showToast('Nejdřív nastav URL', '⚠️'); return; }
+    await pushToServer();
+    await pullFromServer(false);
+    if (syncStatus !== 'error') showToast('Synchronizováno', '✓');
+  }, [syncUrl, pushToServer, pullFromServer, showToast, syncStatus]);
+
+
   // ukázat mood prompt po dokončení ranní rutiny (jen 1x za den)
   useEffect(() => {
     const list = morning.filter(s => s.on);
@@ -1461,6 +1644,13 @@ function App() {
             <div style={{ fontSize:17, fontWeight:800, letterSpacing:'.14em', textTransform:'uppercase', color:'var(--muted)' }}>{dateLine}</div>
             <div style={{ fontFamily:'var(--display)', fontSize:42, fontWeight:600, lineHeight:1.05, color:'var(--ink)', marginTop:2 }}>{greeting}</div>
           </div>
+          {syncUrl && (
+            <div title={`Sync: ${syncStatus}`} style={{ width:10, height:10, borderRadius:'50%', background:
+              syncStatus === 'ok' ? '#16a34a' :
+              syncStatus === 'syncing' ? '#f59e0b' :
+              syncStatus === 'error' ? '#dc2626' : '#9ca3af',
+              boxShadow: syncStatus === 'ok' ? '0 0 8px rgba(22,163,74,.5)' : 'none', flex:'none' }}/>
+          )}
           <div onClick={() => { audio.tap(); setShowWorryBox(true); }} style={{ cursor:'pointer', width:54, height:54, borderRadius:18, background:'var(--surface)', border:'var(--hair)', boxShadow:'var(--shadow)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:24 }} title="Něco mě trápí">💬</div>
           <div onClick={() => go('tlacitka')} style={{ cursor:'pointer', width:54, height:54, borderRadius:18, background:'var(--surface)', border:'var(--hair)', boxShadow:'var(--shadow)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:24 }} title="Chytrá tlačítka">🔘</div>
           <div onClick={openParent} style={{ cursor:'pointer', width:54, height:54, borderRadius:18, background:'var(--surface)', border:'var(--hair)', boxShadow:'var(--shadow)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:24, position:'relative' }} title="Rodičovský režim">
@@ -2681,6 +2871,66 @@ function App() {
                     <div style={{ fontSize:12, color:'#9a96ac', marginTop:8, lineHeight:1.4 }}>V tomto okně se obrazovka ztmaví a {mascotName} spí.</div>
                   </div>
 
+                  {/* v7: Synchronizace */}
+                  <div style={{ background:'#fff', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
+                    <div style={{ fontFamily:'var(--display)', fontSize:18, fontWeight:600, color:'#1a1530', marginBottom:10, display:'flex', alignItems:'center', gap:8 }}>
+                      Synchronizace 🔄
+                      {syncUrl && (
+                        <div style={{ width:10, height:10, borderRadius:'50%', background:
+                          syncStatus === 'ok' ? '#16a34a' :
+                          syncStatus === 'syncing' ? '#f59e0b' :
+                          syncStatus === 'error' ? '#dc2626' : '#9ca3af' }}/>
+                      )}
+                    </div>
+                    <div style={{ fontSize:13, fontWeight:700, color:'#5a566e', lineHeight:1.5, marginBottom:10 }}>
+                      Tablet dítěte a tvůj mobil sdílí stav. Pending úkoly, rutiny, body — vše se synchronizuje přes tvůj soukromý Google Sheet.
+                    </div>
+                    <div style={{ fontSize:13, fontWeight:700, color:'#5a566e', marginBottom:6 }}>Apps Script URL</div>
+                    <input value={syncUrl} onChange={(e) => setSyncUrl(e.target.value.trim())} placeholder="https://script.google.com/.../exec" style={{ width:'100%', border:'1px solid #e6e6ec', borderRadius:12, padding:'10px 12px', fontSize:12, fontFamily:'monospace', boxSizing:'border-box' }} />
+
+                    {syncUrl && (
+                      <div style={{ marginTop:10 }}>
+                        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'8px 0' }}>
+                          <div style={{ fontSize:12, fontWeight:700, color:'#5a566e' }}>Status</div>
+                          <div style={{ fontSize:13, fontWeight:800, color:
+                            syncStatus === 'ok' ? '#16a34a' :
+                            syncStatus === 'syncing' ? '#d97706' :
+                            syncStatus === 'error' ? '#dc2626' : '#9ca3af' }}>
+                            {syncStatus === 'ok' ? '✓ Synchronizováno' :
+                             syncStatus === 'syncing' ? '⏳ Synchronizuje...' :
+                             syncStatus === 'error' ? '⚠ Chyba' : 'Čeká...'}
+                          </div>
+                        </div>
+                        {lastSyncTime && (
+                          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'4px 0' }}>
+                            <div style={{ fontSize:12, fontWeight:700, color:'#5a566e' }}>Naposledy</div>
+                            <div style={{ fontSize:12, fontWeight:700, color:'#9a96ac' }}>{new Date(lastSyncTime).toLocaleTimeString('cs-CZ')}</div>
+                          </div>
+                        )}
+                        {syncError && (
+                          <div style={{ background:'#fef2f2', borderRadius:8, padding:'8px 10px', fontSize:11, color:'#991b1b', marginTop:6, fontFamily:'monospace' }}>{syncError}</div>
+                        )}
+                        <div style={{ display:'flex', gap:6, marginTop:10 }}>
+                          <div onClick={manualSync} style={{ cursor:'pointer', flex:1, background:'var(--accent)', color:'#fff', borderRadius:10, padding:'10px 12px', textAlign:'center', fontWeight:800, fontSize:13 }}>🔄 Synchronizovat teď</div>
+                          <div onClick={() => { if (window.confirm('Vypnout synchronizaci?')) setSyncUrl(''); }} style={{ cursor:'pointer', background:'#f0f0f7', color:'#6a6680', borderRadius:10, padding:'10px 14px', fontWeight:800, fontSize:13 }}>Vypnout</div>
+                        </div>
+                      </div>
+                    )}
+
+                    {!syncUrl && (
+                      <div style={{ background:'#fef9c3', borderRadius:10, padding:'10px 12px', fontSize:12, color:'#854d0e', marginTop:10, lineHeight:1.5 }}>
+                        <b>Jak na to:</b><br/>
+                        1. Stáhni si soubor <code style={{ fontFamily:'monospace' }}>apps-script.gs</code> z repa<br/>
+                        2. Vytvoř nový Google Sheet → Rozšíření → Apps Script<br/>
+                        3. Vlož kód, nahraď SHEET_ID za své ID<br/>
+                        4. Nasaď jako Web App (Anyone)<br/>
+                        5. Sem vlož URL končící <code>/exec</code><br/>
+                        <br/>
+                        Detailní návod v komentářích souboru.
+                      </div>
+                    )}
+                  </div>
+
                   <div style={{ background:'#fff', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
                     <div style={{ fontFamily:'var(--display)', fontSize:18, fontWeight:600, color:'#1a1530', marginBottom:10 }}>Data 💾</div>
                     <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
@@ -2694,8 +2944,8 @@ function App() {
                   </div>
 
                   <div style={{ background:'#fff', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
-                    <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'#1a1530' }}>Verze: Domácí pomocník v6</div>
-                    <div style={{ fontSize:12, color:'#9a96ac', marginTop:4 }}>Build 2026-06-20 · 20:23</div>
+                    <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'#1a1530' }}>Verze: Domácí pomocník v7</div>
+                    <div style={{ fontSize:12, color:'#9a96ac', marginTop:4 }}>Build 2026-06-20 · 21:52</div>
                   </div>
                 </div>
                 )}
