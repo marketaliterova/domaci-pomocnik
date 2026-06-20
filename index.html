@@ -596,6 +596,18 @@ function App() {
 
   // parent overlay
   const [parentOpen, setParentOpen] = useState(false);
+  // v12: detekce mobilu — když je viewport úzký, je to rodičovský telefon
+  const [isMobile, setIsMobile] = useState(() => typeof window !== 'undefined' && window.innerWidth < 700);
+  useEffect(() => {
+    const handler = () => setIsMobile(window.innerWidth < 700);
+    window.addEventListener('resize', handler);
+    return () => window.removeEventListener('resize', handler);
+  }, []);
+  // Na mobilu automaticky otevři parent overlay při prvním vstupu
+  useEffect(() => {
+    if (isMobile && !parentOpen) setParentOpen(true);
+    // eslint-disable-next-line
+  }, [isMobile]);
   const [parentLocked, setParentLocked] = useState(true);
   const [parentTab, setParentTab] = useState('body');
   const [editRoutine, setEditRoutine] = useState('morning');
@@ -1758,6 +1770,9 @@ function App() {
     <div style={rootStyle}>
       <div ref={confetti.ref} style={{ position:'absolute', inset:0, pointerEvents:'none', zIndex:90, overflow:'hidden' }}/>
 
+      {/* Na mobilu zobrazujeme jen rodičovský overlay; kid screeny jsou pro tablet. */}
+      {!isMobile && (
+      <React.Fragment>
 
       {/* ===================== TABLET: HOME ===================== */}
       {screen === 'home' && (
@@ -2541,9 +2556,11 @@ function App() {
       </div>
       )}
 
+      </React.Fragment>
+      )}
 
       {/* v6: Worry box - dítě napíše soukromý vzkaz mámě */}
-      {showWorryBox && !parentOpen && (
+      {showWorryBox && !parentOpen && !isMobile && (
         <div style={{ position:'absolute', inset:0, zIndex:78, background:'rgba(10,8,30,.55)', display:'flex', alignItems:'center', justifyContent:'center', backdropFilter:'blur(6px)' }}>
           <div style={{ background:'var(--surface)', borderRadius:28, padding:'30px 34px', maxWidth:620, width:'90%', boxShadow:'var(--shadow)', animation:'popIn .4s ease' }}>
             <div style={{ display:'flex', justifyContent:'space-between', alignItems:'start', marginBottom:14 }}>
@@ -2592,7 +2609,9 @@ function App() {
                   <div key={i} onClick={() => { if (k.k !== '') pinPress(k.k); }} style={{ cursor: k.k === '' ? 'default' : 'pointer', height:72, borderRadius:'50%', background: k.bg, display:'flex', alignItems:'center', justifyContent:'center', fontFamily:'var(--display)', fontSize:28, fontWeight:500, color:'#fff' }}>{k.label}</div>
                 ))}
               </div>
-              <div onClick={closeParent} style={{ cursor:'pointer', fontSize:13, fontWeight:800, color:'rgba(255,255,255,.45)', marginTop:8 }}>Zavřít</div>
+              {!isMobile && (
+                <div onClick={closeParent} style={{ cursor:'pointer', fontSize:13, fontWeight:800, color:'rgba(255,255,255,.45)', marginTop:8 }}>Zavřít</div>
+              )}
             </div>
             )}
 
@@ -2604,7 +2623,9 @@ function App() {
                     <div style={{ fontSize:13, fontWeight:800, opacity:.85, textTransform:'uppercase', letterSpacing:'.08em' }}>Rodičovský režim</div>
                     <div style={{ fontFamily:'var(--display)', fontSize:25, fontWeight:600 }}>{childName} · {child.points} bodů</div>
                   </div>
-                  <div onClick={closeParent} style={{ cursor:'pointer', width:38, height:38, borderRadius:'50%', background:'rgba(255,255,255,.22)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:20 }}>✕</div>
+                  {!isMobile && (
+                    <div onClick={closeParent} style={{ cursor:'pointer', width:38, height:38, borderRadius:'50%', background:'rgba(255,255,255,.22)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:20 }}>✕</div>
+                  )}
                 </div>
               </div>
 
@@ -3272,26 +3293,45 @@ function App() {
                   </div>
 
                   <div style={{ background:'#fff', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
-                    <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'#1a1530' }}>Verze: Domácí pomocník v11</div>
-                    <div style={{ fontSize:12, color:'#9a96ac', marginTop:4 }}>Build 2026-06-20 · 22:26</div>
+                    <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'#1a1530' }}>Verze: Domácí pomocník v12</div>
+                    <div style={{ fontSize:12, color:'#9a96ac', marginTop:4 }}>Build 2026-06-20 · 22:53</div>
                   </div>
                 </div>
                 )}
               </div>
 
-              {/* bottom nav (scrollable na mobilu) */}
-              <div style={{ display:'flex', background:'#fff', borderTop:'1px solid #ececf2', padding:'9px 6px 14px', overflowX:'auto', WebkitOverflowScrolling:'touch' }}>
+              {/* bottom nav - na mobilu jako grid 3x3 (všechny taby viditelné), na desktop horizontální */}
+              <div style={{
+                display: isMobile ? 'grid' : 'flex',
+                gridTemplateColumns: isMobile ? 'repeat(3, 1fr)' : 'none',
+                background:'#fff',
+                borderTop:'1px solid #ececf2',
+                padding: isMobile ? '8px 6px 16px' : '9px 6px 14px',
+                gap: isMobile ? 2 : 0,
+                overflowX: isMobile ? 'visible' : 'auto',
+                WebkitOverflowScrolling:'touch'
+              }}>
                 {parentTabsR.map((t) => {
                   const showBadge = (t.id === 'body' && pendingList.length > 0);
+                  const active = parentTab === t.id;
                   return (
-                    <div key={t.id} onClick={() => { audio.tap(); setParentTab(t.id); }} style={{ cursor:'pointer', flex:'0 0 auto', minWidth:64, textAlign:'center', padding:'5px 4px', position:'relative' }}>
-                      <div style={{ fontSize:21, opacity: t.op, position:'relative', display:'inline-block' }}>
+                    <div key={t.id} onClick={() => { audio.tap(); setParentTab(t.id); }} style={{
+                      cursor:'pointer',
+                      flex: isMobile ? 'none' : '0 0 auto',
+                      minWidth: isMobile ? 'auto' : 64,
+                      textAlign:'center',
+                      padding: isMobile ? '8px 4px' : '5px 4px',
+                      position:'relative',
+                      background: isMobile && active ? hexA(accent, 0.08) : 'transparent',
+                      borderRadius: isMobile ? 10 : 0
+                    }}>
+                      <div style={{ fontSize: isMobile ? 24 : 21, opacity: t.op, position:'relative', display:'inline-block' }}>
                         {t.icon}
                         {showBadge && (
                           <div style={{ position:'absolute', top:-4, right:-10, background:'#dc2626', color:'#fff', fontSize:10, fontWeight:900, borderRadius:8, minWidth:16, height:16, lineHeight:'16px', padding:'0 4px', boxShadow:'0 2px 4px rgba(0,0,0,.2)' }}>{pendingList.length}</div>
                         )}
                       </div>
-                      <div style={{ fontSize:11, fontWeight:800, color: t.ink, marginTop:2, whiteSpace:'nowrap' }}>{t.label}</div>
+                      <div style={{ fontSize: isMobile ? 12 : 11, fontWeight:800, color: t.ink, marginTop:3, whiteSpace:'nowrap' }}>{t.label}</div>
                     </div>
                   );
                 })}
