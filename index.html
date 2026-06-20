@@ -95,7 +95,7 @@ const PLACES = {
   babi: { label: 'u babičky', short: 'Babička', cvar: '--accent4' },
 };
 const PLACE_ORDER = ['mama', 'tata', 'babi'];
-const WEEK_WHO = ['mama','mama','tata','tata','mama','babi','mama']; // Po..Ne
+const WEEK_WHO = ['mama','mama','mama','mama','mama','mama','mama']; // Po..Ne (rodič nastavuje v overlay)
 
 const SUBJECTS = {
   ces:{t:'Čeština', emoji:'📖'}, mat:{t:'Matematika', emoji:'🔢'}, prv:{t:'Prvouka', emoji:'🌍'},
@@ -103,11 +103,11 @@ const SUBJECTS = {
   vv:{t:'Výtvarka', emoji:'🎨'}, pl:{t:'Plavání', emoji:'🏊'}, pc:{t:'Prac. činnosti', emoji:'✂️'},
 };
 const ROZVRH_DEFAULT = {
-  0:['ces','mat','prv','tv','aj'],
-  1:['mat','ces','hv','aj'],
-  2:['ces','mat','vv','prv','pl'],
-  3:['aj','mat','ces','tv'],
-  4:['ces','mat','prv','pc'],
+  0:[],
+  1:[],
+  2:[],
+  3:[],
+  4:[],
 };
 const SUBJECT_ITEMS = {
   tv: [{ t: 'Cvičky', emoji: '👟' }, { t: 'Cvičební úbor', emoji: '🩳' }],
@@ -123,21 +123,14 @@ const BASE_ITEMS = [
   { t: 'Láhev s pitím', emoji: '💧' },
 ];
 
-const WEEK_EVENTS = [
-  [ { time:'8:00', dur:4,   emoji:'🏫', title:'Škola', type:'skola' }, { time:'17:00', dur:1.5, emoji:'⚽', title:'Fotbal', type:'sport' } ],
-  [ { time:'8:00', dur:4,   emoji:'🏫', title:'Škola', type:'skola' }, { time:'16:00', dur:1,   emoji:'🎹', title:'Klavír', type:'hudba' } ],
-  [ { time:'8:00', dur:4,   emoji:'🏫', title:'Škola', type:'skola' }, { time:'17:30', dur:1.5, emoji:'🏊', title:'Plavání', type:'sport' } ],
-  [ { time:'8:00', dur:4,   emoji:'🏫', title:'Škola', type:'skola' }, { time:'17:00', dur:1.5, emoji:'⚽', title:'Fotbal', type:'sport' } ],
-  [ { time:'8:00', dur:4,   emoji:'🏫', title:'Škola', type:'skola' }, { time:'18:00', dur:2,   emoji:'🎬', title:'Kino s mámou', type:'rodina' } ],
-  [ { time:'9:00', dur:3,   emoji:'🏰', title:'Výlet Karlštejn', type:'vylet' }, { time:'13:00', dur:1.5, emoji:'👵', title:'Oběd u babičky', type:'rodina' } ],
-  [ { time:'10:00', dur:2,  emoji:'🚲', title:'Kolo v parku', type:'sport' }, { time:'18:00', dur:1, emoji:'🎒', title:'Příprava na školu', type:'skola' } ],
-];
+// Události v kalendáři - na začátku prázdné, rodič přidává přes parent overlay.
+// (V budoucnu napojení na Google Calendar OAuth.)
+const WEEK_EVENTS = [[],[],[],[],[],[],[]];
 
 const CHALLENGE_DEFAULTS = [
   { id:'ch1', emoji:'🛏️', t:'Každý den ustlat postel', done:false },
-  { id:'ch2', emoji:'🦷', t:'Ani jednou nezapomenout zuby', done:true },
-  { id:'ch3', emoji:'👃', t:'Ani jednou špunt z nosu :)', done:false },
-  { id:'ch4', emoji:'📚', t:'Číst každý večer', done:false },
+  { id:'ch2', emoji:'🦷', t:'Ani jednou nezapomenout zuby', done:false },
+  { id:'ch3', emoji:'📚', t:'Číst každý večer', done:false },
 ];
 
 const DEVICES = [
@@ -308,13 +301,38 @@ const yesterdayISO = () => {
 
 function useAudio() {
   const acRef = useRef(null);
+  const unlockedRef = useRef(false);
   const ensure = useCallback(() => {
     if (!acRef.current) {
       try { acRef.current = new (window.AudioContext || window.webkitAudioContext)(); } catch(e) {}
     }
-    if (acRef.current && acRef.current.state === 'suspended') acRef.current.resume();
+    if (acRef.current && acRef.current.state === 'suspended') {
+      try { acRef.current.resume(); } catch(e) {}
+    }
     return acRef.current;
   }, []);
+
+  // KRITICKÉ: AudioContext musí být odblokovaný gestem uživatele.
+  // Bez tohoto by zvuky neza­hrály vůbec nebo až po druhém kliknutí.
+  useEffect(() => {
+    const unlock = () => {
+      if (unlockedRef.current) return;
+      const ac = ensure();
+      if (!ac) return;
+      // krátký tichý oscilátor pro garantované odblokování v Safari/iOS
+      try {
+        const o = ac.createOscillator(), g = ac.createGain();
+        g.gain.value = 0.0001;
+        o.connect(g); g.connect(ac.destination);
+        o.start(0); o.stop(ac.currentTime + 0.01);
+      } catch(e) {}
+      if (ac.state !== 'suspended') unlockedRef.current = true;
+    };
+    const events = ['pointerdown','touchstart','keydown','click'];
+    events.forEach(ev => document.addEventListener(ev, unlock, { capture:true, passive:true }));
+    return () => { events.forEach(ev => document.removeEventListener(ev, unlock, { capture:true })); };
+  }, [ensure]);
+
   const tone = useCallback((freq, dur, when, type, gain) => {
     const ac = ensure(); if (!ac) return;
     const t = ac.currentTime + (when || 0);
@@ -546,12 +564,12 @@ function App() {
   // --- core state
   const [screen, setScreen] = useState('home');
   const [theme, setTheme]   = useState((persisted && persisted.theme) || 'cisto');
-  const [childName, setChildName] = useState((persisted && persisted.childName) || 'Adam');
+  const [childName, setChildName] = useState((persisted && persisted.childName) || '');
   const [entered, setEntered] = useState(false);
 
-  const [points, setPoints]   = useState(persisted ? persisted.points  : 240);
-  const [totalXp, setTotalXp] = useState(persisted ? persisted.totalXp : 340);
-  const [streak] = useState(persisted ? persisted.streak : 5);
+  const [points, setPoints]   = useState(persisted ? persisted.points  : 0);
+  const [totalXp, setTotalXp] = useState(persisted ? persisted.totalXp : 0);
+  const [streak] = useState(persisted ? persisted.streak : 0);
 
   const [morning, setMorning] = useState(persisted ? persisted.morning : MORNING_STEPS);
   const [evening, setEvening] = useState(persisted ? persisted.evening : EVENING_STEPS);
@@ -572,7 +590,7 @@ function App() {
   const [pendingApprovals, setPendingApprovals] = useState((persisted && persisted.pendingApprovals) || []);
   const [packState, setPackState] = useState((persisted && persisted.packState) || {});
   const [packAwarded, setPackAwarded] = useState(persisted ? !!persisted.packAwarded : false);
-  const [weeklyDone, setWeeklyDone] = useState((persisted && persisted.weeklyDone) || { w0:false, w1:true, w2:false, w3:false });
+  const [weeklyDone, setWeeklyDone] = useState((persisted && persisted.weeklyDone) || { w0:false, w1:false, w2:false, w3:false });
   const [challenges, setChallenges] = useState((persisted && persisted.challenges) || CHALLENGE_DEFAULTS.map(x=>({...x})));
   const [rozvrh, setRozvrh] = useState((persisted && persisted.rozvrh) || JSON.parse(JSON.stringify(ROZVRH_DEFAULT)));
   const [buttonConfig, setButtonConfig] = useState((persisted && persisted.buttonConfig) || JSON.parse(JSON.stringify(BUTTON_CONFIG_DEFAULT)));
@@ -928,9 +946,10 @@ function App() {
 
   // greeting
   let greeting;
-  if (h < 10) greeting = `Dobré ráno, ${childName}!`;
-  else if (h < 18) greeting = `Ahoj, ${childName}!`;
-  else greeting = `Dobrý večer, ${childName}!`;
+  const cn = childName ? (', ' + childName) : '';
+  if (h < 10) greeting = `Dobré ráno${cn}!`;
+  else if (h < 18) greeting = `Ahoj${cn}!`;
+  else greeting = `Dobrý večer${cn}!`;
   const daysCS = ['Neděle','Pondělí','Úterý','Středa','Čtvrtek','Pátek','Sobota'];
   const monthsCS = ['ledna','února','března','dubna','května','června','července','srpna','září','října','listopadu','prosince'];
   const dateLine = `${daysCS[now.getDay()]} · ${now.getDate()}. ${monthsCS[now.getMonth()]}`;
@@ -1905,30 +1924,28 @@ function App() {
       )}
 
 
-      {/* ===================== PARENT PHONE OVERLAY ===================== */}
+      {/* ===================== PARENT OVERLAY (fullscreen) ===================== */}
       {parentOpen && (
-      <div data-screen-label="Rodičovský mobil" style={{ position:'absolute', inset:0, zIndex:80, background:'rgba(15,12,28,.55)', backdropFilter:'blur(4px)', display:'flex', alignItems:'center', justifyContent:'flex-end', padding:'24px 48px' }}>
+      <div data-screen-label="Rodičovský režim" style={{ position:'absolute', inset:0, zIndex:80, background:'rgba(15,12,28,.55)', backdropFilter:'blur(4px)', display:'flex', alignItems:'stretch', justifyContent:'center', padding:'24px 24px 24px 24px' }}>
         <div onClick={closeParent} style={{ position:'absolute', inset:0 }}/>
-        <div style={{ position:'relative', width:392, height:760, background:'#0c0a14', borderRadius:46, padding:13, boxShadow:'0 40px 90px -20px rgba(0,0,0,.7)', animation:'slideUp .4s ease' }}>
-          <div style={{ position:'absolute', top:24, left:'50%', transform:'translateX(-50%)', width:120, height:26, background:'#0c0a14', borderRadius:'0 0 16px 16px', zIndex:5 }}/>
-          <div style={{ width:'100%', height:'100%', background:'#f4f4fb', borderRadius:36, overflow:'hidden', display:'flex', flexDirection:'column' }}>
+        <div style={{ position:'relative', width:'100%', maxWidth:1100, height:'100%', background:'#f4f4fb', borderRadius:24, overflow:'hidden', display:'flex', flexDirection:'column', boxShadow:'0 40px 90px -20px rgba(0,0,0,.5)', animation:'slideUp .4s ease' }}>
 
             {parentLocked && (
             <div style={{ flex:1, background:'linear-gradient(170deg,#2a2350,#161229)', display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:22, padding:34, textAlign:'center' }}>
               <div style={{ fontSize:50 }}>🔒</div>
               <div style={{ fontFamily:'var(--display)', fontSize:25, fontWeight:600, color:'#fff' }}>Rodičovský režim</div>
-              <div style={{ fontSize:14, fontWeight:700, color:'rgba(255,255,255,.6)' }}>Zadej PIN (demo: 1234)</div>
+              <div style={{ fontSize:14, fontWeight:700, color:'rgba(255,255,255,.6)' }}>Zadej PIN (výchozí: 1234)</div>
               <div style={{ display:'flex', gap:13 }}>
                 {pinDots.map((p, i) => (
                   <div key={i} style={{ width:17, height:17, borderRadius:'50%', background: p.bg, border:'2px solid rgba(255,255,255,.4)' }}/>
                 ))}
               </div>
-              <div style={{ display:'grid', gridTemplateColumns:'repeat(3,64px)', gap:14, marginTop:6 }}>
+              <div style={{ display:'grid', gridTemplateColumns:'repeat(3,72px)', gap:14, marginTop:6 }}>
                 {pinKeys.map((k, i) => (
-                  <div key={i} onClick={() => { if (k.k !== '') pinPress(k.k); }} style={{ cursor: k.k === '' ? 'default' : 'pointer', height:64, borderRadius:'50%', background: k.bg, display:'flex', alignItems:'center', justifyContent:'center', fontFamily:'var(--display)', fontSize:26, fontWeight:500, color:'#fff' }}>{k.label}</div>
+                  <div key={i} onClick={() => { if (k.k !== '') pinPress(k.k); }} style={{ cursor: k.k === '' ? 'default' : 'pointer', height:72, borderRadius:'50%', background: k.bg, display:'flex', alignItems:'center', justifyContent:'center', fontFamily:'var(--display)', fontSize:28, fontWeight:500, color:'#fff' }}>{k.label}</div>
                 ))}
               </div>
-              <div onClick={skipPin} style={{ cursor:'pointer', fontSize:14, fontWeight:800, color:'rgba(255,255,255,.55)', textDecoration:'underline', marginTop:4 }}>Přeskočit (demo)</div>
+              <div onClick={closeParent} style={{ cursor:'pointer', fontSize:13, fontWeight:800, color:'rgba(255,255,255,.45)', marginTop:8 }}>Zavřít</div>
             </div>
             )}
 
@@ -2246,7 +2263,7 @@ function App() {
                   <div style={{ background:'#fff', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
                     <div style={{ fontFamily:'var(--display)', fontSize:18, fontWeight:600, color:'#1a1530', marginBottom:10 }}>Dítě 👧🧒</div>
                     <div style={{ fontSize:13, fontWeight:700, color:'#5a566e', marginBottom:8 }}>Jméno dítěte</div>
-                    <input value={childName} onChange={(e) => setChildName(e.target.value || 'Adam')} style={{ width:'100%', border:'1px solid #e6e6ec', borderRadius:12, padding:'10px 12px', fontSize:14 }} />
+                    <input value={childName} onChange={(e) => setChildName(e.target.value)} placeholder="Jméno dítěte" style={{ width:'100%', border:'1px solid #e6e6ec', borderRadius:12, padding:'10px 12px', fontSize:14 }} />
                   </div>
 
                   <div style={{ background:'#fff', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
@@ -2307,8 +2324,8 @@ function App() {
                   </div>
 
                   <div style={{ background:'#fff', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
-                    <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'#1a1530' }}>Verze: Domácí pomocník v3</div>
-                    <div style={{ fontSize:12, color:'#9a96ac', marginTop:4 }}>Build 2026-06-20 · 19:20</div>
+                    <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'#1a1530' }}>Verze: Domácí pomocník v4</div>
+                    <div style={{ fontSize:12, color:'#9a96ac', marginTop:4 }}>Build 2026-06-20 · 19:54</div>
                   </div>
                 </div>
                 )}
@@ -2325,12 +2342,9 @@ function App() {
               </div>
             </div>
             )}
-          </div>
         </div>
       </div>
       )}
-
-      {/* toast */}
       {toast && (
       <div style={{ position:'absolute', top:26, left:'50%', transform:'translateX(-50%)', zIndex:95, background:'#16a34a', color:'#fff', fontFamily:'var(--display)', fontSize:20, fontWeight:600, padding:'14px 26px', borderRadius:18, boxShadow:'0 16px 40px -10px rgba(0,0,0,.4)', animation:'toastIn .35s ease', display:'flex', alignItems:'center', gap:10 }}>
         <span style={{ fontSize:24 }}>{toast.icon}</span>{toast.msg}
