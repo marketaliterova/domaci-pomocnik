@@ -1689,6 +1689,25 @@ function App() {
     }
   }, [entered, ttsOn, tts]);
 
+  // v10: ?sync=... URL param automaticky nastaví Apps Script URL (pro sdílení mezi zařízeními)
+  useEffect(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const syncParam = params.get('sync');
+      if (syncParam && syncParam.startsWith('http') && syncParam !== syncUrl) {
+        setSyncUrl(syncParam);
+        showToast('Synchronizace nastavena 🔄', '✓');
+        // Vyčistit URL aby se znovu nenastavila
+        try {
+          const url = new URL(window.location.href);
+          url.searchParams.delete('sync');
+          window.history.replaceState(null, '', url.toString());
+        } catch(e) {}
+      }
+    } catch(e) {}
+    // eslint-disable-next-line
+  }, []);
+
   // Hue URL trigger: ?do=wc spustí akci. Apple Home Shortcut otevře tuhle URL po stisku tlačítka.
   useEffect(() => {
     try {
@@ -2145,21 +2164,113 @@ function App() {
             </div>
           </div>
 
-          {/* shop */}
-          <div style={{ background:'var(--surface)', border:'var(--hair)', borderRadius:26, padding:'22px 24px', boxShadow:'var(--shadow)' }}>
-            <div style={{ fontFamily:'var(--display)', fontSize:23, fontWeight:600, color:'var(--ink)', marginBottom:14 }}>Obchůdek odměn</div>
-            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>
-              {shop.map((r) => (
-                <div key={r.id} style={{ display:'flex', flexDirection:'column', gap:9, padding:15, background:'var(--soft)', borderRadius:18, opacity: r.opacity }}>
-                  <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', gap:8 }}>
-                    <div style={{ fontSize:38, lineHeight:1 }}>{r.emoji}</div>
-                    <div style={{ display:'flex', alignItems:'center', gap:4, background: r.costBg, color: r.costInk, fontFamily:'var(--display)', fontWeight:600, fontSize:16, padding:'5px 11px', borderRadius:12, whiteSpace:'nowrap' }}>{r.cost} ⭐</div>
-                  </div>
-                  <div style={{ fontFamily:'var(--display)', fontSize:18, fontWeight:500, color:'var(--ink)', lineHeight:1.12, minHeight:42 }}>{r.t}</div>
-                  <div onClick={() => redeem(r)} style={{ cursor: r.cursor, textAlign:'center', background: r.btnBg, color: r.btnInk, fontFamily:'var(--display)', fontSize:16, fontWeight:600, padding:10, borderRadius:13 }}>{r.btnLabel2}</div>
+          {/* shop - real store look */}
+          <div style={{ background:'linear-gradient(135deg, #fef9c3 0%, #fef3c7 100%)', borderRadius:26, padding:'24px 26px', boxShadow:'var(--shadow)', position:'relative' }}>
+            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:18 }}>
+              <div>
+                <div style={{ fontFamily:'var(--display)', fontSize:26, fontWeight:600, color:'#854d0e' }}>🛍️ Obchůdek odměn</div>
+                <div style={{ fontSize:14, fontWeight:800, color:'#a16207', marginTop:2 }}>
+                  {child.points > 0
+                    ? `Máš ${child.points} bodů — co si koupíš?`
+                    : 'Posbírej body a něco si kup'}
                 </div>
-              ))}
+              </div>
+              {/* Wallet badge */}
+              <div style={{ background:'#fff', borderRadius:16, padding:'8px 14px', display:'flex', alignItems:'center', gap:8, boxShadow:'0 4px 12px rgba(146,64,14,.15)' }}>
+                <div style={{ fontSize:24 }}>💰</div>
+                <div>
+                  <div style={{ fontFamily:'var(--display)', fontSize:22, fontWeight:600, color:'#854d0e', lineHeight:1 }}>{child.points}</div>
+                  <div style={{ fontSize:10, fontWeight:800, color:'#a16207', textTransform:'uppercase', letterSpacing:'.05em' }}>bodů</div>
+                </div>
+              </div>
             </div>
+
+            <div style={{ display:'grid', gridTemplateColumns:'repeat(2, 1fr)', gap:14 }}>
+              {shop.map((r) => {
+                const st = shopState[r.id];
+                const afford = points >= r.cost;
+                const pending = st === 'requested';
+                const locked = !afford && !st;
+                return (
+                  <div key={r.id} style={{
+                    background:'#fff',
+                    border: pending ? '2px solid #f59e0b' : (afford ? '2px solid #16a34a' : '2px solid #e5e7eb'),
+                    borderRadius:18,
+                    padding:'16px 14px',
+                    position:'relative',
+                    boxShadow:'0 6px 18px rgba(0,0,0,.06)',
+                    opacity: locked ? 0.7 : 1,
+                    transition:'transform .15s'
+                  }}>
+                    {/* Cenovka v rohu */}
+                    <div style={{
+                      position:'absolute',
+                      top:-8, right:12,
+                      background: pending ? '#fbbf24' : (afford ? '#16a34a' : '#9ca3af'),
+                      color:'#fff',
+                      borderRadius:10,
+                      padding:'4px 11px',
+                      fontFamily:'var(--display)',
+                      fontWeight:600,
+                      fontSize:14,
+                      boxShadow:'0 3px 8px rgba(0,0,0,.18)',
+                      display:'flex', alignItems:'center', gap:4
+                    }}>
+                      <span style={{ fontSize:13 }}>⭐</span>
+                      <span>{r.cost}</span>
+                    </div>
+
+                    {/* "Produkt" - velký emoji */}
+                    <div style={{
+                      fontSize: 64,
+                      textAlign:'center',
+                      margin:'14px 0 8px',
+                      lineHeight: 1,
+                      filter: locked ? 'grayscale(0.6)' : 'none'
+                    }}>{r.emoji}</div>
+
+                    {/* Název */}
+                    <div style={{
+                      textAlign:'center',
+                      fontFamily:'var(--display)',
+                      fontSize:16,
+                      fontWeight:600,
+                      color:'var(--ink)',
+                      lineHeight:1.15,
+                      minHeight:38,
+                      marginBottom:10
+                    }}>{r.t}</div>
+
+                    {/* Buy tlačítko */}
+                    <div onClick={() => redeem(r)} style={{
+                      cursor: (locked || pending) ? 'default' : 'pointer',
+                      width:'100%',
+                      background: pending
+                        ? '#fef3c7'
+                        : afford
+                          ? 'linear-gradient(135deg, #16a34a, #15803d)'
+                          : '#f0f0f7',
+                      color: pending ? '#92400e' : afford ? '#fff' : '#9ca3af',
+                      borderRadius:12,
+                      padding:'11px 8px',
+                      textAlign:'center',
+                      fontFamily:'var(--display)',
+                      fontWeight:600,
+                      fontSize:14,
+                      boxShadow: afford && !pending ? '0 4px 12px rgba(22,163,74,.3)' : 'none'
+                    }}>
+                      {pending ? '⏳ Čeká na rodiče' : afford ? '🛒 Koupit' : `🔒 ještě ${r.cost - points} bodů`}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {shop.length === 0 && (
+              <div style={{ background:'#fff', borderRadius:14, padding:'20px 16px', textAlign:'center', color:'#a16207', fontSize:13, fontWeight:700 }}>
+                Obchod je prázdný. Rodič může přidat odměny v admin.
+              </div>
+            )}
           </div>
         </div>
 
@@ -3100,6 +3211,35 @@ function App() {
                           <div onClick={manualSync} style={{ cursor:'pointer', flex:1, background:'var(--accent)', color:'#fff', borderRadius:10, padding:'10px 12px', textAlign:'center', fontWeight:800, fontSize:13 }}>🔄 Synchronizovat teď</div>
                           <div onClick={() => { if (window.confirm('Vypnout synchronizaci?')) setSyncUrl(''); }} style={{ cursor:'pointer', background:'#f0f0f7', color:'#6a6680', borderRadius:10, padding:'10px 14px', fontWeight:800, fontSize:13 }}>Vypnout</div>
                         </div>
+
+                        {/* Sdílení URL na druhé zařízení */}
+                        <div style={{ background:'#eef4ff', borderRadius:12, padding:'12px 14px', marginTop:14 }}>
+                          <div style={{ fontSize:13, fontWeight:800, color:'var(--accent)', marginBottom:6 }}>📱 Nastavit sync na druhém zařízení</div>
+                          <div style={{ fontSize:12, color:'#5a566e', lineHeight:1.5, marginBottom:8 }}>Zkopíruj tuhle URL a otevři ji na druhém zařízení (mobil/tablet). Sync se aktivuje automaticky.</div>
+                          {(() => {
+                            const base = window.location.origin + window.location.pathname;
+                            const shareUrl = base + '?sync=' + encodeURIComponent(syncUrl);
+                            return (
+                              <div onClick={() => {
+                                try { navigator.clipboard.writeText(shareUrl); showToast('URL zkopírována 📋', '✓'); } catch(e) {}
+                              }} style={{ cursor:'pointer', background:'#fff', border:'1px solid #cdddff', borderRadius:8, padding:'8px 10px', fontFamily:'monospace', fontSize:10, color:'#1a1530', wordBreak:'break-all', lineHeight:1.4 }}>
+                                {shareUrl}
+                                <div style={{ marginTop:6, fontSize:11, fontWeight:800, color:'var(--accent)' }}>📋 Klikni pro kopírování</div>
+                              </div>
+                            );
+                          })()}
+                          {syncUrl && (() => {
+                            const base = window.location.origin + window.location.pathname;
+                            const shareUrl = base + '?sync=' + encodeURIComponent(syncUrl);
+                            const qrUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=' + encodeURIComponent(shareUrl);
+                            return (
+                              <div style={{ marginTop:10, textAlign:'center' }}>
+                                <div style={{ fontSize:11, fontWeight:800, color:'#5a566e', marginBottom:4 }}>Nebo naskenuj QR mobilem:</div>
+                                <img src={qrUrl} alt="QR" style={{ width:140, height:140, borderRadius:8, background:'#fff', padding:4 }} />
+                              </div>
+                            );
+                          })()}
+                        </div>
                       </div>
                     )}
 
@@ -3130,8 +3270,8 @@ function App() {
                   </div>
 
                   <div style={{ background:'#fff', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
-                    <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'#1a1530' }}>Verze: Domácí pomocník v9</div>
-                    <div style={{ fontSize:12, color:'#9a96ac', marginTop:4 }}>Build 2026-06-20 · 22:08</div>
+                    <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'#1a1530' }}>Verze: Domácí pomocník v10</div>
+                    <div style={{ fontSize:12, color:'#9a96ac', marginTop:4 }}>Build 2026-06-20 · 22:19</div>
                   </div>
                 </div>
                 )}
