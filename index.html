@@ -255,6 +255,14 @@ const saveState = (s) => {
       eveningStreakDays: s.eveningStreakDays, eveningStreakLast: s.eveningStreakLast,
       parentPin: s.parentPin,
       childName: s.childName,
+      // v6 nová pole
+      weekEvents: s.weekEvents,
+      worryMessages: s.worryMessages,
+      readingList: s.readingList,
+      stickers: s.stickers,
+      childPhoto: s.childPhoto,
+      choresList: s.choresList,
+      weeklyChores: s.weeklyChores,
     };
     localStorage.setItem(LS_KEY, JSON.stringify(persistable));
   } catch(e) {}
@@ -612,6 +620,23 @@ function App() {
   const [praiseShown, setPraiseShown] = useState(null);
   const [rikiDancing, setRikiDancing] = useState(false);
   const [parentPin, setParentPin] = useState((persisted && persisted.parentPin) || '1234');
+  // weekEvents: pole 7 polí (Po..Ne), každé je list eventů {id, time, dur, emoji, title, type}
+  const [weekEvents, setWeekEvents] = useState((persisted && persisted.weekEvents) || WEEK_EVENTS.map(arr => arr.slice()));
+  const [worryMessages, setWorryMessages] = useState((persisted && persisted.worryMessages) || []);
+  const [readingList, setReadingList] = useState((persisted && persisted.readingList) || []);
+  const [stickers, setStickers] = useState((persisted && persisted.stickers) || []);
+  const [childPhoto, setChildPhoto] = useState((persisted && persisted.childPhoto) || null);
+  const [choresList, setChoresList] = useState((persisted && persisted.choresList) || CHORES_LIST.map(x => ({...x})));
+  const [weeklyChores, setWeeklyChores] = useState((persisted && persisted.weeklyChores) || WEEKLY_CHORES.map(x => ({...x})));
+
+  // form-fields v6
+  const [newWorryText, setNewWorryText] = useState('');
+  const [newBookTitle, setNewBookTitle] = useState('');
+  const [newBookPages, setNewBookPages] = useState('');
+  const [newChoreText, setNewChoreText] = useState('');
+  const [newChorePoints, setNewChorePoints] = useState('5');
+  const [newEvent, setNewEvent] = useState({ day:0, time:'15:00', emoji:'⚽', title:'', type:'sport' });
+  const [showWorryBox, setShowWorryBox] = useState(false);
 
   const weather = useWeather(soundOn);
   const tts = useTTS(ttsOn);
@@ -641,13 +666,15 @@ function App() {
       mascotName, soundOn, ttsOn, bedtime, wakeTime, praiseMessages,
       streakDays, streakLastDate, eveningStreakDays, eveningStreakLast,
       moodLog, lastMoodDate, parentPin, childName,
+      weekEvents, worryMessages, readingList, stickers, childPhoto, choresList, weeklyChores,
     });
   }, [theme, points, totalXp, streak, morning, evening, doneM, doneE, whoHome, departMin,
       shopItems, shopState, choreState, pendingApprovals, packState, packAwarded,
       weeklyDone, challenges, rozvrh, buttonConfig,
       mascotName, soundOn, ttsOn, bedtime, wakeTime, praiseMessages,
       streakDays, streakLastDate, eveningStreakDays, eveningStreakLast,
-      moodLog, lastMoodDate, parentPin, childName]);
+      moodLog, lastMoodDate, parentPin, childName,
+      weekEvents, worryMessages, readingList, stickers, childPhoto, choresList, weeklyChores]);
 
   // --- helpers
   const tv = useMemo(() => THEMES[theme] || THEMES.cisto, [theme]);
@@ -960,7 +987,7 @@ function App() {
   let semafor;
   const off = 'rgba(255,255,255,0.14)';
   const isWeekend = (now.getDay() === 0 || now.getDay() === 6);
-  const firstEv = (WEEK_EVENTS[wd] || [])[0];
+  const firstEv = (weekEvents[wd] || [])[0];
   if (isWeekend) {
     semafor = { caption:'Dnes', big:'Víkend!', face:'🎈', status:'Žádná škola – užij si den',
       sub: firstEv ? `Nejdřív: ${firstEv.time} ${firstEv.title}` : 'Volný den',
@@ -998,7 +1025,7 @@ function App() {
   };
 
   // today events
-  const todayEvents = (WEEK_EVENTS[wd] || []).map(e => ({
+  const todayEvents = (weekEvents[wd] || []).map(e => ({
     ...e, color: TYPE_COLOR[e.type] || accent,
     sub: ({skola:'Vyučování', sport:'Nezapomeň věci', hudba:'Kroužek', vylet:'Celý den', rodina:'Společný čas'})[e.type] || ''
   }));
@@ -1040,7 +1067,7 @@ function App() {
     const isToday = i === wd;
     const plc = PLACES[who] || PLACES.mama;
     const wcol = tv[plc.cvar];
-    const evs = (WEEK_EVENTS[i] || []).map(e => {
+    const evs = (weekEvents[i] || []).map(e => {
       const col = TYPE_COLOR[e.type] || accent;
       const startDec = parseT(e.time);
       let top = (startDec - calStart) * pxH;
@@ -1147,7 +1174,7 @@ function App() {
     mark: c.done ? '🏆' : c.emoji,
   }));
 
-  const chores = CHORES_LIST.map(c => {
+  const chores = choresList.map(c => {
     const st = choreState[c.id];
     return {
       ...c,
@@ -1157,7 +1184,7 @@ function App() {
       cursor: st ? 'default' : 'pointer',
     };
   });
-  const weeklyChoresR = WEEKLY_CHORES.map(w => {
+  const weeklyChoresR = weeklyChores.map(w => {
     const done = weeklyDone[w.id];
     return { ...w, check: done ? '✓' : '', boxBg: done ? tv['--good'] : 'transparent', boxBorder: done ? tv['--good'] : tv['--muted'], strike: done ? 'line-through' : 'none' };
   });
@@ -1176,11 +1203,13 @@ function App() {
     id:d.id, name:d.name,
     gestures: ['single','double','long'].map(g => {
       const t = taskByKey(d.gestures[g]);
+      // REÁLNÁ URL: appka odposlouchává ?do=task_key a spustí akci
+      const base = (typeof window !== 'undefined' ? window.location.origin + window.location.pathname : '');
       return { g, gLabel: gLabels[g], taskLabel:t.label, taskEmoji:t.emoji, hasTask: t.key !== 'none',
         pointsLabel: t.key === 'none' ? '' : ('+' + t.points),
         pillBg: t.key === 'none' ? '#f0f0f7' : hexA(accent, 0.12),
         pillInk: t.key === 'none' ? '#9a96ac' : accent,
-        url: `detsky-pomocnik.app/hue?b=${d.id}&g=${g}`,
+        url: t.key === 'none' ? '' : (base + '?do=' + t.key),
         task: t,
       };
     }),
@@ -1326,6 +1355,41 @@ function App() {
     }
   }, [doneM, morning, todayMoodDone, showMoodPrompt]);
 
+  // Sticker auto-award triggery - kontrola po každé změně stavu
+  useEffect(() => {
+    const have = new Set(stickers.map(s => s.id));
+    const toAward = [];
+    // Definice nálepek a podmínek
+    const totalPagesRead = readingList.reduce((sum, b) => sum + (b.pagesRead || 0), 0);
+    const finishedBooks = readingList.filter(b => b.pagesRead >= b.pagesTotal && b.pagesTotal > 0).length;
+    const candidates = [
+      { id:'first-routine', emoji:'🌟', name:'První rutina',     cond: totalXp >= 10 },
+      { id:'streak-7',      emoji:'🔥', name:'Týden v řadě',    cond: streakDays >= 7 },
+      { id:'streak-14',     emoji:'💪', name:'Dva týdny',         cond: streakDays >= 14 },
+      { id:'streak-30',     emoji:'🏆', name:'Měsíc hrdina',     cond: streakDays >= 30 },
+      { id:'points-100',    emoji:'💎', name:'100 bodů',          cond: totalXp >= 100 },
+      { id:'points-500',    emoji:'👑', name:'500 bodů',          cond: totalXp >= 500 },
+      { id:'reader-50',     emoji:'📖', name:'50 stránek',        cond: totalPagesRead >= 50 },
+      { id:'reader-200',    emoji:'📚', name:'200 stránek',       cond: totalPagesRead >= 200 },
+      { id:'book-finished', emoji:'🎓', name:'Dočetl knihu',    cond: finishedBooks >= 1 },
+      { id:'helper-5',      emoji:'🧹', name:'5x pomohl',         cond: pendingApprovals.length === 0 && choreState && Object.keys(choreState).filter(k => choreState[k] === 'done').length >= 5 },
+    ];
+    candidates.forEach(c => {
+      if (c.cond && !have.has(c.id)) {
+        toAward.push({ id: c.id, emoji: c.emoji, name: c.name, date: new Date().toISOString() });
+      }
+    });
+    if (toAward.length > 0) {
+      setStickers(s => [...s, ...toAward]);
+      toAward.forEach(s => {
+        setTimeout(() => showToast(`Nová nálepka: ${s.name}`, s.emoji), 600);
+      });
+      audio.success();
+      confetti.fire({ n: 80 });
+    }
+    // eslint-disable-next-line
+  }, [totalXp, streakDays, readingList, choreState]);
+
   // greeting TTS jednou při vstupu
   const greetedRef = useRef(false);
   useEffect(() => {
@@ -1334,6 +1398,29 @@ function App() {
       setTimeout(() => tts.sayRandom('hello', RIKI_PHRASES.hello), 800);
     }
   }, [entered, ttsOn, tts]);
+
+  // Hue URL trigger: ?do=wc spustí akci. Apple Home Shortcut otevře tuhle URL po stisku tlačítka.
+  useEffect(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const doKey = params.get('do');
+      if (!doKey) return;
+      const t = TASK_CATALOG.find(x => x.key === doKey);
+      if (!t || t.key === 'none') return;
+      // krátké zpoždění aby se appka stihla namountovat
+      const tm = setTimeout(() => {
+        triggerTask(t);
+        showToast(`Hue: ${t.label}`, t.emoji);
+        // vyčistit URL aby reload neaktivoval znovu
+        try {
+          const clean = window.location.origin + window.location.pathname;
+          window.history.replaceState(null, '', clean);
+        } catch(e) {}
+      }, 800);
+      return () => clearTimeout(tm);
+    } catch(e) {}
+    // eslint-disable-next-line
+  }, [entered]);
 
   // proaktivní cache (bez SW - jednoduchý warmup pro offline použití)
   // Pro plný offline-first režim přidej sw.js vedle index.html (viz README)
@@ -1367,12 +1454,23 @@ function App() {
 
         {/* top bar */}
         <div style={{ display:'flex', alignItems:'center', gap:18, animation: ent(0) }}>
+          {childPhoto && (
+            <div style={{ width:64, height:64, borderRadius:'50%', background: `url(${childPhoto}) center/cover`, border:'3px solid #fff', boxShadow:'var(--shadow)', flex:'none' }}/>
+          )}
           <div style={{ flex:1, minWidth:0 }}>
             <div style={{ fontSize:17, fontWeight:800, letterSpacing:'.14em', textTransform:'uppercase', color:'var(--muted)' }}>{dateLine}</div>
             <div style={{ fontFamily:'var(--display)', fontSize:42, fontWeight:600, lineHeight:1.05, color:'var(--ink)', marginTop:2 }}>{greeting}</div>
           </div>
+          <div onClick={() => { audio.tap(); setShowWorryBox(true); }} style={{ cursor:'pointer', width:54, height:54, borderRadius:18, background:'var(--surface)', border:'var(--hair)', boxShadow:'var(--shadow)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:24 }} title="Něco mě trápí">💬</div>
           <div onClick={() => go('tlacitka')} style={{ cursor:'pointer', width:54, height:54, borderRadius:18, background:'var(--surface)', border:'var(--hair)', boxShadow:'var(--shadow)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:24 }} title="Chytrá tlačítka">🔘</div>
-          <div onClick={openParent} style={{ cursor:'pointer', width:54, height:54, borderRadius:18, background:'var(--surface)', border:'var(--hair)', boxShadow:'var(--shadow)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:24 }} title="Rodičovský režim">🔒</div>
+          <div onClick={openParent} style={{ cursor:'pointer', width:54, height:54, borderRadius:18, background:'var(--surface)', border:'var(--hair)', boxShadow:'var(--shadow)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:24, position:'relative' }} title="Rodičovský režim">
+            🔒
+            {(pendingApprovals.length + worryMessages.filter(m => !m.read).length) > 0 && (
+              <div style={{ position:'absolute', top:-4, right:-4, background:'#dc2626', color:'#fff', fontSize:12, fontWeight:900, borderRadius:11, minWidth:22, height:22, lineHeight:'22px', padding:'0 6px', boxShadow:'0 2px 6px rgba(0,0,0,.25)', border:'2px solid #fff' }}>
+                {pendingApprovals.length + worryMessages.filter(m => !m.read).length}
+              </div>
+            )}
+          </div>
         </div>
 
         {/* main grid */}
@@ -1705,6 +1803,65 @@ function App() {
             ))}
           </div>
         </div>
+
+        {/* v6: Čtení + Nálepky */}
+        {(readingList.length > 0 || stickers.length > 0) && (
+        <div style={{ display:'grid', gridTemplateColumns: readingList.length > 0 && stickers.length > 0 ? '1fr 1fr' : '1fr', gap:18 }}>
+          {readingList.length > 0 && (
+            <div>
+              <div style={{ fontFamily:'var(--display)', fontSize:20, fontWeight:600, color:'var(--ink)', marginBottom:12 }}>Moje knížky 📚</div>
+              <div style={{ background:'var(--surface)', border:'var(--hair)', borderRadius:20, padding:14, boxShadow:'var(--shadow)' }}>
+                {readingList.map((b) => {
+                  const done = b.pagesRead >= b.pagesTotal && b.pagesTotal > 0;
+                  return (
+                    <div key={b.id} style={{ padding:'10px 4px', borderBottom:'var(--hair)' }}>
+                      <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+                        <div style={{ fontSize:28 }}>{done ? '🎓' : '📖'}</div>
+                        <div style={{ flex:1, minWidth:0 }}>
+                          <div style={{ fontFamily:'var(--display)', fontSize:17, fontWeight:500, color:'var(--ink)', lineHeight:1.1 }}>{b.title}</div>
+                          <div style={{ fontSize:13, fontWeight:800, color:'var(--muted)' }}>{b.pagesRead} / {b.pagesTotal} stránek</div>
+                        </div>
+                        {!done && (
+                          <div style={{ display:'flex', gap:6 }}>
+                            {[5, 10].map(n => (
+                              <div key={n} onClick={() => {
+                                setReadingList(arr => arr.map(x => x.id === b.id ? {...x, pagesRead: Math.min(x.pagesTotal, x.pagesRead + n)} : x));
+                                addPoints(n, `Přečetl ${n} stránek`, true);
+                                audio.coin();
+                              }} style={{ cursor:'pointer', background:'var(--accent)', color:'#fff', fontWeight:800, fontSize:13, padding:'8px 11px', borderRadius:10 }}>+{n}</div>
+                            ))}
+                          </div>
+                        )}
+                        {done && (
+                          <div style={{ background:'#dcfce7', color:'#166534', fontWeight:800, fontSize:13, padding:'7px 11px', borderRadius:10 }}>Hotovo!</div>
+                        )}
+                      </div>
+                      <div style={{ marginTop:7, height:7, background:'#e5e7eb', borderRadius:4, overflow:'hidden' }}>
+                        <div style={{ height:'100%', width: Math.min(100, (b.pagesRead / Math.max(1, b.pagesTotal)) * 100) + '%', background:'linear-gradient(90deg, #c084fc, #a855f7)', transition:'width .3s' }}/>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+          {stickers.length > 0 && (
+            <div>
+              <div style={{ fontFamily:'var(--display)', fontSize:20, fontWeight:600, color:'var(--ink)', marginBottom:12 }}>Moje nálepky 🏆</div>
+              <div style={{ background:'var(--surface)', border:'var(--hair)', borderRadius:20, padding:14, boxShadow:'var(--shadow)' }}>
+                <div style={{ display:'grid', gridTemplateColumns:'repeat(4, 1fr)', gap:8 }}>
+                  {stickers.map((s, i) => (
+                    <div key={i} style={{ background:'var(--soft)', borderRadius:14, padding:'14px 6px', textAlign:'center', animation: `popIn .5s ease ${(i*0.05).toFixed(2)}s both` }}>
+                      <div style={{ fontSize:42, lineHeight:1 }}>{s.emoji}</div>
+                      <div style={{ fontSize:11, fontWeight:800, color:'var(--ink)', marginTop:6, lineHeight:1.2 }}>{s.name}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+        )}
       </div>
       )}
 
@@ -1896,11 +2053,40 @@ function App() {
       )}
 
 
+      {/* v6: Worry box - dítě napíše soukromý vzkaz mámě */}
+      {showWorryBox && !parentOpen && (
+        <div style={{ position:'absolute', inset:0, zIndex:78, background:'rgba(10,8,30,.55)', display:'flex', alignItems:'center', justifyContent:'center', backdropFilter:'blur(6px)' }}>
+          <div style={{ background:'var(--surface)', borderRadius:28, padding:'30px 34px', maxWidth:620, width:'90%', boxShadow:'var(--shadow)', animation:'popIn .4s ease' }}>
+            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'start', marginBottom:14 }}>
+              <div>
+                <div style={{ fontFamily:'var(--display)', fontSize:24, fontWeight:700, color:'var(--ink)' }}>Něco mě trápí 💜</div>
+                <div style={{ fontSize:14, color:'var(--muted)', fontWeight:700, marginTop:4 }}>Napiš to a máma si to přečte.</div>
+              </div>
+              <div onClick={() => { setShowWorryBox(false); setNewWorryText(''); }} style={{ cursor:'pointer', fontSize:24, color:'var(--muted)', padding:8 }}>✕</div>
+            </div>
+            <textarea value={newWorryText} onChange={(e) => setNewWorryText(e.target.value)} placeholder="Napiš tady, co tě trápí…" rows={5} style={{ width:'100%', border:'1px solid #e6e6ec', borderRadius:14, padding:'14px 16px', fontSize:16, fontFamily:'Nunito Sans', resize:'vertical', boxSizing:'border-box', outline:'none' }} autoFocus />
+            <div style={{ display:'flex', gap:10, marginTop:14 }}>
+              <div onClick={() => { setShowWorryBox(false); setNewWorryText(''); }} style={{ cursor:'pointer', flex:1, background:'#f0f0f7', color:'#6a6680', borderRadius:14, padding:'12px 14px', textAlign:'center', fontWeight:800, fontSize:15 }}>Zrušit</div>
+              <div onClick={() => {
+                const txt = newWorryText.trim();
+                if (!txt) return;
+                const msg = { id:'w'+Date.now(), text:txt, date: new Date().toISOString(), read:false };
+                setWorryMessages(m => [msg, ...m]);
+                setNewWorryText('');
+                setShowWorryBox(false);
+                audio.ding();
+                showToast('Posláno mámě 💜', '✉️');
+              }} style={{ cursor:'pointer', flex:1, background:'linear-gradient(135deg, #c084fc, #a855f7)', color:'#fff', borderRadius:14, padding:'12px 14px', textAlign:'center', fontWeight:800, fontSize:15 }}>Poslat mámě 💜</div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ===================== PARENT OVERLAY (fullscreen) ===================== */}
       {parentOpen && (
-      <div data-screen-label="Rodičovský režim" style={{ position:'absolute', inset:0, zIndex:80, background:'rgba(15,12,28,.55)', backdropFilter:'blur(4px)', display:'flex', alignItems:'stretch', justifyContent:'center', padding:'24px 24px 24px 24px' }}>
+      <div data-screen-label="Rodičovský režim" style={{ position:'fixed', inset:0, zIndex:80, background:'rgba(15,12,28,.55)', backdropFilter:'blur(4px)', display:'flex', alignItems:'stretch', justifyContent:'center', padding:0 }}>
         <div onClick={closeParent} style={{ position:'absolute', inset:0 }}/>
-        <div style={{ position:'relative', width:'100%', maxWidth:1100, height:'100%', background:'#f4f4fb', borderRadius:24, overflow:'hidden', display:'flex', flexDirection:'column', boxShadow:'0 40px 90px -20px rgba(0,0,0,.5)', animation:'slideUp .4s ease' }}>
+        <div style={{ position:'relative', width:'100%', maxWidth:1100, height:'100%', background:'#f4f4fb', borderRadius:0, overflow:'hidden', display:'flex', flexDirection:'column', boxShadow:'0 40px 90px -20px rgba(0,0,0,.5)', animation:'slideUp .4s ease' }}>
 
             {parentLocked && (
             <div style={{ flex:1, background:'linear-gradient(170deg,#2a2350,#161229)', display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:22, padding:34, textAlign:'center' }}>
@@ -1933,7 +2119,7 @@ function App() {
                 </div>
               </div>
 
-              <div style={{ flex:1, minHeight:0, overflow:'auto', padding:16 }}>
+              <div style={{ flex:1, minHeight:0, overflowY:'auto', overflowX:'hidden', WebkitOverflowScrolling:'touch', padding:16 }}>
                 {/* TAB: body */}
                 {parentTab === 'body' && (
                 <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
@@ -2041,6 +2227,32 @@ function App() {
                     ))}
                     <div style={{ fontSize:13, fontWeight:800, color:'#9a96ac', padding:'12px 2px' }}>Vypnuté kroky se dítěti na tabletu neukážou.</div>
                   </div>
+
+                  {/* Pomoci doma - editovatelný seznam */}
+                  <div style={{ background:'#fff', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
+                    <div style={{ fontFamily:'var(--display)', fontSize:18, fontWeight:600, color:'#1a1530', marginBottom:8 }}>Domácí úkoly 🧹</div>
+                    <div style={{ fontSize:12, fontWeight:700, color:'#9a96ac', marginBottom:10 }}>To, co dítě vidí v sekci „Pomoci doma" — klikne, počká na schválení, dostane body.</div>
+                    {choresList.map((c) => (
+                      <div key={c.id} style={{ display:'flex', alignItems:'center', gap:10, padding:'9px 2px', borderBottom:'1px solid #f0f0f5' }}>
+                        <div style={{ fontSize:22 }}>{c.emoji}</div>
+                        <div style={{ flex:1, fontFamily:'var(--display)', fontSize:14, fontWeight:500, color:'#1a1530' }}>{c.t}</div>
+                        <div style={{ fontSize:13, fontWeight:900, color:'var(--accent)' }}>+{c.points}</div>
+                        <div onClick={() => { setChoresList(s => s.filter(x => x.id !== c.id)); audio.undo(); }} style={{ cursor:'pointer', width:28, height:28, borderRadius:8, background:'#fdeaea', color:'#e23', display:'flex', alignItems:'center', justifyContent:'center', fontWeight:800 }}>✕</div>
+                      </div>
+                    ))}
+                    <div style={{ display:'flex', gap:8, marginTop:12 }}>
+                      <input value={newChoreText} onChange={(e) => setNewChoreText(e.target.value)} placeholder="Nový úkol…" style={{ flex:1, minWidth:0, border:'1px solid #e3e3ea', borderRadius:11, padding:'11px 12px', fontSize:14 }}/>
+                      <input value={newChorePoints} onChange={(e) => setNewChorePoints(e.target.value)} placeholder="body" inputMode="numeric" style={{ width:60, border:'1px solid #e3e3ea', borderRadius:11, padding:'11px 8px', fontSize:14, textAlign:'center' }}/>
+                      <div onClick={() => {
+                        const name = newChoreText.trim();
+                        const pts = parseInt(newChorePoints) || 5;
+                        if (!name) return;
+                        setChoresList(s => [...s, { id:'c'+Date.now(), emoji:'✨', t:name, points:pts }]);
+                        setNewChoreText(''); setNewChorePoints('5');
+                        audio.coin();
+                      }} style={{ cursor:'pointer', background:'var(--accent)', color:'#fff', fontWeight:600, fontSize:14, padding:'11px 14px', borderRadius:11 }}>+ Přidat</div>
+                    </div>
+                  </div>
                 </div>
                 )}
 
@@ -2087,23 +2299,80 @@ function App() {
                 {/* TAB: kalendar */}
                 {parentTab === 'kalendar' && (
                 <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
-                  <div style={{ background:'#fff', borderRadius:20, padding:18, boxShadow:'0 4px 16px rgba(20,16,40,.06)', display:'flex', alignItems:'center', gap:12 }}>
-                    <div style={{ width:42, height:42, borderRadius:11, background:'#e8f0fe', display:'flex', alignItems:'center', justifyContent:'center', fontSize:22 }}>📅</div>
-                    <div style={{ flex:1 }}>
-                      <div style={{ fontFamily:'var(--display)', fontSize:16, fontWeight:600, color:'#1a1530' }}>Google kalendář</div>
-                      <div style={{ fontSize:12, fontWeight:800, color:'#16a34a' }}>● Připojeno · synchronizováno</div>
-                    </div>
-                    <div style={{ width:48, height:28, borderRadius:16, background:'#16a34a', position:'relative' }}>
-                      <div style={{ position:'absolute', top:3, left:23, width:22, height:22, borderRadius:'50%', background:'#fff' }}/>
-                    </div>
-                  </div>
                   <div style={{ background:'#fff', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
-                    <div style={{ fontFamily:'var(--display)', fontSize:16, fontWeight:600, color:'#1a1530', marginBottom:9 }}>Střídavá péče</div>
-                    <div style={{ fontSize:14, fontWeight:700, color:'#5a566e', lineHeight:1.5 }}>{handover}</div>
-                    <div style={{ fontSize:13, fontWeight:800, color:'#9a96ac', marginTop:10 }}>Barevné dny na tabletu dítěti jasně ukážou, kde zrovna je.</div>
+                    <div style={{ fontFamily:'var(--display)', fontSize:18, fontWeight:600, color:'#1a1530' }}>Události v týdnu 📅</div>
+                    <div style={{ fontSize:13, fontWeight:700, color:'#5a566e', lineHeight:1.5, marginTop:6 }}>Sport, kroužky, návštěvy. Dítě je uvidí na hlavní obrazovce a v kalendáři.</div>
                   </div>
+
+                  {/* Přidat událost */}
                   <div style={{ background:'#fff', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
-                    <div style={{ fontFamily:'var(--display)', fontSize:16, fontWeight:600, color:'#1a1530', marginBottom:10 }}>Rozvrh hodin</div>
+                    <div style={{ fontFamily:'var(--display)', fontSize:16, fontWeight:600, color:'#1a1530', marginBottom:10 }}>Přidat novou událost</div>
+                    <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8 }}>
+                      <select value={newEvent.day} onChange={(e) => setNewEvent({...newEvent, day: +e.target.value})} style={{ border:'1px solid #e6e6ec', borderRadius:10, padding:'9px 10px', fontSize:14, background:'#fff' }}>
+                        <option value="0">Pondělí</option><option value="1">Úterý</option><option value="2">Středa</option>
+                        <option value="3">Čtvrtek</option><option value="4">Pátek</option><option value="5">Sobota</option><option value="6">Neděle</option>
+                      </select>
+                      <input type="time" value={newEvent.time} onChange={(e) => setNewEvent({...newEvent, time: e.target.value})} style={{ border:'1px solid #e6e6ec', borderRadius:10, padding:'9px 10px', fontSize:14 }} />
+                      <select value={newEvent.type} onChange={(e) => {
+                        const emojiMap = { sport:'⚽', hudba:'🎵', skola:'🏫', vylet:'🚌', rodina:'👨‍👩‍👧' };
+                        setNewEvent({...newEvent, type: e.target.value, emoji: emojiMap[e.target.value] || '📌'});
+                      }} style={{ border:'1px solid #e6e6ec', borderRadius:10, padding:'9px 10px', fontSize:14, background:'#fff' }}>
+                        <option value="sport">⚽ Sport</option><option value="hudba">🎵 Hudba</option>
+                        <option value="skola">🏫 Škola</option><option value="vylet">🚌 Výlet</option>
+                        <option value="rodina">👨‍👩‍👧 Rodina</option>
+                      </select>
+                      <input value={newEvent.emoji} onChange={(e) => setNewEvent({...newEvent, emoji: e.target.value})} placeholder="emoji" maxLength={2} style={{ border:'1px solid #e6e6ec', borderRadius:10, padding:'9px 10px', fontSize:18, textAlign:'center' }} />
+                    </div>
+                    <input value={newEvent.title} onChange={(e) => setNewEvent({...newEvent, title: e.target.value})} placeholder="Název (např. Fotbal, Klavír)" style={{ width:'100%', border:'1px solid #e6e6ec', borderRadius:10, padding:'10px 12px', fontSize:14, marginTop:8 }} />
+                    <div onClick={() => {
+                      if (!newEvent.title.trim()) return;
+                      const ev = { id: 'e'+Date.now(), time: newEvent.time, dur:1, emoji: newEvent.emoji, title: newEvent.title.trim(), type: newEvent.type };
+                      setWeekEvents(arr => arr.map((day, i) => i === newEvent.day ? [...day, ev].sort((a,b) => a.time.localeCompare(b.time)) : day));
+                      setNewEvent({...newEvent, title:''});
+                      audio.coin();
+                      showToast('Událost přidána', '✅');
+                    }} style={{ cursor:'pointer', marginTop:10, background:'var(--accent)', color:'#fff', borderRadius:12, padding:'11px 14px', textAlign:'center', fontWeight:800, fontSize:14 }}>+ Přidat událost</div>
+                  </div>
+
+                  {/* Seznam událostí po dnech */}
+                  {['Pondělí','Úterý','Středa','Čtvrtek','Pátek','Sobota','Neděle'].map((dayName, dIdx) => {
+                    const evs = weekEvents[dIdx] || [];
+                    if (evs.length === 0) return null;
+                    return (
+                      <div key={dIdx} style={{ background:'#fff', borderRadius:20, padding:14, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
+                        <div style={{ fontFamily:'var(--display)', fontSize:15, fontWeight:600, color:'#1a1530', marginBottom:8 }}>{dayName}</div>
+                        <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
+                          {evs.map((e) => (
+                            <div key={e.id} style={{ display:'flex', alignItems:'center', gap:9, background:'#f7f7fb', borderRadius:11, padding:'9px 11px' }}>
+                              <div style={{ fontSize:20 }}>{e.emoji}</div>
+                              <div style={{ fontFamily:'monospace', fontSize:13, fontWeight:700, color:'#9a96ac', minWidth:46 }}>{e.time}</div>
+                              <div style={{ flex:1, minWidth:0, fontSize:14, fontWeight:600, color:'#1a1530' }}>{e.title}</div>
+                              <div onClick={() => {
+                                setWeekEvents(arr => arr.map((day, i) => i === dIdx ? day.filter(x => x.id !== e.id) : day));
+                                audio.undo();
+                              }} style={{ cursor:'pointer', color:'#dc2626', fontSize:18, padding:'0 6px' }}>×</div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
+
+                  {weekEvents.every(d => d.length === 0) && (
+                    <div style={{ background:'#fef9c3', borderRadius:16, padding:14, fontSize:13, fontWeight:700, color:'#854d0e', textAlign:'center' }}>
+                      Zatím nemáš žádné události. Přidej první výše.
+                    </div>
+                  )}
+
+                  {/* Střídavá péče info (zachováno) */}
+                  <div style={{ background:'#fff', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
+                    <div style={{ fontFamily:'var(--display)', fontSize:16, fontWeight:600, color:'#1a1530', marginBottom:9 }}>Kdo je dnes doma</div>
+                    <div style={{ fontSize:13, fontWeight:700, color:'#5a566e', lineHeight:1.5 }}>Nastavuje se v tabu „Dnes". Barevný štítek na hlavní obrazovce dítěti jasně řekne kdo je doma.</div>
+                  </div>
+
+                  {/* Rozvrh hodin - zachováno */}
+                  <div style={{ background:'#fff', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
+                    <div style={{ fontFamily:'var(--display)', fontSize:16, fontWeight:600, color:'#1a1530', marginBottom:10 }}>Rozvrh hodin (škola)</div>
                     <div style={{ display:'flex', gap:6, marginBottom:12 }}>
                       {rozvrhDayTabs.map((d, di) => (
                         <div key={di} onClick={() => { audio.tap(); setRozvrhDay(di); }} style={{ cursor:'pointer', flex:1, textAlign:'center', padding:'9px 0', borderRadius:11, background: d.bg, color: d.ink, fontFamily:'var(--display)', fontWeight:600, fontSize:15 }}>{d.label}</div>
@@ -2117,6 +2386,7 @@ function App() {
                           <span style={{ color:'#e23', fontWeight:800, marginLeft:2 }}>✕</span>
                         </div>
                       ))}
+                      {rozvrhEditItems.length === 0 && <div style={{ fontSize:12, fontStyle:'italic', color:'#9a96ac' }}>Žádné hodiny v tento den</div>}
                     </div>
                     <div style={{ fontSize:12, fontWeight:800, color:'#9a96ac', marginBottom:7 }}>Přidat předmět:</div>
                     <div style={{ display:'flex', flexWrap:'wrap', gap:7 }}>
@@ -2156,9 +2426,9 @@ function App() {
                             </div>
                             <div onClick={() => triggerTask(g.task)} style={{ cursor:'pointer', flex:'none', background:'#eef4ff', color:'var(--accent)', fontWeight:800, fontSize:13, padding:'9px 11px', borderRadius:11 }}>Test</div>
                           </div>
-                          <div onClick={() => { try { navigator.clipboard.writeText('https://'+g.url); } catch(e) {} showToast('URL zkopírována', '📋'); }} style={{ cursor:'pointer', display:'flex', alignItems:'center', gap:7, marginTop:7, background:'#f7f7fb', borderRadius:10, padding:'8px 10px' }}>
+                          <div onClick={() => { if (!g.url) return; try { navigator.clipboard.writeText(g.url); } catch(e) {} showToast('URL zkopírována', '📋'); }} style={{ cursor: g.url ? 'pointer' : 'default', opacity: g.url ? 1 : 0.4, display:'flex', alignItems:'center', gap:7, marginTop:7, background:'#f7f7fb', borderRadius:10, padding:'8px 10px' }}>
                             <span style={{ fontSize:13 }}>🔗</span>
-                            <span style={{ flex:1, minWidth:0, fontFamily:'monospace', fontSize:11, fontWeight:700, color:'#6a6680', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{g.url}</span>
+                            <span style={{ flex:1, minWidth:0, fontFamily:'monospace', fontSize:11, fontWeight:700, color:'#6a6680', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{g.url || '— vyber akci —'}</span>
                             <span style={{ fontSize:12, fontWeight:800, color:'var(--accent)', whiteSpace:'nowrap' }}>📋 Kopírovat</span>
                           </div>
                         </div>
@@ -2201,6 +2471,95 @@ function App() {
                       </div>
                     </div>
                   </div>
+
+                  {/* Worry box messages - co dítě poslalo */}
+                  <div style={{ background:'#fff', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
+                    <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:8 }}>
+                      <div style={{ fontFamily:'var(--display)', fontSize:18, fontWeight:600, color:'#1a1530' }}>Vzkazy od dítěte 💜</div>
+                      {worryMessages.filter(m => !m.read).length > 0 && (
+                        <div style={{ background:'#dc2626', color:'#fff', fontSize:11, fontWeight:900, borderRadius:8, padding:'2px 8px' }}>{worryMessages.filter(m => !m.read).length} nové</div>
+                      )}
+                    </div>
+                    <div style={{ fontSize:12, fontWeight:700, color:'#9a96ac', marginBottom:10 }}>Pokud dítě klepne na 💬 na hlavní obrazovce, může ti napsat soukromý vzkaz.</div>
+                    {worryMessages.length === 0 ? (
+                      <div style={{ fontSize:13, fontWeight:700, color:'#9a96ac', fontStyle:'italic' }}>Zatím nic. 🤍</div>
+                    ) : (
+                      <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
+                        {worryMessages.map((m) => {
+                          const dt = new Date(m.date);
+                          const dtStr = dt.getDate() + '.' + (dt.getMonth()+1) + '. ' + pad2(dt.getHours()) + ':' + pad2(dt.getMinutes());
+                          return (
+                            <div key={m.id} style={{ background: m.read ? '#f7f7fb' : '#fef3f3', borderRadius:14, padding:'12px 14px', borderLeft: m.read ? 'none' : '3px solid #dc2626' }}>
+                              <div style={{ fontSize:11, fontWeight:800, color:'#9a96ac', marginBottom:4 }}>{dtStr}{!m.read && ' · NOVÉ'}</div>
+                              <div style={{ fontSize:14, color:'#1a1530', whiteSpace:'pre-wrap', lineHeight:1.4 }}>{m.text}</div>
+                              <div style={{ display:'flex', gap:6, marginTop:8 }}>
+                                {!m.read && (
+                                  <div onClick={() => setWorryMessages(arr => arr.map(x => x.id === m.id ? {...x, read:true} : x))} style={{ cursor:'pointer', background:'#dcfce7', color:'#166534', fontSize:11, fontWeight:800, padding:'4px 9px', borderRadius:6 }}>✓ Přečteno</div>
+                                )}
+                                <div onClick={() => setWorryMessages(arr => arr.filter(x => x.id !== m.id))} style={{ cursor:'pointer', background:'#fef2f2', color:'#991b1b', fontSize:11, fontWeight:800, padding:'4px 9px', borderRadius:6 }}>Smazat</div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Reading log */}
+                  <div style={{ background:'#fff', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
+                    <div style={{ fontFamily:'var(--display)', fontSize:18, fontWeight:600, color:'#1a1530' }}>Čtení 📚</div>
+                    <div style={{ fontSize:12, fontWeight:700, color:'#9a96ac', marginBottom:10, marginTop:4 }}>Knihy a stránky, které dítě přečetlo. Přidej knihu zde, dítě pak v Odměnách klepne „přečetl jsem stránky".</div>
+                    {readingList.length === 0 ? (
+                      <div style={{ fontSize:13, fontWeight:700, color:'#9a96ac', fontStyle:'italic', marginBottom:10 }}>Zatím žádná kniha.</div>
+                    ) : (
+                      <div style={{ display:'flex', flexDirection:'column', gap:6, marginBottom:10 }}>
+                        {readingList.map((b) => (
+                          <div key={b.id} style={{ background:'#f7f7fb', borderRadius:12, padding:'10px 12px' }}>
+                            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', gap:8 }}>
+                              <div style={{ flex:1, minWidth:0 }}>
+                                <div style={{ fontSize:14, fontWeight:700, color:'#1a1530' }}>📖 {b.title}</div>
+                                <div style={{ fontSize:12, color:'#9a96ac', fontWeight:700 }}>{b.pagesRead} / {b.pagesTotal} stránek</div>
+                              </div>
+                              <div onClick={() => setReadingList(arr => arr.filter(x => x.id !== b.id))} style={{ cursor:'pointer', color:'#dc2626', fontSize:16, padding:'0 4px' }}>×</div>
+                            </div>
+                            <div style={{ marginTop:6, height:6, background:'#e5e7eb', borderRadius:3, overflow:'hidden' }}>
+                              <div style={{ height:'100%', width: Math.min(100, (b.pagesRead / Math.max(1, b.pagesTotal)) * 100) + '%', background:'linear-gradient(90deg, #c084fc, #a855f7)' }}/>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    <div style={{ display:'flex', gap:6 }}>
+                      <input value={newBookTitle} onChange={(e) => setNewBookTitle(e.target.value)} placeholder="Název knihy" style={{ flex:1, minWidth:0, border:'1px solid #e3e3ea', borderRadius:10, padding:'9px 11px', fontSize:13 }}/>
+                      <input value={newBookPages} onChange={(e) => setNewBookPages(e.target.value)} placeholder="str." inputMode="numeric" style={{ width:64, border:'1px solid #e3e3ea', borderRadius:10, padding:'9px 8px', fontSize:13, textAlign:'center' }}/>
+                      <div onClick={() => {
+                        const title = newBookTitle.trim();
+                        const total = parseInt(newBookPages) || 0;
+                        if (!title || total <= 0) return;
+                        setReadingList(arr => [...arr, { id:'b'+Date.now(), title, pagesRead:0, pagesTotal: total }]);
+                        setNewBookTitle(''); setNewBookPages('');
+                        audio.coin();
+                      }} style={{ cursor:'pointer', background:'var(--accent)', color:'#fff', fontSize:13, fontWeight:800, padding:'9px 12px', borderRadius:10 }}>+ Přidat</div>
+                    </div>
+                  </div>
+
+                  {/* Sticker album */}
+                  <div style={{ background:'#fff', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
+                    <div style={{ fontFamily:'var(--display)', fontSize:18, fontWeight:600, color:'#1a1530' }}>Sběratelské nálepky 🏆</div>
+                    <div style={{ fontSize:12, fontWeight:700, color:'#9a96ac', marginBottom:10, marginTop:4 }}>Dítě je získává automaticky za milníky. Vidí je v Odměnách.</div>
+                    {stickers.length === 0 ? (
+                      <div style={{ fontSize:13, fontWeight:700, color:'#9a96ac', fontStyle:'italic' }}>Zatím žádná nálepka — sbírá se za 7denní streak, 50 přečtených stránek, první rutinu…</div>
+                    ) : (
+                      <div style={{ display:'grid', gridTemplateColumns:'repeat(4, 1fr)', gap:8 }}>
+                        {stickers.map((s, i) => (
+                          <div key={i} style={{ background:'#f7f7fb', borderRadius:14, padding:'12px 6px', textAlign:'center' }}>
+                            <div style={{ fontSize:36 }}>{s.emoji}</div>
+                            <div style={{ fontSize:10, fontWeight:800, color:'#1a1530', marginTop:4, lineHeight:1.2 }}>{s.name}</div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </div>
                 )}
 
@@ -2235,7 +2594,46 @@ function App() {
                   <div style={{ background:'#fff', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
                     <div style={{ fontFamily:'var(--display)', fontSize:18, fontWeight:600, color:'#1a1530', marginBottom:10 }}>Dítě 👧🧒</div>
                     <div style={{ fontSize:13, fontWeight:700, color:'#5a566e', marginBottom:8 }}>Jméno dítěte</div>
-                    <input value={childName} onChange={(e) => setChildName(e.target.value)} placeholder="Jméno dítěte" style={{ width:'100%', border:'1px solid #e6e6ec', borderRadius:12, padding:'10px 12px', fontSize:14 }} />
+                    <input value={childName} onChange={(e) => setChildName(e.target.value)} placeholder="Jméno dítěte" style={{ width:'100%', border:'1px solid #e6e6ec', borderRadius:12, padding:'10px 12px', fontSize:14, marginBottom:12 }} />
+                    <div style={{ fontSize:13, fontWeight:700, color:'#5a566e', marginBottom:8 }}>Fotka 🖼️</div>
+                    <div style={{ display:'flex', alignItems:'center', gap:12 }}>
+                      <div style={{ width:72, height:72, borderRadius:'50%', background: childPhoto ? `url(${childPhoto}) center/cover` : '#f0f0f7', display:'flex', alignItems:'center', justifyContent:'center', fontSize:32, color:'#9a96ac', border:'2px solid #e6e6ec' }}>
+                        {!childPhoto && '👤'}
+                      </div>
+                      <div style={{ flex:1, display:'flex', flexDirection:'column', gap:6 }}>
+                        <label style={{ cursor:'pointer', background:'#eef4ff', color:'var(--accent)', borderRadius:10, padding:'9px 12px', textAlign:'center', fontWeight:800, fontSize:13 }}>
+                          {childPhoto ? 'Změnit fotku' : 'Nahrát fotku'}
+                          <input type="file" accept="image/*" onChange={(e) => {
+                            const file = e.target.files && e.target.files[0];
+                            if (!file) return;
+                            // Resize na ~256px aby se vešlo do localStorage
+                            const reader = new FileReader();
+                            reader.onload = (ev) => {
+                              const img = new Image();
+                              img.onload = () => {
+                                const canvas = document.createElement('canvas');
+                                const size = 256;
+                                canvas.width = size; canvas.height = size;
+                                const ctx = canvas.getContext('2d');
+                                // center crop
+                                const minDim = Math.min(img.width, img.height);
+                                const sx = (img.width - minDim) / 2;
+                                const sy = (img.height - minDim) / 2;
+                                ctx.drawImage(img, sx, sy, minDim, minDim, 0, 0, size, size);
+                                const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
+                                setChildPhoto(dataUrl);
+                                showToast('Fotka uložena', '🖼️');
+                              };
+                              img.src = ev.target.result;
+                            };
+                            reader.readAsDataURL(file);
+                          }} style={{ display:'none' }} />
+                        </label>
+                        {childPhoto && (
+                          <div onClick={() => setChildPhoto(null)} style={{ cursor:'pointer', background:'#fef2f2', color:'#991b1b', borderRadius:10, padding:'9px 12px', textAlign:'center', fontWeight:800, fontSize:13 }}>Odstranit</div>
+                        )}
+                      </div>
+                    </div>
                   </div>
 
                   <div style={{ background:'#fff', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
@@ -2296,21 +2694,29 @@ function App() {
                   </div>
 
                   <div style={{ background:'#fff', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
-                    <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'#1a1530' }}>Verze: Domácí pomocník v5</div>
-                    <div style={{ fontSize:12, color:'#9a96ac', marginTop:4 }}>Build 2026-06-20 · 20:01</div>
+                    <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'#1a1530' }}>Verze: Domácí pomocník v6</div>
+                    <div style={{ fontSize:12, color:'#9a96ac', marginTop:4 }}>Build 2026-06-20 · 20:23</div>
                   </div>
                 </div>
                 )}
               </div>
 
-              {/* bottom nav */}
-              <div style={{ display:'flex', background:'#fff', borderTop:'1px solid #ececf2', padding:'9px 6px 14px' }}>
-                {parentTabsR.map((t) => (
-                  <div key={t.id} onClick={() => { audio.tap(); setParentTab(t.id); }} style={{ cursor:'pointer', flex:1, textAlign:'center', padding:'5px 0' }}>
-                    <div style={{ fontSize:21, opacity: t.op }}>{t.icon}</div>
-                    <div style={{ fontSize:11, fontWeight:800, color: t.ink, marginTop:2 }}>{t.label}</div>
-                  </div>
-                ))}
+              {/* bottom nav (scrollable na mobilu) */}
+              <div style={{ display:'flex', background:'#fff', borderTop:'1px solid #ececf2', padding:'9px 6px 14px', overflowX:'auto', WebkitOverflowScrolling:'touch' }}>
+                {parentTabsR.map((t) => {
+                  const showBadge = (t.id === 'body' && pendingList.length > 0);
+                  return (
+                    <div key={t.id} onClick={() => { audio.tap(); setParentTab(t.id); }} style={{ cursor:'pointer', flex:'0 0 auto', minWidth:64, textAlign:'center', padding:'5px 4px', position:'relative' }}>
+                      <div style={{ fontSize:21, opacity: t.op, position:'relative', display:'inline-block' }}>
+                        {t.icon}
+                        {showBadge && (
+                          <div style={{ position:'absolute', top:-4, right:-10, background:'#dc2626', color:'#fff', fontSize:10, fontWeight:900, borderRadius:8, minWidth:16, height:16, lineHeight:'16px', padding:'0 4px', boxShadow:'0 2px 4px rgba(0,0,0,.2)' }}>{pendingList.length}</div>
+                        )}
+                      </div>
+                      <div style={{ fontSize:11, fontWeight:800, color: t.ink, marginTop:2, whiteSpace:'nowrap' }}>{t.label}</div>
+                    </div>
+                  );
+                })}
               </div>
             </div>
             )}
