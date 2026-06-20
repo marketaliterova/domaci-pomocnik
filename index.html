@@ -31,6 +31,8 @@
   @keyframes slideUp { 0% { transform: translateY(26px); opacity: 0; } 100% { transform: translateY(0); opacity: 1; } }
   @keyframes shimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
   @keyframes blink { 0%,92%,100% { transform: scaleY(1); } 96% { transform: scaleY(.1); } }
+  @keyframes shake { 0%,100% { transform: translateX(0); } 25% { transform: translateX(-3px); } 75% { transform: translateX(3px); } }
+  @keyframes softPulse { 0%,100% { transform: scale(1); } 50% { transform: scale(1.06); } }
   @keyframes toastIn { 0% { opacity: 0; transform: translateY(-16px) scale(.96); } 100% { opacity: 1; transform: translateY(0) scale(1); } }
   @keyframes spinSlow { 0% { transform: rotate(0); } 100% { transform: rotate(360deg); } }
 </style>
@@ -46,22 +48,22 @@ const { useState, useEffect, useRef, useMemo, useCallback } = React;
 // ====================================================================
 
 const MORNING_STEPS = [
-  { id: 'vstat',    t: 'Vstát a ustlat postel',         icon: '🛏️', hint: 'Hezky narovnej polštář a přikrývku.', on: true },
-  { id: 'wc',       t: 'Na záchod a umýt ruce',         icon: '🧼', hint: 'Mýdlo a teplá voda, počítej do dvaceti.', on: true },
-  { id: 'zuby',     t: 'Vyčistit zuby',                 icon: '🪥', hint: 'Nahoře i dole, krouživě, celé 2 minuty.', on: true },
-  { id: 'obleci',   t: 'Obléknout se podle počasí',     icon: '🧥', hint: 'Dnes je ráno chládno – vezmi si mikinu a bundu.', on: true },
-  { id: 'snidane',  t: 'Nasnídat se',                   icon: '🥣', hint: 'Ať máš sílu na celé dopoledne.', on: true },
-  { id: 'aktovka',  t: 'Zkontrolovat aktovku',          icon: '🎒', hint: 'Úkoly, svačina, láhev a věci na trénink.', on: true },
-  { id: 'boty',     t: 'Boty, bunda a vyrazit',         icon: '👟', hint: 'Sraz u dveří v 7:50. Zvládneš to v pohodě!', on: true },
+  { id: 'vstat',    t: 'Vstát a ustlat postel',         icon: '🛏️', hint: 'Hezky narovnej polštář a přikrývku.', on: true, secs: 120 },
+  { id: 'wc',       t: 'Na záchod a umýt ruce',         icon: '🧼', hint: 'Mýdlo a teplá voda, počítej do dvaceti.', on: true, secs: 120 },
+  { id: 'zuby',     t: 'Vyčistit zuby',                 icon: '🪥', hint: 'Nahoře i dole, krouživě, celé 2 minuty.', on: true, secs: 150 },
+  { id: 'obleci',   t: 'Obléknout se podle počasí',     icon: '🧥', hint: 'Dnes je ráno chládno – vezmi si mikinu a bundu.', on: true, secs: 300 },
+  { id: 'snidane',  t: 'Nasnídat se',                   icon: '🥣', hint: 'Ať máš sílu na celé dopoledne.', on: true, secs: 600 },
+  { id: 'aktovka',  t: 'Zkontrolovat aktovku',          icon: '🎒', hint: 'Úkoly, svačina, láhev a věci na trénink.', on: true, secs: 120 },
+  { id: 'boty',     t: 'Boty, bunda a vyrazit',         icon: '👟', hint: 'Sraz u dveří v 7:50. Zvládneš to v pohodě!', on: true, secs: 120 },
 ];
 
 const EVENING_STEPS = [
-  { id: 'uklid',    t: 'Uklidit po sobě talíř',         icon: '🍽️', hint: 'Do myčky a stůl utři dohladka.', on: true },
-  { id: 'priprava', t: 'Připravit věci na zítra',       icon: '🎒', hint: 'Mrkni na Rozvrh & balení a sbal aktovku podle zítřejších předmětů.', on: true },
-  { id: 'sprcha',   t: 'Osprchovat se',                 icon: '🚿', hint: 'Vlasy i za ušima. Ručník pak pověs.', on: true },
-  { id: 'zuby',     t: 'Vyčistit zuby',                 icon: '🪥', hint: 'Večer obzvlášť pořádně, ať nemáš kazy.', on: true },
-  { id: 'cteni',    t: 'Číst 15 minut',                 icon: '📖', hint: 'Vyber si knížku, kterou máš rád.', on: true },
-  { id: 'spani',    t: 'Zhasnout a spát',               icon: '🌙', hint: 'Zítra tě čeká fajn den. Dobrou noc!', on: true },
+  { id: 'uklid',    t: 'Uklidit po sobě talíř',         icon: '🍽️', hint: 'Do myčky a stůl utři dohladka.', on: true, secs: 180 },
+  { id: 'priprava', t: 'Připravit věci na zítra',       icon: '🎒', hint: 'Mrkni na Rozvrh & balení a sbal aktovku podle zítřejších předmětů.', on: true, secs: 300 },
+  { id: 'sprcha',   t: 'Osprchovat se',                 icon: '🚿', hint: 'Vlasy i za ušima. Ručník pak pověs.', on: true, secs: 600 },
+  { id: 'zuby',     t: 'Vyčistit zuby',                 icon: '🪥', hint: 'Večer obzvlášť pořádně, ať nemáš kazy.', on: true, secs: 150 },
+  { id: 'cteni',    t: 'Číst 15 minut',                 icon: '📖', hint: 'Vyber si knížku, kterou máš rád.', on: true, secs: 900 },
+  { id: 'spani',    t: 'Zhasnout a spát',               icon: '🌙', hint: 'Zítra tě čeká fajn den. Dobrou noc!', on: true, secs: 60 },
 ];
 
 const SHOP_DEFAULT = [
@@ -181,16 +183,21 @@ const RIKI_PHRASES = {
 };
 
 // Návrh oblečení podle teploty
-function suggestOutfit(tempC, rain, wind) {
+// tempC = relevantní teplota (typicky max za den)
+// rainProb = 0-1 (jen pokud opravdu prší — práh 60%)
+// wind = km/h
+function suggestOutfit(tempC, rainProb, wind) {
   if (tempC == null) return null;
   var parts = [];
-  if (tempC < 0)        parts.push({ icon:'🧥', t:'zimní bunda' }, { icon:'🧣', t:'šála a čepice' }, { icon:'🧤', t:'rukavice' });
-  else if (tempC < 8)   parts.push({ icon:'🧥', t:'teplá bunda' }, { icon:'🧢', t:'čepice' });
-  else if (tempC < 15)  parts.push({ icon:'🧥', t:'mikina nebo lehká bunda' });
-  else if (tempC < 22)  parts.push({ icon:'👕', t:'tričko + mikina v batohu' });
+  if (tempC < -5)       parts.push({ icon:'🧥', t:'zimní bunda' }, { icon:'🧣', t:'šála a čepice' }, { icon:'🧤', t:'rukavice' });
+  else if (tempC < 5)   parts.push({ icon:'🧥', t:'zimní bunda' }, { icon:'🧢', t:'čepice' });
+  else if (tempC < 12)  parts.push({ icon:'🧥', t:'teplá bunda' });
+  else if (tempC < 18)  parts.push({ icon:'🧥', t:'mikina nebo lehká bunda' });
+  else if (tempC < 23)  parts.push({ icon:'👕', t:'tričko + mikina v batohu' });
   else                  parts.push({ icon:'👕', t:'tričko a kraťasy' });
-  if (rain && rain > 0.3) parts.push({ icon:'☔', t:'pláštěnka nebo deštník' });
-  if (wind && wind > 30)  parts.push({ icon:'💨', t:'pozor, fouká!' });
+  // Deštník jen když je opravdu velká šance že bude pršet (60%+)
+  if (rainProb != null && rainProb > 0.6) parts.push({ icon:'☔', t:'pláštěnka nebo deštník' });
+  if (wind != null && wind > 35)  parts.push({ icon:'💨', t:'pozor, fouká!' });
   return parts;
 }
 
@@ -266,6 +273,8 @@ const saveState = (s) => {
       // v7 sync
       syncUrl: s.syncUrl,
       lastSyncTime: s.lastSyncTime,
+      // v8 tamagotchi
+      petMood: s.petMood, petEnergy: s.petEnergy, petSleeping: s.petSleeping, petLastDecay: s.petLastDecay,
     };
     localStorage.setItem(LS_KEY, JSON.stringify(persistable));
   } catch(e) {}
@@ -441,7 +450,10 @@ function useWeather(soundOn) {
 
   const outfit = useMemo(() => {
     if (!data) return null;
-    return suggestOutfit(data.tmin != null ? data.tmin : data.temp, (data.rainProb||0)/100, data.wind);
+    // Pro doporučení oblečení použij max denní teplotu (kid bude venku v nejteplejším čase),
+    // ne aktuální (ráno bývá mnohem chladněji než odpoledne)
+    const t = data.tmax != null ? data.tmax : data.temp;
+    return suggestOutfit(t, (data.rainProb||0)/100, data.wind);
   }, [data]);
 
   return { data, err, visual, outfit };
@@ -630,6 +642,14 @@ function App() {
   const [syncError, setSyncError] = useState(null);
   const lastPushedStateRef = useRef(null);
   const initialPullDoneRef = useRef(false);
+  // v8 Tamagotchi
+  const [petMood, setPetMood] = useState(persisted && persisted.petMood != null ? persisted.petMood : 70);    // 0-100 pohoda
+  const [petEnergy, setPetEnergy] = useState(persisted && persisted.petEnergy != null ? persisted.petEnergy : 70); // 0-100 energie
+  const [petSleeping, setPetSleeping] = useState(persisted && persisted.petSleeping || false);
+  const [petLastDecay, setPetLastDecay] = useState(persisted && persisted.petLastDecay || Date.now());
+  // v8 step timer (časovač pro děti s časovou slepotou)
+  const [currentStepStart, setCurrentStepStart] = useState(null); // timestamp začátku aktuálního kroku
+  const [nowTick, setNowTick] = useState(Date.now()); // pro re-render každou vteřinu
   // weekEvents: pole 7 polí (Po..Ne), každé je list eventů {id, time, dur, emoji, title, type}
   const [weekEvents, setWeekEvents] = useState((persisted && persisted.weekEvents) || WEEK_EVENTS.map(arr => arr.slice()));
   const [worryMessages, setWorryMessages] = useState((persisted && persisted.worryMessages) || []);
@@ -678,6 +698,7 @@ function App() {
       moodLog, lastMoodDate, parentPin, childName,
       weekEvents, worryMessages, readingList, stickers, childPhoto, choresList, weeklyChores,
       syncUrl, lastSyncTime,
+      petMood, petEnergy, petSleeping, petLastDecay,
     });
   }, [theme, points, totalXp, streak, morning, evening, doneM, doneE, whoHome, departMin,
       shopItems, shopState, choreState, pendingApprovals, packState, packAwarded,
@@ -686,7 +707,8 @@ function App() {
       streakDays, streakLastDate, eveningStreakDays, eveningStreakLast,
       moodLog, lastMoodDate, parentPin, childName,
       weekEvents, worryMessages, readingList, stickers, childPhoto, choresList, weeklyChores,
-      syncUrl, lastSyncTime]);
+      syncUrl, lastSyncTime,
+      petMood, petEnergy, petSleeping, petLastDecay]);
 
   // --- helpers
   const tv = useMemo(() => THEMES[theme] || THEMES.cisto, [theme]);
@@ -753,11 +775,15 @@ function App() {
     const cur = doneMap(kind);
     const map = { ...cur, [id]: true };
     setDone(kind, map);
+    // Reset step timer pro další krok
+    setCurrentStepStart(Date.now());
     const allDone = list.every(s => map[s.id]);
     if (allDone) {
       audio.success(); confetti.fire({ n: 110 });
       setPoints(p => p + 10); setTotalXp(x => x + 10);
       bumpStreak(kind);
+      // Tamagotchi: dokončená rutina hodně nabíjí
+      feedPet(15, 20);
       // riki tančí + mluví + praise
       setRikiDancing(true);
       setTimeout(() => setRikiDancing(false), 3000);
@@ -766,10 +792,12 @@ function App() {
       if (msg) setTimeout(() => tts.speak('praise-spoken', msg), 1500);
     } else {
       audio.ding(); confetti.fire({ y: 300, n: 26 });
+      // Tamagotchi: každý krok malou dávku
+      feedPet(2, 3);
       // občas Riki řekne hlášku pro povzbuzení (cca každý 3. krok)
       if (Math.random() < 0.35) tts.sayRandom('stepDone', RIKI_PHRASES.stepDone);
     }
-  }, [morning, evening, doneM, doneE, audio, confetti, bumpStreak, tts, showPraise]);
+  }, [morning, evening, doneM, doneE, audio, confetti, bumpStreak, tts, showPraise, feedPet]);
 
   const skipStep = useCallback((kind) => {
     const list = steps(kind), map = doneMap(kind);
@@ -973,10 +1001,12 @@ function App() {
   const wD = weather.data;
   const wAdvice = (() => {
     if (!wD) return 'Načítám počasí…';
-    if (wD.tmin != null && wD.tmin < 5) return 'Ráno bude zima, obleč se tepleji.';
+    if (wD.tmin != null && wD.tmin < 5) return 'Ráno bude chladno, obleč se tepleji.';
     if ((wD.rainProb || 0) > 60) return 'Bude pršet, vezmi si pláštěnku.';
-    if (wD.tmax != null && wD.tmax > 22) return 'Bude teplo, oblékni si lehké tričko.';
-    return 'Vypadá to na klidný den.';
+    if (wD.tmax != null && wD.tmax >= 25) return 'Bude horko, dej si lehké tričko.';
+    if (wD.tmax != null && wD.tmax >= 20) return 'Bude teplo, lehké tričko stačí.';
+    if (wD.tmax != null && wD.tmax >= 12) return 'Vezmi si mikinu.';
+    return 'Bude chladněji, obleč se tepleji.';
   })();
   const wWearLine = weather.outfit ? weather.outfit.map(o => o.icon).join(' ') : '🌤️';
   const wInfo = {
@@ -1356,12 +1386,78 @@ function App() {
     reader.readAsText(file);
   }, [showToast]);
 
-  // ====================================================================
-  // v7 SYNC LOGIKA
+  // v8: Tamagotchi - decay v čase + feed při aktivitách
+  // Decay: 2 body za hodinu (pomalu), když spí tak nic
+  useEffect(() => {
+    const tick = () => {
+      const now = Date.now();
+      const hoursSince = (now - petLastDecay) / (1000 * 60 * 60);
+      if (petSleeping || hoursSince < 0.05) return; // min 3 min mezi decay updates
+      const decayPoints = Math.floor(hoursSince * 2);
+      if (decayPoints > 0) {
+        setPetMood(m => Math.max(0, m - decayPoints));
+        setPetEnergy(e => Math.max(0, e - decayPoints));
+        setPetLastDecay(now);
+      }
+    };
+    tick();
+    const id = setInterval(tick, 60 * 1000);
+    return () => clearInterval(id);
+  }, [petLastDecay, petSleeping]);
+
+  // Feed: aktivity dítěte zvedají pohodu/energii
+  const feedPet = useCallback((mood, energy) => {
+    setPetMood(m => Math.min(100, m + (mood || 0)));
+    setPetEnergy(e => Math.min(100, e + (energy || 0)));
+  }, []);
+
+  const togglePetSleep = useCallback(() => {
+    setPetSleeping(s => {
+      const newSleep = !s;
+      if (newSleep) {
+        showToast(`${mascotName} jde spát 😴`, '💤');
+        audio.undo();
+        if (ttsOn) tts.speak('pet-sleep', `Dobrou noc, vrátím se až přijdeš zpátky.`);
+      } else {
+        showToast(`${mascotName} se probudil!`, '☀️');
+        audio.ding();
+        if (ttsOn) tts.speak('pet-wake', `Ahoj, už jsi zpátky!`);
+        setPetLastDecay(Date.now()); // reset decay timer na probuzení
+      }
+      return newSleep;
+    });
+  }, [mascotName, showToast, audio, ttsOn, tts]);
+
+  // Pet stav podle hodnot
+  const petStatus = (() => {
+    if (petSleeping) return { mood:'sleeping', label:'spí 💤', color:'#7c5cff', emoji:'😴' };
+    const avg = (petMood + petEnergy) / 2;
+    if (avg < 20) return { mood:'sad',     label:'smutný 😢',  color:'#dc2626', emoji:'😢' };
+    if (avg < 50) return { mood:'tired',   label:'unavený 😐', color:'#f59e0b', emoji:'😐' };
+    if (avg < 80) return { mood:'ok',      label:'v pohodě 🙂', color:'#16a34a', emoji:'🙂' };
+    return            { mood:'great',   label:'štastný 😄', color:'#16a34a', emoji:'😄' };
+  })();
+
+
   // ====================================================================
 
+  // v8: Start timer pro aktuální krok když dítě vstoupí do rutiny
+  useEffect(() => {
+    if (screen === 'routine' && currentStepStart == null) {
+      setCurrentStepStart(Date.now());
+    } else if (screen !== 'routine') {
+      setCurrentStepStart(null);
+    }
+  }, [screen, currentStepStart]);
+
+  // Re-render každou vteřinu pro plynulý časovač (jen když je rutina aktivní)
+  useEffect(() => {
+    if (screen !== 'routine') return;
+    const id = setInterval(() => setNowTick(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [screen]);
+
   // Hesla a funkce které ze stavu sestavují snapshot na server.
-  // Necháváme tam jen "data" pole (ne UI prefence jako theme).
   const buildSnapshot = useCallback(() => ({
     points, totalXp,
     morning, evening, doneM, doneE,
@@ -1716,25 +1812,63 @@ function App() {
           {/* RIGHT */}
           <div style={{ display:'flex', flexDirection:'column', gap:20, minHeight:0 }}>
 
-            {/* maskot */}
-            <div onClick={() => go('rewards')} style={{ cursor:'pointer', background:'var(--maskotCard)', border:'var(--hair)', borderRadius:28, padding:'22px 24px', display:'flex', alignItems:'center', gap:18, boxShadow:'var(--shadow)', position:'relative', overflow:'hidden', animation: ent(2) }}>
-              <div style={{ flex:'none' }}><Mascot size={96} dancing={rikiDancing} sleeping={isRikiSleeping}/></div>
-              <div style={{ flex:1, minWidth:0 }}>
-                <div style={{ fontFamily:'var(--display)', fontSize:23, fontWeight:600, color:'var(--ink)' }}>{mascotName} · {child.levelLabel}</div>
-                <div style={{ display:'flex', alignItems:'center', gap:14, margin:'9px 0' }}>
-                  <div style={{ display:'flex', alignItems:'baseline', gap:5 }}>
-                    <span style={{ fontFamily:'var(--display)', fontSize:34, fontWeight:600, color:'var(--accent)' }}>{child.points}</span>
-                    <span style={{ fontSize:15, fontWeight:800, color:'var(--muted)' }}>bodů</span>
-                  </div>
-                  <div style={{ display:'flex', alignItems:'center', gap:5, background:'var(--soft)', padding:'6px 11px', borderRadius:12 }}>
-                    <span style={{ fontSize:18 }}>🔥</span>
-                    <span style={{ fontFamily:'var(--display)', fontSize:18, fontWeight:600, color:'var(--ink)' }}>{streakDays || child.streak}</span>
-                  </div>
+            {/* maskot - tamagotchi verze */}
+            <div style={{ background:'var(--maskotCard)', border:'var(--hair)', borderRadius:28, padding:'22px 24px', boxShadow:'var(--shadow)', position:'relative', overflow:'hidden', animation: ent(2) }}>
+              <div onClick={() => go('rewards')} style={{ cursor:'pointer', display:'flex', alignItems:'center', gap:18 }}>
+                <div style={{ flex:'none', position:'relative' }}>
+                  <Mascot size={96} dancing={rikiDancing} sleeping={petSleeping || isRikiSleeping}/>
+                  {/* mood emoji bubble */}
+                  {!petSleeping && (
+                    <div style={{ position:'absolute', top:-4, right:-8, background:'#fff', border:'2px solid '+petStatus.color, borderRadius:'50%', width:32, height:32, display:'flex', alignItems:'center', justifyContent:'center', fontSize:18 }}>{petStatus.emoji}</div>
+                  )}
                 </div>
-                <div style={{ height:11, background:'var(--soft)', borderRadius:8, overflow:'hidden' }}>
-                  <div style={{ height:'100%', width: child.xpPct+'%', background:'linear-gradient(90deg,var(--accent2),var(--accent))', borderRadius:8, transition:'width .6s' }}/>
+                <div style={{ flex:1, minWidth:0 }}>
+                  <div style={{ fontFamily:'var(--display)', fontSize:23, fontWeight:600, color:'var(--ink)' }}>{mascotName} · {petStatus.label}</div>
+                  <div style={{ display:'flex', alignItems:'center', gap:14, margin:'9px 0' }}>
+                    <div style={{ display:'flex', alignItems:'baseline', gap:5 }}>
+                      <span style={{ fontFamily:'var(--display)', fontSize:34, fontWeight:600, color:'var(--accent)' }}>{child.points}</span>
+                      <span style={{ fontSize:15, fontWeight:800, color:'var(--muted)' }}>bodů</span>
+                    </div>
+                    <div style={{ display:'flex', alignItems:'center', gap:5, background:'var(--soft)', padding:'6px 11px', borderRadius:12 }}>
+                      <span style={{ fontSize:18 }}>🔥</span>
+                      <span style={{ fontFamily:'var(--display)', fontSize:18, fontWeight:600, color:'var(--ink)' }}>{streakDays || child.streak}</span>
+                    </div>
+                  </div>
+                  <div style={{ height:9, background:'var(--soft)', borderRadius:8, overflow:'hidden' }}>
+                    <div style={{ height:'100%', width: child.xpPct+'%', background:'linear-gradient(90deg,var(--accent2),var(--accent))', borderRadius:8, transition:'width .6s' }}/>
+                  </div>
                 </div>
               </div>
+              {/* Tamagotchi pohoda + energie + sleep tlačítko */}
+              <div style={{ display:'flex', gap:10, marginTop:14, alignItems:'center' }}>
+                <div style={{ flex:1, minWidth:0 }}>
+                  <div style={{ display:'flex', justifyContent:'space-between', fontSize:11, fontWeight:800, marginBottom:3 }}>
+                    <span style={{ color:'var(--muted)' }}>💜 Pohoda</span>
+                    <span style={{ color:'var(--ink)' }}>{petMood}%</span>
+                  </div>
+                  <div style={{ height:8, background:'var(--soft)', borderRadius:5, overflow:'hidden' }}>
+                    <div style={{ height:'100%', width: petMood+'%', background: petMood < 30 ? '#dc2626' : petMood < 60 ? '#f59e0b' : '#a855f7', borderRadius:5, transition:'width .4s' }}/>
+                  </div>
+                </div>
+                <div style={{ flex:1, minWidth:0 }}>
+                  <div style={{ display:'flex', justifyContent:'space-between', fontSize:11, fontWeight:800, marginBottom:3 }}>
+                    <span style={{ color:'var(--muted)' }}>⚡ Energie</span>
+                    <span style={{ color:'var(--ink)' }}>{petEnergy}%</span>
+                  </div>
+                  <div style={{ height:8, background:'var(--soft)', borderRadius:5, overflow:'hidden' }}>
+                    <div style={{ height:'100%', width: petEnergy+'%', background: petEnergy < 30 ? '#dc2626' : petEnergy < 60 ? '#f59e0b' : '#16a34a', borderRadius:5, transition:'width .4s' }}/>
+                  </div>
+                </div>
+                <div onClick={(e) => { e.stopPropagation(); audio.tap(); togglePetSleep(); }} style={{ cursor:'pointer', flex:'none', background: petSleeping ? '#fef3c7' : 'var(--soft)', color: petSleeping ? '#92400e' : 'var(--ink)', borderRadius:10, padding:'7px 11px', fontSize:13, fontWeight:800 }}>
+                  {petSleeping ? '☀️ Vzbudit' : '💤 Uspat'}
+                </div>
+              </div>
+              {petMood < 25 && !petSleeping && (
+                <div style={{ marginTop:8, fontSize:11, fontWeight:800, color:'#dc2626', textAlign:'center' }}>⚠ {mascotName} je smutný — udělej rutinu nebo přečti stránku!</div>
+              )}
+              {petSleeping && (
+                <div style={{ marginTop:8, fontSize:11, fontWeight:800, color:'#7c5cff', textAlign:'center' }}>{mascotName} klidně spí a čeká až se vrátíš 💤</div>
+              )}
             </div>
 
             {/* today */}
@@ -1825,7 +1959,48 @@ function App() {
         <div style={{ flex:1, minHeight:0, display:'flex', alignItems:'center', justifyContent:'center', padding:'10px 34px 30px' }}>
           <div style={{ width:'100%', maxWidth:1080, display:'grid', gridTemplateColumns:'1.1fr 1fr', gap:30, alignItems:'center' }}>
             <div style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:18 }}>
-              <div key={routine.current.id} style={{ width:300, height:300, borderRadius:'50%', background:'var(--stepRing)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:150, boxShadow:'var(--shadow)', animation:'popIn .5s ease' }}>{routine.current.icon}</div>
+              {/* v8: Vizuální časovač - kruhový progress + ikona s změnou barvy */}
+              {(() => {
+                const expected = routine.current.secs || 180;
+                const started = currentStepStart || nowTick;
+                const elapsed = (nowTick - started) / 1000;
+                const pct = Math.min(1, elapsed / expected);
+                const overtime = elapsed > expected;
+                const remaining = Math.max(0, expected - elapsed);
+                const mins = Math.floor(remaining / 60);
+                const secs = Math.floor(remaining % 60);
+                // Barva: zelená (<60%), žlutá (60-90%), oranžová (90-100%), červená (>100%)
+                const ringColor = pct < 0.6 ? '#16a34a' : pct < 0.9 ? '#f59e0b' : pct < 1 ? '#fb923c' : '#dc2626';
+                const sandEmoji = pct < 0.5 ? '🟢' : pct < 0.85 ? '⏳' : '⏰';
+                // SVG kruh s progress
+                const R = 138, C = 2 * Math.PI * R;
+                const dash = C * (1 - pct);
+                return (
+                  <div style={{ position:'relative', width:300, height:300 }}>
+                    {/* Kruhový progress (SVG) */}
+                    <svg width="300" height="300" style={{ position:'absolute', inset:0, transform:'rotate(-90deg)' }}>
+                      <circle cx="150" cy="150" r={R} stroke="#f0f0f7" strokeWidth="14" fill="none"/>
+                      <circle cx="150" cy="150" r={R} stroke={ringColor} strokeWidth="14" fill="none"
+                        strokeLinecap="round"
+                        strokeDasharray={C}
+                        strokeDashoffset={dash}
+                        style={{ transition:'stroke-dashoffset .8s ease, stroke .4s' }} />
+                    </svg>
+                    {/* Vnitřek - emoji + zbývající čas */}
+                    <div style={{ position:'absolute', inset:0, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', animation: overtime ? 'shake 0.6s infinite' : 'none' }}>
+                      <div key={routine.current.id} style={{ fontSize:120, lineHeight:1, animation:'popIn .5s ease' }}>{routine.current.icon}</div>
+                      <div style={{ marginTop:8, display:'flex', alignItems:'center', gap:8, background:'#fff', borderRadius:20, padding:'7px 14px', boxShadow:'0 4px 12px rgba(0,0,0,.08)', border:`2px solid ${ringColor}` }}>
+                        <span style={{ fontSize:22 }}>{sandEmoji}</span>
+                        <span style={{ fontFamily:'var(--display)', fontSize:22, fontWeight:600, color: ringColor }}>
+                          {overtime ? 'Už jen ' : ''}{mins > 0 ? mins + ':' + (secs < 10 ? '0' : '') + secs : secs + 's'}
+                          {overtime && '⚠'}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
+              <div style={{ fontSize:13, fontWeight:800, color:'var(--muted)', textAlign:'center' }}>Přesypací hodiny — kolik času ti zbývá</div>
             </div>
             <div style={{ display:'flex', flexDirection:'column', gap:20 }}>
               <div>
@@ -2944,8 +3119,8 @@ function App() {
                   </div>
 
                   <div style={{ background:'#fff', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
-                    <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'#1a1530' }}>Verze: Domácí pomocník v7</div>
-                    <div style={{ fontSize:12, color:'#9a96ac', marginTop:4 }}>Build 2026-06-20 · 21:52</div>
+                    <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'#1a1530' }}>Verze: Domácí pomocník v8</div>
+                    <div style={{ fontSize:12, color:'#9a96ac', marginTop:4 }}>Build 2026-06-20 · 21:58</div>
                   </div>
                 </div>
                 )}
