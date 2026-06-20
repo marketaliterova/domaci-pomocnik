@@ -202,30 +202,6 @@ const LOCATION = { lat: 50.0755, lon: 14.4378, name: 'Praha' };
 // ====================================================================
 
 const THEMES = {
-  energie: {
-    '--bg':'radial-gradient(120% 120% at 10% 0%, #2a1d5e 0%, #1a1140 55%, #120c2e 100%)',
-    '--surface':'rgba(255,255,255,0.94)', '--soft':'rgba(124,92,255,0.10)',
-    '--ink':'#241a4d', '--muted':'#8b86b8', '--hair':'1px solid rgba(255,255,255,0.5)',
-    '--shadow':'0 14px 40px -16px rgba(8,4,30,0.6)',
-    '--accent':'#ff3d77', '--accentLt':'#ffd1de', '--accentShadow':'rgba(255,61,119,0.6)', '--accentGlow':'rgba(255,61,119,0.5)',
-    '--accent2':'#7c5cff', '--accent2Lt':'#c8b8ff', '--accent3':'#22c3e6', '--accent4':'#fbbf24',
-    '--good':'#22c55e',
-    '--hero':'linear-gradient(135deg,#7c5cff,#ff3d77)', '--onhero':'#ffffff', '--onhero-mut':'rgba(255,255,255,0.82)',
-    '--maskotCard':'rgba(255,255,255,0.94)', '--routineBg':'radial-gradient(120% 120% at 50% 0%, #241657 0%, #150e36 100%)',
-    '--stepRing':'rgba(255,255,255,0.95)', '--tile1':'linear-gradient(135deg,#22c3e6,#5b8bff)', '--tile2':'linear-gradient(135deg,#ff8a3d,#ff3d77)',
-  },
-  klid: {
-    '--bg':'linear-gradient(160deg,#fbf3e9 0%,#f3ead9 100%)',
-    '--surface':'#ffffff', '--soft':'rgba(129,178,154,0.14)',
-    '--ink':'#3c3a34', '--muted':'#9a9484', '--hair':'1px solid rgba(60,58,52,0.08)',
-    '--shadow':'0 12px 34px -18px rgba(60,50,30,0.4)',
-    '--accent':'#e07a5f', '--accentLt':'#f6d3c8', '--accentShadow':'rgba(224,122,95,0.45)', '--accentGlow':'rgba(224,122,95,0.4)',
-    '--accent2':'#81b29a', '--accent2Lt':'#cfe5da', '--accent3':'#6c9bd1', '--accent4':'#e9a13b',
-    '--good':'#5a9e7a',
-    '--hero':'linear-gradient(135deg,#81b29a,#6c9bd1)', '--onhero':'#ffffff', '--onhero-mut':'rgba(255,255,255,0.85)',
-    '--maskotCard':'#ffffff', '--routineBg':'linear-gradient(160deg,#fbf3e9,#efe6d6)',
-    '--stepRing':'#ffffff', '--tile1':'linear-gradient(135deg,#6c9bd1,#81b29a)', '--tile2':'linear-gradient(135deg,#e9c46a,#e07a5f)',
-  },
   cisto: {
     '--bg':'linear-gradient(170deg,#f5f7fc 0%,#eef1f8 100%)',
     '--surface':'#ffffff', '--soft':'#f1f4fa',
@@ -563,7 +539,7 @@ function App() {
 
   // --- core state
   const [screen, setScreen] = useState('home');
-  const [theme, setTheme]   = useState((persisted && persisted.theme) || 'cisto');
+  const [theme, setTheme]   = useState('cisto'); // jediné téma
   const [childName, setChildName] = useState((persisted && persisted.childName) || '');
   const [entered, setEntered] = useState(false);
 
@@ -1230,10 +1206,6 @@ function App() {
   const pinKeysRaw = ['1','2','3','4','5','6','7','8','9','','0','del'];
   const pinKeys = pinKeysRaw.map(k => ({ k, label: k === 'del' ? '⌫' : k, bg: k === '' ? 'transparent' : 'rgba(255,255,255,0.12)' }));
   const pinDots = [0,1,2,3].map(i => ({ bg: i < pin.length ? '#fff' : 'transparent' }));
-
-  const themeChips = [
-    { id:'energie', label:'Energie' }, { id:'klid', label:'Klid' }, { id:'cisto', label:'Čisto' }
-  ].map(t => ({ ...t, bg: theme === t.id ? accent : 'transparent', ink: theme === t.id ? '#fff' : tv['--muted'] }));
 
   const ent = (i) => entered ? 'none' : `slideUp .6s cubic-bezier(.2,.85,.3,1) ${(0.06 + i*0.1).toFixed(2)}s both`;
 
@@ -2324,8 +2296,8 @@ function App() {
                   </div>
 
                   <div style={{ background:'#fff', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
-                    <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'#1a1530' }}>Verze: Domácí pomocník v4</div>
-                    <div style={{ fontSize:12, color:'#9a96ac', marginTop:4 }}>Build 2026-06-20 · 19:54</div>
+                    <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'#1a1530' }}>Verze: Domácí pomocník v5</div>
+                    <div style={{ fontSize:12, color:'#9a96ac', marginTop:4 }}>Build 2026-06-20 · 20:01</div>
                   </div>
                 </div>
                 )}
@@ -2403,13 +2375,6 @@ function App() {
           </div>
         </div>
       )}
-
-      {/* theme switcher */}
-      <div style={{ position:'absolute', bottom:16, left:16, zIndex:70, display:'flex', gap:7, background:'var(--surface)', border:'var(--hair)', borderRadius:16, padding:7, boxShadow:'var(--shadow)' }}>
-        {themeChips.map((t) => (
-          <div key={t.id} onClick={() => { audio.tap(); setTheme(t.id); }} style={{ cursor:'pointer', padding:'7px 13px', borderRadius:11, background: t.bg, color: t.ink, fontWeight:800, fontSize:13 }}>{t.label}</div>
-        ))}
-      </div>
 
     </div>
   );
