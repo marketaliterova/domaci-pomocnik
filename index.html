@@ -765,6 +765,57 @@ function App() {
     return msg;
   }, [praiseMessages]);
 
+  // --- v8 Tamagotchi (musí být definováno před checkStep, který feedPet používá)
+  const feedPet = useCallback((mood, energy) => {
+    setPetMood(m => Math.min(100, m + (mood || 0)));
+    setPetEnergy(e => Math.min(100, e + (energy || 0)));
+  }, []);
+
+  const togglePetSleep = useCallback(() => {
+    setPetSleeping(s => {
+      const newSleep = !s;
+      if (newSleep) {
+        showToast(`${mascotName} jde spát 😴`, '💤');
+        audio.undo();
+        if (ttsOn) tts.speak('pet-sleep', `Dobrou noc, vrátím se až přijdeš zpátky.`);
+      } else {
+        showToast(`${mascotName} se probudil!`, '☀️');
+        audio.ding();
+        if (ttsOn) tts.speak('pet-wake', `Ahoj, už jsi zpátky!`);
+        setPetLastDecay(Date.now());
+      }
+      return newSleep;
+    });
+  }, [mascotName, showToast, audio, ttsOn, tts]);
+
+  // Tamagotchi decay: 2 body za hodinu (pomalu), když spí tak nic
+  useEffect(() => {
+    const tick = () => {
+      const now = Date.now();
+      const hoursSince = (now - petLastDecay) / (1000 * 60 * 60);
+      if (petSleeping || hoursSince < 0.05) return;
+      const decayPoints = Math.floor(hoursSince * 2);
+      if (decayPoints > 0) {
+        setPetMood(m => Math.max(0, m - decayPoints));
+        setPetEnergy(e => Math.max(0, e - decayPoints));
+        setPetLastDecay(now);
+      }
+    };
+    tick();
+    const id = setInterval(tick, 60 * 1000);
+    return () => clearInterval(id);
+  }, [petLastDecay, petSleeping]);
+
+  // Pet stav podle hodnot
+  const petStatus = (() => {
+    if (petSleeping) return { mood:'sleeping', label:'spí 💤', color:'#7c5cff', emoji:'😴' };
+    const avg = (petMood + petEnergy) / 2;
+    if (avg < 20) return { mood:'sad',     label:'smutný 😢',  color:'#dc2626', emoji:'😢' };
+    if (avg < 50) return { mood:'tired',   label:'unavený 😐', color:'#f59e0b', emoji:'😐' };
+    if (avg < 80) return { mood:'ok',      label:'v pohodě 🙂', color:'#16a34a', emoji:'🙂' };
+    return            { mood:'great',   label:'štastný 😄', color:'#16a34a', emoji:'😄' };
+  })();
+
   // --- routine logic
   const steps = (kind) => (kind === 'morning' ? morning : evening).filter(s => s.on);
   const doneMap = (kind) => (kind === 'morning' ? doneM : doneE);
@@ -1386,57 +1437,8 @@ function App() {
     reader.readAsText(file);
   }, [showToast]);
 
-  // v8: Tamagotchi - decay v čase + feed při aktivitách
-  // Decay: 2 body za hodinu (pomalu), když spí tak nic
-  useEffect(() => {
-    const tick = () => {
-      const now = Date.now();
-      const hoursSince = (now - petLastDecay) / (1000 * 60 * 60);
-      if (petSleeping || hoursSince < 0.05) return; // min 3 min mezi decay updates
-      const decayPoints = Math.floor(hoursSince * 2);
-      if (decayPoints > 0) {
-        setPetMood(m => Math.max(0, m - decayPoints));
-        setPetEnergy(e => Math.max(0, e - decayPoints));
-        setPetLastDecay(now);
-      }
-    };
-    tick();
-    const id = setInterval(tick, 60 * 1000);
-    return () => clearInterval(id);
-  }, [petLastDecay, petSleeping]);
+  // (Tamagotchi feedPet/togglePetSleep/decay/petStatus jsou definovány hned za stavem nahoře.)
 
-  // Feed: aktivity dítěte zvedají pohodu/energii
-  const feedPet = useCallback((mood, energy) => {
-    setPetMood(m => Math.min(100, m + (mood || 0)));
-    setPetEnergy(e => Math.min(100, e + (energy || 0)));
-  }, []);
-
-  const togglePetSleep = useCallback(() => {
-    setPetSleeping(s => {
-      const newSleep = !s;
-      if (newSleep) {
-        showToast(`${mascotName} jde spát 😴`, '💤');
-        audio.undo();
-        if (ttsOn) tts.speak('pet-sleep', `Dobrou noc, vrátím se až přijdeš zpátky.`);
-      } else {
-        showToast(`${mascotName} se probudil!`, '☀️');
-        audio.ding();
-        if (ttsOn) tts.speak('pet-wake', `Ahoj, už jsi zpátky!`);
-        setPetLastDecay(Date.now()); // reset decay timer na probuzení
-      }
-      return newSleep;
-    });
-  }, [mascotName, showToast, audio, ttsOn, tts]);
-
-  // Pet stav podle hodnot
-  const petStatus = (() => {
-    if (petSleeping) return { mood:'sleeping', label:'spí 💤', color:'#7c5cff', emoji:'😴' };
-    const avg = (petMood + petEnergy) / 2;
-    if (avg < 20) return { mood:'sad',     label:'smutný 😢',  color:'#dc2626', emoji:'😢' };
-    if (avg < 50) return { mood:'tired',   label:'unavený 😐', color:'#f59e0b', emoji:'😐' };
-    if (avg < 80) return { mood:'ok',      label:'v pohodě 🙂', color:'#16a34a', emoji:'🙂' };
-    return            { mood:'great',   label:'štastný 😄', color:'#16a34a', emoji:'😄' };
-  })();
 
 
   // ====================================================================
@@ -3270,8 +3272,8 @@ function App() {
                   </div>
 
                   <div style={{ background:'#fff', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
-                    <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'#1a1530' }}>Verze: Domácí pomocník v10</div>
-                    <div style={{ fontSize:12, color:'#9a96ac', marginTop:4 }}>Build 2026-06-20 · 22:19</div>
+                    <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'#1a1530' }}>Verze: Domácí pomocník v11</div>
+                    <div style={{ fontSize:12, color:'#9a96ac', marginTop:4 }}>Build 2026-06-20 · 22:26</div>
                   </div>
                 </div>
                 )}
