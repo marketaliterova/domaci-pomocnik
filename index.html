@@ -1485,46 +1485,57 @@ function App() {
   ]);
 
   const applySnapshot = useCallback((s) => {
-    if (!s) return;
-    if (s.points != null) setPoints(s.points);
-    if (s.totalXp != null) setTotalXp(s.totalXp);
-    if (s.morning) setMorning(s.morning);
-    if (s.evening) setEvening(s.evening);
-    if (s.doneM) setDoneM(s.doneM);
-    if (s.doneE) setDoneE(s.doneE);
-    if (s.whoHome) setWhoHome(s.whoHome);
-    if (s.departMin != null) setDepartMin(s.departMin);
-    if (s.shopItems) setShopItems(s.shopItems);
-    if (s.shopState) setShopState(s.shopState);
-    if (s.choreState) setChoreState(s.choreState);
-    if (s.pendingApprovals) setPendingApprovals(s.pendingApprovals);
-    if (s.packState) setPackState(s.packState);
-    if (s.packAwarded != null) setPackAwarded(s.packAwarded);
-    if (s.weeklyDone) setWeeklyDone(s.weeklyDone);
-    if (s.challenges) setChallenges(s.challenges);
-    if (s.rozvrh) setRozvrh(s.rozvrh);
-    if (s.buttonConfig) setButtonConfig(s.buttonConfig);
-    if (s.mascotName) setMascotName(s.mascotName);
-    if (s.soundOn !== undefined) setSoundOn(s.soundOn);
-    if (s.ttsOn !== undefined) setTtsOn(s.ttsOn);
-    if (s.bedtime) setBedtime(s.bedtime);
-    if (s.wakeTime) setWakeTime(s.wakeTime);
-    if (s.praiseMessages) setPraiseMessages(s.praiseMessages);
-    if (s.streakDays != null) setStreakDays(s.streakDays);
-    if (s.streakLastDate !== undefined) setStreakLastDate(s.streakLastDate);
-    if (s.eveningStreakDays != null) setEveningStreakDays(s.eveningStreakDays);
-    if (s.eveningStreakLast !== undefined) setEveningStreakLast(s.eveningStreakLast);
-    if (s.moodLog) setMoodLog(s.moodLog);
-    if (s.lastMoodDate !== undefined) setLastMoodDate(s.lastMoodDate);
-    if (s.parentPin) setParentPin(s.parentPin);
-    if (s.childName !== undefined) setChildName(s.childName);
-    if (s.weekEvents) setWeekEvents(s.weekEvents);
-    if (s.worryMessages) setWorryMessages(s.worryMessages);
-    if (s.readingList) setReadingList(s.readingList);
-    if (s.stickers) setStickers(s.stickers);
-    if (s.childPhoto !== undefined) setChildPhoto(s.childPhoto);
-    if (s.choresList) setChoresList(s.choresList);
-    if (s.weeklyChores) setWeeklyChores(s.weeklyChores);
+    if (!s || typeof s !== 'object') return;
+    // Pouze přijmi pole které mají správný typ; ignoruj null/undefined/prázdné objekty
+    const isArr = (x) => Array.isArray(x);
+    const isObj = (x) => x && typeof x === 'object' && !Array.isArray(x);
+    const isStr = (x) => typeof x === 'string';
+    const isNum = (x) => typeof x === 'number' && !isNaN(x);
+    const isBool = (x) => typeof x === 'boolean';
+
+    if (isNum(s.points)) setPoints(s.points);
+    if (isNum(s.totalXp)) setTotalXp(s.totalXp);
+    if (isArr(s.morning) && s.morning.length > 0) setMorning(s.morning);
+    if (isArr(s.evening) && s.evening.length > 0) setEvening(s.evening);
+    if (isObj(s.doneM)) setDoneM(s.doneM);
+    if (isObj(s.doneE)) setDoneE(s.doneE);
+    if (isStr(s.whoHome)) setWhoHome(s.whoHome);
+    if (isNum(s.departMin)) setDepartMin(s.departMin);
+    if (isArr(s.shopItems)) setShopItems(s.shopItems);
+    if (isObj(s.shopState)) setShopState(s.shopState);
+    if (isObj(s.choreState)) setChoreState(s.choreState);
+    if (isArr(s.pendingApprovals)) setPendingApprovals(s.pendingApprovals);
+    if (isObj(s.packState)) setPackState(s.packState);
+    if (isBool(s.packAwarded)) setPackAwarded(s.packAwarded);
+    if (isObj(s.weeklyDone)) setWeeklyDone(s.weeklyDone);
+    if (isArr(s.challenges)) setChallenges(s.challenges);
+    if (isObj(s.rozvrh)) setRozvrh(s.rozvrh);
+    if (isArr(s.buttonConfig)) setButtonConfig(s.buttonConfig);
+    if (isStr(s.mascotName)) setMascotName(s.mascotName);
+    if (isBool(s.soundOn)) setSoundOn(s.soundOn);
+    if (isBool(s.ttsOn)) setTtsOn(s.ttsOn);
+    if (isStr(s.bedtime)) setBedtime(s.bedtime);
+    if (isStr(s.wakeTime)) setWakeTime(s.wakeTime);
+    if (isArr(s.praiseMessages)) setPraiseMessages(s.praiseMessages);
+    if (isNum(s.streakDays)) setStreakDays(s.streakDays);
+    if (s.streakLastDate === null || isStr(s.streakLastDate)) setStreakLastDate(s.streakLastDate);
+    if (isNum(s.eveningStreakDays)) setEveningStreakDays(s.eveningStreakDays);
+    if (s.eveningStreakLast === null || isStr(s.eveningStreakLast)) setEveningStreakLast(s.eveningStreakLast);
+    if (isObj(s.moodLog)) setMoodLog(s.moodLog);
+    if (s.lastMoodDate === null || isStr(s.lastMoodDate)) setLastMoodDate(s.lastMoodDate);
+    if (isStr(s.parentPin) && s.parentPin.length === 4) setParentPin(s.parentPin);
+    if (isStr(s.childName)) setChildName(s.childName);
+    if (isArr(s.weekEvents) && s.weekEvents.length === 7) setWeekEvents(s.weekEvents);
+    if (isArr(s.worryMessages)) setWorryMessages(s.worryMessages);
+    if (isArr(s.readingList)) setReadingList(s.readingList);
+    if (isArr(s.stickers)) setStickers(s.stickers);
+    if (s.childPhoto === null || isStr(s.childPhoto)) setChildPhoto(s.childPhoto);
+    if (isArr(s.choresList)) setChoresList(s.choresList);
+    if (isArr(s.weeklyChores)) setWeeklyChores(s.weeklyChores);
+    if (isNum(s.petMood)) setPetMood(s.petMood);
+    if (isNum(s.petEnergy)) setPetEnergy(s.petEnergy);
+    if (isBool(s.petSleeping)) setPetSleeping(s.petSleeping);
+    if (isNum(s.petLastDecay)) setPetLastDecay(s.petLastDecay);
   }, []);
 
   // PULL ze serveru (manuální nebo periodicky)
@@ -3119,8 +3130,8 @@ function App() {
                   </div>
 
                   <div style={{ background:'#fff', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
-                    <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'#1a1530' }}>Verze: Domácí pomocník v8</div>
-                    <div style={{ fontSize:12, color:'#9a96ac', marginTop:4 }}>Build 2026-06-20 · 21:58</div>
+                    <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'#1a1530' }}>Verze: Domácí pomocník v9</div>
+                    <div style={{ fontSize:12, color:'#9a96ac', marginTop:4 }}>Build 2026-06-20 · 22:08</div>
                   </div>
                 </div>
                 )}
@@ -3172,7 +3183,7 @@ function App() {
                 <div style={{ fontFamily:'var(--display)', fontSize:26, fontWeight:700, color:'var(--ink)' }}>Jak ti dneska je?</div>
                 <div style={{ fontSize:14, color:'var(--muted)', fontWeight:700, marginTop:4 }}>Ťukni na obrázek, který sedí.</div>
               </div>
-              <div onClick={() => setShowMoodPrompt(false)} style={{ cursor:'pointer', fontSize:24, color:'var(--muted)', padding:8 }}>✕</div>
+              <div onClick={() => { setShowMoodPrompt(false); setLastMoodDate(todayISO()); }} style={{ cursor:'pointer', fontSize:24, color:'var(--muted)', padding:8 }}>✕</div>
             </div>
             <div style={{ display:'grid', gridTemplateColumns:'repeat(3, 1fr)', gap:14 }}>
               {moodOptions.map(o => (
@@ -3214,8 +3225,50 @@ function App() {
 // ====================================================================
 // MOUNT
 // ====================================================================
+class ErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { error: null, info: null };
+  }
+  static getDerivedStateFromError(error) { return { error }; }
+  componentDidCatch(error, info) {
+    this.setState({ error, info });
+    try { console.error('[ErrorBoundary]', error, info); } catch(e) {}
+  }
+  reset() {
+    try { localStorage.removeItem('dompomocnik_v1'); } catch(e) {}
+    window.location.reload();
+  }
+  render() {
+    if (this.state.error) {
+      const errStr = String(this.state.error.message || this.state.error);
+      const stackStr = (this.state.info && this.state.info.componentStack) || this.state.error.stack || '';
+      return (
+        <div style={{ padding: '30px 24px', maxWidth: 720, margin: '40px auto', fontFamily: 'system-ui, sans-serif', color: '#1a1530' }}>
+          <div style={{ fontSize: 36 }}>⚠️</div>
+          <h1 style={{ fontSize: 22, fontWeight: 700, marginTop: 12 }}>Něco se rozbilo</h1>
+          <p style={{ fontSize: 15, color: '#5a566e', lineHeight: 1.5 }}>
+            Aplikace narazila na chybu při zobrazování. Pošli mi prosím text dole, opravím to.
+          </p>
+          <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 12, padding: 14, marginTop: 14, fontFamily: 'monospace', fontSize: 12, color: '#991b1b', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+            {errStr}{'\n\n'}{stackStr}
+          </div>
+          <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
+            <button onClick={() => window.location.reload()} style={{ flex: 1, background: '#2f6bff', color: '#fff', border: 'none', borderRadius: 12, padding: '12px 16px', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>Zkusit znovu</button>
+            <button onClick={() => this.reset()} style={{ flex: 1, background: '#fee2e2', color: '#991b1b', border: 'none', borderRadius: 12, padding: '12px 16px', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>Reset dat (smaže lokál)</button>
+          </div>
+          <p style={{ fontSize: 12, color: '#9a96ac', marginTop: 14, lineHeight: 1.5 }}>
+            "Reset dat" smaže lokální data v prohlížeči. Pokud máš sync zapnutý, data se po reloadu načtou ze serveru.
+          </p>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 const root = ReactDOM.createRoot(document.getElementById('root'));
-root.render(<App />);
+root.render(<ErrorBoundary><App /></ErrorBoundary>);
 
 </script>
 </body>
