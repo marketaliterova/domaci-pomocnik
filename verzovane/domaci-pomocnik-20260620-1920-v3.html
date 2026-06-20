@@ -1,0 +1,2412 @@
+<!doctype html>
+<html lang="cs">
+<head>
+<meta charset="utf-8">
+<title>Domácí pomocník</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#2f6bff">
+<link rel="manifest" href='data:application/json;charset=utf-8,{"name":"Domácí pomocník","short_name":"Pomocník","start_url":".","display":"fullscreen","orientation":"landscape","background_color":"#eef1f8","theme_color":"#2f6bff","icons":[{"src":"data:image/svg+xml;utf8,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22%3E%3Crect width=%22100%22 height=%22100%22 rx=%2222%22 fill=%22%232f6bff%22/%3E%3Ctext x=%2250%22 y=%2272%22 font-size=%2270%22 text-anchor=%22middle%22%3E🏠%3C/text%3E%3C/svg%3E","sizes":"192x192","type":"image/svg+xml"}]}'>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;600;700;800&family=Nunito+Sans:opsz,wght@6..12,400;6..12,600;6..12,700;6..12,800;6..12,900&display=swap" rel="stylesheet">
+
+<script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone@7.24.7/babel.min.js"></script>
+
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; }
+  body { font-family: 'Nunito Sans', system-ui, sans-serif; -webkit-font-smoothing: antialiased; background:#0c0a14; }
+  #root { width:100vw; height:100vh; position:relative; }
+  ::-webkit-scrollbar { width:10px; height:10px; }
+  ::-webkit-scrollbar-thumb { background: rgba(120,120,140,.35); border-radius: 20px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  input, button { font-family: inherit; }
+  input { -webkit-appearance:none; }
+  @keyframes floatY { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-10px); } }
+  @keyframes softPulse { 0%,100% { transform: scale(1); } 50% { transform: scale(1.06); } }
+  @keyframes ringGlow { 0%,100% { box-shadow: 0 0 0 0 var(--glow); } 50% { box-shadow: 0 0 36px 6px var(--glow); } }
+  @keyframes popIn { 0% { transform: scale(.7); opacity: 0; } 70% { transform: scale(1.06); } 100% { transform: scale(1); opacity: 1; } }
+  @keyframes slideUp { 0% { transform: translateY(26px); opacity: 0; } 100% { transform: translateY(0); opacity: 1; } }
+  @keyframes shimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
+  @keyframes blink { 0%,92%,100% { transform: scaleY(1); } 96% { transform: scaleY(.1); } }
+  @keyframes toastIn { 0% { opacity: 0; transform: translateY(-16px) scale(.96); } 100% { opacity: 1; transform: translateY(0) scale(1); } }
+  @keyframes spinSlow { 0% { transform: rotate(0); } 100% { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel" data-presets="react">
+const { useState, useEffect, useRef, useMemo, useCallback } = React;
+
+// ====================================================================
+// DATA
+// ====================================================================
+
+const MORNING_STEPS = [
+  { id: 'vstat',    t: 'Vstát a ustlat postel',         icon: '🛏️', hint: 'Hezky narovnej polštář a přikrývku.', on: true },
+  { id: 'wc',       t: 'Na záchod a umýt ruce',         icon: '🧼', hint: 'Mýdlo a teplá voda, počítej do dvaceti.', on: true },
+  { id: 'zuby',     t: 'Vyčistit zuby',                 icon: '🪥', hint: 'Nahoře i dole, krouživě, celé 2 minuty.', on: true },
+  { id: 'obleci',   t: 'Obléknout se podle počasí',     icon: '🧥', hint: 'Dnes je ráno chládno – vezmi si mikinu a bundu.', on: true },
+  { id: 'snidane',  t: 'Nasnídat se',                   icon: '🥣', hint: 'Ať máš sílu na celé dopoledne.', on: true },
+  { id: 'aktovka',  t: 'Zkontrolovat aktovku',          icon: '🎒', hint: 'Úkoly, svačina, láhev a věci na trénink.', on: true },
+  { id: 'boty',     t: 'Boty, bunda a vyrazit',         icon: '👟', hint: 'Sraz u dveří v 7:50. Zvládneš to v pohodě!', on: true },
+];
+
+const EVENING_STEPS = [
+  { id: 'uklid',    t: 'Uklidit po sobě talíř',         icon: '🍽️', hint: 'Do myčky a stůl utři dohladka.', on: true },
+  { id: 'priprava', t: 'Připravit věci na zítra',       icon: '🎒', hint: 'Mrkni na Rozvrh & balení a sbal aktovku podle zítřejších předmětů.', on: true },
+  { id: 'sprcha',   t: 'Osprchovat se',                 icon: '🚿', hint: 'Vlasy i za ušima. Ručník pak pověs.', on: true },
+  { id: 'zuby',     t: 'Vyčistit zuby',                 icon: '🪥', hint: 'Večer obzvlášť pořádně, ať nemáš kazy.', on: true },
+  { id: 'cteni',    t: 'Číst 15 minut',                 icon: '📖', hint: 'Vyber si knížku, kterou máš rád.', on: true },
+  { id: 'spani',    t: 'Zhasnout a spát',               icon: '🌙', hint: 'Zítra tě čeká fajn den. Dobrou noc!', on: true },
+];
+
+const SHOP_DEFAULT = [
+  { id: 's1', emoji: '🍦', t: 'Zmrzlina', cost: 40 },
+  { id: 's2', emoji: '🎮', t: '30 min navíc na tabletu', cost: 60 },
+  { id: 's3', emoji: '🎬', t: 'Výběr filmu na páteční večer', cost: 80 },
+  { id: 's4', emoji: '🛌', t: 'Kamarád na přespání', cost: 150 },
+  { id: 's5', emoji: '🦁', t: 'Výlet do ZOO', cost: 250 },
+  { id: 's6', emoji: '🧱', t: 'Nová stavebnice', cost: 400 },
+];
+
+const CHORES_LIST = [
+  { id: 'c1', emoji: '🗑️', t: 'Vynést koš', points: 5 },
+  { id: 'c2', emoji: '🧹', t: 'Utřít prach', points: 10 },
+  { id: 'c3', emoji: '🧸', t: 'Uklidit pokoj', points: 15 },
+  { id: 'c4', emoji: '🍽️', t: 'Pomoct s nádobím', points: 10 },
+  { id: 'c5', emoji: '🐟', t: 'Nakrmit rybičky', points: 5 },
+  { id: 'c6', emoji: '🛒', t: 'Pomoct s nákupem', points: 15 },
+];
+
+const WEEKLY_CHORES = [
+  { id: 'w0', emoji: '🪴', t: 'Zalít kytky',              day: 'Pondělí' },
+  { id: 'w1', emoji: '♻️', t: 'Vynést tříděný odpad',     day: 'Středa' },
+  { id: 'w2', emoji: '🧺', t: 'Uklidit svůj pokoj',       day: 'Pátek' },
+  { id: 'w3', emoji: '🧹', t: 'Vyluxovat pokoj',          day: 'Sobota' },
+];
+
+const PLACES = {
+  mama: { label: 'u mámy',    short: 'Máma',    cvar: '--accent2' },
+  tata: { label: 'u táty',    short: 'Táta',    cvar: '--accent3' },
+  babi: { label: 'u babičky', short: 'Babička', cvar: '--accent4' },
+};
+const PLACE_ORDER = ['mama', 'tata', 'babi'];
+const WEEK_WHO = ['mama','mama','tata','tata','mama','babi','mama']; // Po..Ne
+
+const SUBJECTS = {
+  ces:{t:'Čeština', emoji:'📖'}, mat:{t:'Matematika', emoji:'🔢'}, prv:{t:'Prvouka', emoji:'🌍'},
+  aj:{t:'Angličtina', emoji:'🇬🇧'}, tv:{t:'Tělocvik', emoji:'🤸'}, hv:{t:'Hudebka', emoji:'🎵'},
+  vv:{t:'Výtvarka', emoji:'🎨'}, pl:{t:'Plavání', emoji:'🏊'}, pc:{t:'Prac. činnosti', emoji:'✂️'},
+};
+const ROZVRH_DEFAULT = {
+  0:['ces','mat','prv','tv','aj'],
+  1:['mat','ces','hv','aj'],
+  2:['ces','mat','vv','prv','pl'],
+  3:['aj','mat','ces','tv'],
+  4:['ces','mat','prv','pc'],
+};
+const SUBJECT_ITEMS = {
+  tv: [{ t: 'Cvičky', emoji: '👟' }, { t: 'Cvičební úbor', emoji: '🩳' }],
+  pl: [{ t: 'Plavky', emoji: '🩲' }, { t: 'Ručník', emoji: '🧖' }, { t: 'Plavecké brýle', emoji: '🥽' }],
+  vv: [{ t: 'Vodové barvy a štětce', emoji: '🎨' }],
+  pc: [{ t: 'Nůžky a lepidlo', emoji: '✂️' }],
+  hv: [{ t: 'Flétna', emoji: '🎶' }],
+  aj: [{ t: 'Učebnice angličtiny', emoji: '📕' }],
+};
+const BASE_ITEMS = [
+  { t: 'Úkoly a penál', emoji: '✏️' },
+  { t: 'Svačina',       emoji: '🥪' },
+  { t: 'Láhev s pitím', emoji: '💧' },
+];
+
+const WEEK_EVENTS = [
+  [ { time:'8:00', dur:4,   emoji:'🏫', title:'Škola', type:'skola' }, { time:'17:00', dur:1.5, emoji:'⚽', title:'Fotbal', type:'sport' } ],
+  [ { time:'8:00', dur:4,   emoji:'🏫', title:'Škola', type:'skola' }, { time:'16:00', dur:1,   emoji:'🎹', title:'Klavír', type:'hudba' } ],
+  [ { time:'8:00', dur:4,   emoji:'🏫', title:'Škola', type:'skola' }, { time:'17:30', dur:1.5, emoji:'🏊', title:'Plavání', type:'sport' } ],
+  [ { time:'8:00', dur:4,   emoji:'🏫', title:'Škola', type:'skola' }, { time:'17:00', dur:1.5, emoji:'⚽', title:'Fotbal', type:'sport' } ],
+  [ { time:'8:00', dur:4,   emoji:'🏫', title:'Škola', type:'skola' }, { time:'18:00', dur:2,   emoji:'🎬', title:'Kino s mámou', type:'rodina' } ],
+  [ { time:'9:00', dur:3,   emoji:'🏰', title:'Výlet Karlštejn', type:'vylet' }, { time:'13:00', dur:1.5, emoji:'👵', title:'Oběd u babičky', type:'rodina' } ],
+  [ { time:'10:00', dur:2,  emoji:'🚲', title:'Kolo v parku', type:'sport' }, { time:'18:00', dur:1, emoji:'🎒', title:'Příprava na školu', type:'skola' } ],
+];
+
+const CHALLENGE_DEFAULTS = [
+  { id:'ch1', emoji:'🛏️', t:'Každý den ustlat postel', done:false },
+  { id:'ch2', emoji:'🦷', t:'Ani jednou nezapomenout zuby', done:true },
+  { id:'ch3', emoji:'👃', t:'Ani jednou špunt z nosu :)', done:false },
+  { id:'ch4', emoji:'📚', t:'Číst každý večer', done:false },
+];
+
+const DEVICES = [
+  { id:'wc',   emoji:'🚽', label:'Spláchnuto',         sub:'Tlačítko u záchodu',  points:2, step:'wc' },
+  { id:'ruce', emoji:'🧼', label:'Umyté ruce',         sub:'Tlačítko u umyvadla', points:2, step:null },
+  { id:'zuby', emoji:'🪥', label:'Vyčištěné zuby',     sub:'Tlačítko u umyvadla', points:3, step:'zuby' },
+];
+
+const TASK_CATALOG = [
+  { key:'wc',     label:'Spláchnuto',       emoji:'🚽', points:2, step:'wc' },
+  { key:'ruce',   label:'Umyté ruce',       emoji:'🧼', points:2, step:null },
+  { key:'zuby',   label:'Vyčištěné zuby',   emoji:'🪥', points:3, step:'zuby' },
+  { key:'postel', label:'Ustlaná postel',   emoji:'🛏️', points:3, step:'vstat' },
+  { key:'none',   label:'— nic —',          emoji:'➖', points:0, step:null },
+];
+
+const BUTTON_CONFIG_DEFAULT = [
+  { id:'horni', name:'Horní koupelna', gestures:{ single:'wc', double:'ruce', long:'none' } },
+  { id:'dolni', name:'Dolní koupelna', gestures:{ single:'wc', double:'ruce', long:'none' } },
+];
+
+const TYPE_COLOR = { skola:'#8893a8', sport:'#22c55e', hudba:'#7c5cff', vylet:'#f59e0b', rodina:'#ff5d8f' };
+
+// ====================================================================
+// V2 CONSTANTS
+// ====================================================================
+
+// Výchozí vzkazy od rodiče (lze editovat v rodičovském overlay)
+const PRAISE_DEFAULTS = [
+  'Mám tě moc ráda, jsi nejlepší ❤️',
+  'Jsem na tebe pyšná! Zvládáš to skvěle.',
+  'Když se na tebe podívám, mám radost.',
+  'Pamatuj, že tě mám ráda i když tu nejsem.',
+  'Jsi šikovný/á a chytrý/á.',
+  'Děkuju, že pomáháš doma.',
+  'Dnes z tebe mám fakt radost.'
+];
+
+// Krátké promluvy pro Rikiho (TTS)
+const RIKI_PHRASES = {
+  hello: ['Ahoj! Tak co dneska? Jdeme na to.', 'Čau, kámo! Pojď, máme práci.'],
+  routineStart: ['Pojď, dáme to spolu.', 'Jdeme na to, kámo!'],
+  stepDone: ['Super, jdeme dál.', 'Paráda, další!', 'Jedeš jak drak.'],
+  routineDone: ['Hotovo! Tak to byla parádní práce.', 'Mašle! Všechno hotovo, ty jsi hvězda.'],
+  teethTime: ['Pojď si vyčistit zoubky, čekám.', 'Zoubky čekají, jdeme!'],
+  goodNight: ['Dobrou noc, ať se ti hezky spí.', 'Spinkej krásně, zítra zase.'],
+  streak: ['Sedmidenní série! Ty jsi fakt borec.', 'Už druhý týden v řadě, paráda!']
+};
+
+// Návrh oblečení podle teploty
+function suggestOutfit(tempC, rain, wind) {
+  if (tempC == null) return null;
+  var parts = [];
+  if (tempC < 0)        parts.push({ icon:'🧥', t:'zimní bunda' }, { icon:'🧣', t:'šála a čepice' }, { icon:'🧤', t:'rukavice' });
+  else if (tempC < 8)   parts.push({ icon:'🧥', t:'teplá bunda' }, { icon:'🧢', t:'čepice' });
+  else if (tempC < 15)  parts.push({ icon:'🧥', t:'mikina nebo lehká bunda' });
+  else if (tempC < 22)  parts.push({ icon:'👕', t:'tričko + mikina v batohu' });
+  else                  parts.push({ icon:'👕', t:'tričko a kraťasy' });
+  if (rain && rain > 0.3) parts.push({ icon:'☔', t:'pláštěnka nebo deštník' });
+  if (wind && wind > 30)  parts.push({ icon:'💨', t:'pozor, fouká!' });
+  return parts;
+}
+
+// Lokace pro počasí (Praha — Kladno, podle Megy)
+const LOCATION = { lat: 50.0755, lon: 14.4378, name: 'Praha' };
+
+// ====================================================================
+// THEMES
+// ====================================================================
+
+const THEMES = {
+  energie: {
+    '--bg':'radial-gradient(120% 120% at 10% 0%, #2a1d5e 0%, #1a1140 55%, #120c2e 100%)',
+    '--surface':'rgba(255,255,255,0.94)', '--soft':'rgba(124,92,255,0.10)',
+    '--ink':'#241a4d', '--muted':'#8b86b8', '--hair':'1px solid rgba(255,255,255,0.5)',
+    '--shadow':'0 14px 40px -16px rgba(8,4,30,0.6)',
+    '--accent':'#ff3d77', '--accentLt':'#ffd1de', '--accentShadow':'rgba(255,61,119,0.6)', '--accentGlow':'rgba(255,61,119,0.5)',
+    '--accent2':'#7c5cff', '--accent2Lt':'#c8b8ff', '--accent3':'#22c3e6', '--accent4':'#fbbf24',
+    '--good':'#22c55e',
+    '--hero':'linear-gradient(135deg,#7c5cff,#ff3d77)', '--onhero':'#ffffff', '--onhero-mut':'rgba(255,255,255,0.82)',
+    '--maskotCard':'rgba(255,255,255,0.94)', '--routineBg':'radial-gradient(120% 120% at 50% 0%, #241657 0%, #150e36 100%)',
+    '--stepRing':'rgba(255,255,255,0.95)', '--tile1':'linear-gradient(135deg,#22c3e6,#5b8bff)', '--tile2':'linear-gradient(135deg,#ff8a3d,#ff3d77)',
+  },
+  klid: {
+    '--bg':'linear-gradient(160deg,#fbf3e9 0%,#f3ead9 100%)',
+    '--surface':'#ffffff', '--soft':'rgba(129,178,154,0.14)',
+    '--ink':'#3c3a34', '--muted':'#9a9484', '--hair':'1px solid rgba(60,58,52,0.08)',
+    '--shadow':'0 12px 34px -18px rgba(60,50,30,0.4)',
+    '--accent':'#e07a5f', '--accentLt':'#f6d3c8', '--accentShadow':'rgba(224,122,95,0.45)', '--accentGlow':'rgba(224,122,95,0.4)',
+    '--accent2':'#81b29a', '--accent2Lt':'#cfe5da', '--accent3':'#6c9bd1', '--accent4':'#e9a13b',
+    '--good':'#5a9e7a',
+    '--hero':'linear-gradient(135deg,#81b29a,#6c9bd1)', '--onhero':'#ffffff', '--onhero-mut':'rgba(255,255,255,0.85)',
+    '--maskotCard':'#ffffff', '--routineBg':'linear-gradient(160deg,#fbf3e9,#efe6d6)',
+    '--stepRing':'#ffffff', '--tile1':'linear-gradient(135deg,#6c9bd1,#81b29a)', '--tile2':'linear-gradient(135deg,#e9c46a,#e07a5f)',
+  },
+  cisto: {
+    '--bg':'linear-gradient(170deg,#f5f7fc 0%,#eef1f8 100%)',
+    '--surface':'#ffffff', '--soft':'#f1f4fa',
+    '--ink':'#15233f', '--muted':'#8893a8', '--hair':'1px solid #e7ebf3',
+    '--shadow':'0 10px 30px -16px rgba(20,40,80,0.22)',
+    '--accent':'#2f6bff', '--accentLt':'#cdddff', '--accentShadow':'rgba(47,107,255,0.4)', '--accentGlow':'rgba(47,107,255,0.35)',
+    '--accent2':'#7c5cff', '--accent2Lt':'#d8cdff', '--accent3':'#16a34a', '--accent4':'#f0883e',
+    '--good':'#16a34a',
+    '--hero':'linear-gradient(135deg,#2f6bff,#7c5cff)', '--onhero':'#ffffff', '--onhero-mut':'rgba(255,255,255,0.85)',
+    '--maskotCard':'#ffffff', '--routineBg':'linear-gradient(170deg,#f5f7fc,#e9eef8)',
+    '--stepRing':'#f1f4fa', '--tile1':'linear-gradient(135deg,#2f6bff,#22b0e6)', '--tile2':'linear-gradient(135deg,#ff7a59,#ff5d8f)',
+  },
+};
+
+// ====================================================================
+// HELPERS
+// ====================================================================
+
+const pad2 = (n) => (n < 10 ? '0' + n : '' + n);
+const parseT = (t) => { const p = t.split(':'); return +p[0] + (+p[1])/60; };
+const hexA = (hex, a) => {
+  const h = hex.replace('#','');
+  const r = parseInt(h.slice(0,2),16), g = parseInt(h.slice(2,4),16), b = parseInt(h.slice(4,6),16);
+  return `rgba(${r},${g},${b},${a})`;
+};
+const makeSim = (h, m) => { const d = new Date(); d.setHours(h, m, 0, 0); return d.getTime(); };
+
+// localStorage helpers
+const LS_KEY = 'dompomocnik_v1';
+const loadState = () => {
+  try { const raw = localStorage.getItem(LS_KEY); return raw ? JSON.parse(raw) : null; } catch(e) { return null; }
+};
+const saveState = (s) => {
+  try {
+    const persistable = {
+      theme: s.theme, points: s.points, totalXp: s.totalXp, streak: s.streak,
+      morning: s.morning, evening: s.evening,
+      doneM: s.doneM, doneE: s.doneE,
+      whoHome: s.whoHome, departMin: s.departMin,
+      shopItems: s.shopItems, shopState: s.shopState,
+      choreState: s.choreState, pendingApprovals: s.pendingApprovals,
+      packState: s.packState, packAwarded: s.packAwarded,
+      weeklyDone: s.weeklyDone, challenges: s.challenges,
+      rozvrh: s.rozvrh, buttonConfig: s.buttonConfig,
+      // v2 nová pole
+      mascotName: s.mascotName, soundOn: s.soundOn, ttsOn: s.ttsOn,
+      bedtime: s.bedtime, wakeTime: s.wakeTime,
+      praiseMessages: s.praiseMessages,
+      streakDays: s.streakDays, streakLastDate: s.streakLastDate,
+      moodLog: s.moodLog, lastMoodDate: s.lastMoodDate,
+      eveningStreakDays: s.eveningStreakDays, eveningStreakLast: s.eveningStreakLast,
+      parentPin: s.parentPin,
+      childName: s.childName,
+    };
+    localStorage.setItem(LS_KEY, JSON.stringify(persistable));
+  } catch(e) {}
+};
+
+// Datum jako ISO YYYY-MM-DD (pro streaks/mood log)
+const todayISO = () => {
+  const d = new Date();
+  return d.getFullYear() + '-' + pad2(d.getMonth()+1) + '-' + pad2(d.getDate());
+};
+const yesterdayISO = () => {
+  const d = new Date(); d.setDate(d.getDate()-1);
+  return d.getFullYear() + '-' + pad2(d.getMonth()+1) + '-' + pad2(d.getDate());
+};
+
+
+// ====================================================================
+// AUDIO HOOK
+// ====================================================================
+
+function useAudio() {
+  const acRef = useRef(null);
+  const ensure = useCallback(() => {
+    if (!acRef.current) {
+      try { acRef.current = new (window.AudioContext || window.webkitAudioContext)(); } catch(e) {}
+    }
+    if (acRef.current && acRef.current.state === 'suspended') acRef.current.resume();
+    return acRef.current;
+  }, []);
+  const tone = useCallback((freq, dur, when, type, gain) => {
+    const ac = ensure(); if (!ac) return;
+    const t = ac.currentTime + (when || 0);
+    const o = ac.createOscillator(), g = ac.createGain();
+    o.type = type || 'sine'; o.frequency.value = freq; o.connect(g); g.connect(ac.destination);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(gain || 0.18, t + 0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.start(t); o.stop(t + dur + 0.02);
+  }, [ensure]);
+  return useMemo(() => ({
+    ding:   () => { tone(880, 0.16, 0, 'sine', 0.18); tone(1318, 0.2, 0.05, 'sine', 0.15); },
+    coin:   () => { tone(988, 0.08, 0, 'square', 0.12); tone(1319, 0.13, 0.07, 'square', 0.12); },
+    success:() => { [523,659,784,1047].forEach((f,i) => tone(f, 0.4, i*0.1, 'triangle', 0.16)); },
+    undo:   () => { tone(300, 0.14, 0, 'sine', 0.12); },
+    tap:    () => { tone(660, 0.06, 0, 'sine', 0.08); },
+    ensure,
+  }), [tone, ensure]);
+}
+
+// ====================================================================
+// CONFETTI HOOK
+// ====================================================================
+
+function useConfetti() {
+  const ref = useRef(null);
+  const fire = useCallback((opts) => {
+    const root = ref.current; if (!root) return;
+    const colors = ['#ff4d8d','#8b5cf6','#22d3ee','#a3e635','#fbbf24','#fb7185'];
+    const rect = root.getBoundingClientRect();
+    const cx = (opts && opts.x != null) ? opts.x : rect.width/2;
+    const cy = (opts && opts.y != null) ? opts.y : rect.height/2;
+    const n = (opts && opts.n) || 70;
+    for (let i = 0; i < n; i++) {
+      const d = document.createElement('div');
+      const sz = 8 + Math.random() * 10;
+      d.style.cssText = `position:absolute;left:${cx}px;top:${cy}px;width:${sz}px;height:${sz}px;background:${colors[i % colors.length]};border-radius:${Math.random() < 0.5 ? '50%' : '3px'};`;
+      root.appendChild(d);
+      const ang = Math.random() * Math.PI * 2, dist = 120 + Math.random() * 320;
+      const dx = Math.cos(ang) * dist, dy = Math.sin(ang) * dist - (120 + Math.random() * 220);
+      d.animate([
+        { transform: 'translate(0,0) rotate(0deg)', opacity: 1 },
+        { transform: `translate(${dx}px,${dy + 260}px) rotate(${Math.random()*900 - 450}deg)`, opacity: 1, offset: 0.7 },
+        { transform: `translate(${dx*1.1}px,${dy + 460}px) rotate(${Math.random()*900}deg)`, opacity: 0 }
+      ], { duration: 1100 + Math.random()*800, easing: 'cubic-bezier(.2,.6,.3,1)' }).onfinish = () => d.remove();
+    }
+  }, []);
+  return { ref, fire };
+}
+
+// ====================================================================
+// WEATHER HOOK (Open-Meteo, žádný API klíč)
+// ====================================================================
+
+function useWeather(soundOn) {
+  const [data, setData] = useState(null);
+  const [err, setErr] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    const cacheKey = 'dompomocnik_weather_cache';
+    // load cache first
+    try {
+      const cached = localStorage.getItem(cacheKey);
+      if (cached) {
+        const c = JSON.parse(cached);
+        if (Date.now() - c.t < 30*60*1000) {
+          setData(c.d);
+        }
+      }
+    } catch(e) {}
+
+    const url = 'https://api.open-meteo.com/v1/forecast'
+      + '?latitude=' + LOCATION.lat
+      + '&longitude=' + LOCATION.lon
+      + '&current=temperature_2m,weather_code,wind_speed_10m,precipitation'
+      + '&daily=temperature_2m_min,temperature_2m_max,precipitation_probability_max,weather_code'
+      + '&timezone=Europe%2FPrague&forecast_days=1';
+
+    fetch(url)
+      .then(r => r.json())
+      .then(j => {
+        if (cancelled) return;
+        const cur = j.current || {};
+        const day = (j.daily || {});
+        const d = {
+          temp: cur.temperature_2m,
+          wind: cur.wind_speed_10m,
+          precip: cur.precipitation,
+          code: cur.weather_code,
+          tmin: day.temperature_2m_min ? day.temperature_2m_min[0] : null,
+          tmax: day.temperature_2m_max ? day.temperature_2m_max[0] : null,
+          rainProb: day.precipitation_probability_max ? day.precipitation_probability_max[0] : null
+        };
+        setData(d);
+        try { localStorage.setItem(cacheKey, JSON.stringify({ t: Date.now(), d })); } catch(e) {}
+      })
+      .catch(e => { if (!cancelled) setErr(e.message); });
+
+    return () => { cancelled = true; };
+  }, []);
+
+  // WMO code → emoji + popis
+  const visual = useMemo(() => {
+    if (!data) return null;
+    const c = data.code;
+    let icon = '☀️', label = 'jasno';
+    if (c == 0) { icon='☀️'; label='jasno'; }
+    else if (c <= 3) { icon='⛅'; label='polojasno'; }
+    else if (c <= 48) { icon='🌫️'; label='mlha'; }
+    else if (c <= 57) { icon='🌦️'; label='mrholí'; }
+    else if (c <= 67) { icon='🌧️'; label='déšť'; }
+    else if (c <= 77) { icon='🌨️'; label='sníh'; }
+    else if (c <= 82) { icon='🌧️'; label='přeháňky'; }
+    else if (c <= 86) { icon='🌨️'; label='sněhové přeháňky'; }
+    else { icon='⛈️'; label='bouřka'; }
+    return { icon, label };
+  }, [data]);
+
+  const outfit = useMemo(() => {
+    if (!data) return null;
+    return suggestOutfit(data.tmin != null ? data.tmin : data.temp, (data.rainProb||0)/100, data.wind);
+  }, [data]);
+
+  return { data, err, visual, outfit };
+}
+
+// ====================================================================
+// TTS HOOK (Web Speech API - česky pokud dostupné)
+// ====================================================================
+
+function useTTS(enabled) {
+  const voiceRef = useRef(null);
+  const lastSpokenRef = useRef({ key: null, t: 0 });
+
+  useEffect(() => {
+    if (!('speechSynthesis' in window)) return;
+    const pickVoice = () => {
+      const voices = window.speechSynthesis.getVoices();
+      // preferuj čeština, jinak slovenština, jinak default
+      let v = voices.find(x => x.lang && x.lang.toLowerCase().startsWith('cs'));
+      if (!v) v = voices.find(x => x.lang && x.lang.toLowerCase().startsWith('sk'));
+      if (!v) v = voices[0];
+      voiceRef.current = v || null;
+    };
+    pickVoice();
+    window.speechSynthesis.onvoiceschanged = pickVoice;
+    return () => { window.speechSynthesis.onvoiceschanged = null; };
+  }, []);
+
+  const speak = useCallback((key, text) => {
+    if (!enabled) return;
+    if (!('speechSynthesis' in window)) return;
+    // anti-spam: stejný klíč max 1x za 8s
+    const now = Date.now();
+    if (lastSpokenRef.current.key === key && now - lastSpokenRef.current.t < 8000) return;
+    lastSpokenRef.current = { key, t: now };
+    try {
+      window.speechSynthesis.cancel();
+      const u = new SpeechSynthesisUtterance(text);
+      if (voiceRef.current) u.voice = voiceRef.current;
+      u.lang = (voiceRef.current && voiceRef.current.lang) || 'cs-CZ';
+      u.rate = 1.0; u.pitch = 1.05; u.volume = 0.95;
+      window.speechSynthesis.speak(u);
+    } catch(e) {}
+  }, [enabled]);
+
+  const sayRandom = useCallback((key, pool) => {
+    if (!pool || !pool.length) return;
+    const text = pool[Math.floor(Math.random()*pool.length)];
+    speak(key, text);
+  }, [speak]);
+
+  return { speak, sayRandom };
+}
+
+// ====================================================================
+// MASCOT (Lišák {mascotName}) - SVG-free pure divs, per prototype
+// ====================================================================
+
+function Mascot({ size, sleeping, dancing, onTap }) {
+  const s = size || 96;
+  const scale = s / 96;
+  const px = (n) => Math.round(n * scale) + 'px';
+  const floatAnim = sleeping ? 'floatY 6s ease-in-out infinite' : (dancing ? 'softPulse 0.6s ease-in-out infinite' : 'floatY 3.4s ease-in-out infinite');
+  const eyeAnim = sleeping ? 'none' : 'blink 5s infinite';
+  const mouthBorder = sleeping ? `${Math.max(2,Math.round(3*scale))}px solid #2a2240` : `${Math.max(2,Math.round(3*scale))}px solid #2a2240`;
+  return (
+    <div onClick={onTap} style={{ width: s, height: s, position:'relative', animation: floatAnim, cursor: onTap ? 'pointer' : 'default' }}>
+      <div style={{ position:'absolute', inset:0, borderRadius:'50% 50% 48% 48%', background:'linear-gradient(160deg, var(--accent2Lt), var(--accent2))', boxShadow:'inset 0 -10px 18px rgba(0,0,0,.12), 0 10px 22px -8px var(--accent2)' }}/>
+      <div style={{ position:'absolute', top: px(-9), left: px(14), width: px(30), height: px(30), background:'var(--accent2)', borderRadius:'50% 50% 10% 50%', transform: sleeping ? 'rotate(-30deg)' : 'rotate(-18deg)' }}/>
+      <div style={{ position:'absolute', top: px(-9), right: px(14), width: px(30), height: px(30), background:'var(--accent2)', borderRadius:'50% 50% 50% 10%', transform: sleeping ? 'rotate(30deg)' : 'rotate(18deg)' }}/>
+      {sleeping ? (
+        <React.Fragment>
+          {/* zavřená očka */}
+          <div style={{ position:'absolute', top: px(46), left: px(24), width: px(16), height: px(3), background:'#2a2240', borderRadius:'2px' }}/>
+          <div style={{ position:'absolute', top: px(46), right: px(24), width: px(16), height: px(3), background:'#2a2240', borderRadius:'2px' }}/>
+          {/* ZZZ */}
+          <div style={{ position:'absolute', top: px(-18), right: px(-6), fontSize: px(20), color:'#fff', opacity:.85, animation:'floatY 2.4s ease-in-out infinite' }}>z</div>
+          <div style={{ position:'absolute', top: px(-32), right: px(2), fontSize: px(14), color:'#fff', opacity:.65, animation:'floatY 2.4s ease-in-out infinite .4s' }}>z</div>
+        </React.Fragment>
+      ) : (
+        <React.Fragment>
+          <div style={{ position:'absolute', top: px(38), left: px(24), width: px(16), height: px(18), background:'#fff', borderRadius:'50%', animation: eyeAnim }}>
+            <div style={{ position:'absolute', bottom: px(3), left: px(4), width: px(8), height: px(8), background:'#2a2240', borderRadius:'50%' }}/>
+          </div>
+          <div style={{ position:'absolute', top: px(38), right: px(24), width: px(16), height: px(18), background:'#fff', borderRadius:'50%', animation: eyeAnim }}>
+            <div style={{ position:'absolute', bottom: px(3), left: px(4), width: px(8), height: px(8), background:'#2a2240', borderRadius:'50%' }}/>
+          </div>
+        </React.Fragment>
+      )}
+      <div style={{ position:'absolute', top: px(60), left:'50%', transform:'translateX(-50%)', width: px(14), height: px(8), borderBottom: mouthBorder, borderRadius:'0 0 12px 12px' }}/>
+      <div style={{ position:'absolute', top: px(55), left: px(13), width: px(13), height: px(8), background:'var(--accentLt)', borderRadius:'50%', opacity:.7 }}/>
+      <div style={{ position:'absolute', top: px(55), right: px(13), width: px(13), height: px(8), background:'var(--accentLt)', borderRadius:'50%', opacity:.7 }}/>
+    </div>
+  );
+}
+
+
+// ====================================================================
+// APP
+// ====================================================================
+
+function App() {
+  const baseAudio = useAudio();
+  const confetti = useConfetti();
+  const persisted = useMemo(loadState, []);
+
+  // --- core state
+  const [screen, setScreen] = useState('home');
+  const [theme, setTheme]   = useState((persisted && persisted.theme) || 'cisto');
+  const [childName, setChildName] = useState((persisted && persisted.childName) || 'Adam');
+  const [entered, setEntered] = useState(false);
+
+  const [points, setPoints]   = useState(persisted ? persisted.points  : 240);
+  const [totalXp, setTotalXp] = useState(persisted ? persisted.totalXp : 340);
+  const [streak] = useState(persisted ? persisted.streak : 5);
+
+  const [morning, setMorning] = useState(persisted ? persisted.morning : MORNING_STEPS);
+  const [evening, setEvening] = useState(persisted ? persisted.evening : EVENING_STEPS);
+  const [doneM, setDoneM] = useState((persisted && persisted.doneM) || {});
+  const [doneE, setDoneE] = useState((persisted && persisted.doneE) || {});
+  const [activeRoutine, setActiveRoutine] = useState(null);
+
+  const [whoHome, setWhoHome] = useState((persisted && persisted.whoHome) || 'mama');
+  const [departMin, setDepartMin] = useState(persisted ? persisted.departMin : (7*60+50));
+
+  const [simNow, setSimNow] = useState(Date.now());
+  const simStartRef = useRef(0);
+  const simBaseRef  = useRef(0);
+
+  const [shopItems, setShopItems] = useState((persisted && persisted.shopItems) || SHOP_DEFAULT.map(x => ({...x})));
+  const [shopState, setShopState] = useState((persisted && persisted.shopState) || {});
+  const [choreState, setChoreState] = useState((persisted && persisted.choreState) || {});
+  const [pendingApprovals, setPendingApprovals] = useState((persisted && persisted.pendingApprovals) || []);
+  const [packState, setPackState] = useState((persisted && persisted.packState) || {});
+  const [packAwarded, setPackAwarded] = useState(persisted ? !!persisted.packAwarded : false);
+  const [weeklyDone, setWeeklyDone] = useState((persisted && persisted.weeklyDone) || { w0:false, w1:true, w2:false, w3:false });
+  const [challenges, setChallenges] = useState((persisted && persisted.challenges) || CHALLENGE_DEFAULTS.map(x=>({...x})));
+  const [rozvrh, setRozvrh] = useState((persisted && persisted.rozvrh) || JSON.parse(JSON.stringify(ROZVRH_DEFAULT)));
+  const [buttonConfig, setButtonConfig] = useState((persisted && persisted.buttonConfig) || JSON.parse(JSON.stringify(BUTTON_CONFIG_DEFAULT)));
+
+  // parent overlay
+  const [parentOpen, setParentOpen] = useState(false);
+  const [parentLocked, setParentLocked] = useState(true);
+  const [parentTab, setParentTab] = useState('body');
+  const [editRoutine, setEditRoutine] = useState('morning');
+  const [pin, setPin] = useState('');
+  const [rozvrhDay, setRozvrhDay] = useState(0);
+
+  // brushing
+  const [brushRunning, setBrushRunning] = useState(false);
+  const [brushElapsed, setBrushElapsed] = useState(0);
+  const [brushReturn, setBrushReturn] = useState(null);
+  const brushTimerRef = useRef(null);
+
+  // form fields
+  const [newRewardName, setNewRewardName] = useState('');
+  const [newRewardCost, setNewRewardCost] = useState('');
+  const [newChallengeText, setNewChallengeText] = useState('');
+  const [newPraiseText, setNewPraiseText] = useState('');
+
+  // toast
+  const [toast, setToast] = useState(null);
+  const toastTimerRef = useRef(null);
+
+  // --- v2 state ---
+  const [mascotName, setMascotName] = useState((persisted && persisted.mascotName) || 'Riki');
+  const [soundOn, setSoundOn] = useState(persisted && persisted.soundOn !== undefined ? persisted.soundOn : true);
+  const [ttsOn, setTtsOn] = useState(persisted && persisted.ttsOn !== undefined ? persisted.ttsOn : true);
+  const [bedtime, setBedtime] = useState((persisted && persisted.bedtime) || '20:30');
+  const [wakeTime, setWakeTime] = useState((persisted && persisted.wakeTime) || '06:30');
+  const [praiseMessages, setPraiseMessages] = useState((persisted && persisted.praiseMessages) || PRAISE_DEFAULTS.slice());
+  const [streakDays, setStreakDays] = useState(persisted && persisted.streakDays != null ? persisted.streakDays : 0);
+  const [streakLastDate, setStreakLastDate] = useState((persisted && persisted.streakLastDate) || null);
+  const [eveningStreakDays, setEveningStreakDays] = useState(persisted && persisted.eveningStreakDays != null ? persisted.eveningStreakDays : 0);
+  const [eveningStreakLast, setEveningStreakLast] = useState((persisted && persisted.eveningStreakLast) || null);
+  const [moodLog, setMoodLog] = useState((persisted && persisted.moodLog) || {});
+  const [lastMoodDate, setLastMoodDate] = useState((persisted && persisted.lastMoodDate) || null);
+  const [showMoodPrompt, setShowMoodPrompt] = useState(false);
+  const [praiseShown, setPraiseShown] = useState(null);
+  const [rikiDancing, setRikiDancing] = useState(false);
+  const [parentPin, setParentPin] = useState((persisted && persisted.parentPin) || '1234');
+
+  const weather = useWeather(soundOn);
+  const tts = useTTS(ttsOn);
+
+  // audio wrapper - respektuje soundOn
+  const audio = useMemo(() => ({
+    tap:     () => soundOn && baseAudio.tap(),
+    ding:    () => soundOn && baseAudio.ding(),
+    coin:    () => soundOn && baseAudio.coin(),
+    success: () => soundOn && baseAudio.success(),
+    undo:    () => soundOn && baseAudio.undo(),
+  }), [soundOn, baseAudio]);
+
+  // --- real-time clock (každou vteřinu Date.now)
+  useEffect(() => {
+    const id = setInterval(() => setSimNow(Date.now()), 1000);
+    const t = setTimeout(() => setEntered(true), 1200);
+    return () => { clearInterval(id); clearTimeout(t); };
+  }, []);
+
+  // --- persistence
+  useEffect(() => {
+    saveState({
+      theme, points, totalXp, streak, morning, evening, doneM, doneE, whoHome, departMin,
+      shopItems, shopState, choreState, pendingApprovals, packState, packAwarded,
+      weeklyDone, challenges, rozvrh, buttonConfig,
+      mascotName, soundOn, ttsOn, bedtime, wakeTime, praiseMessages,
+      streakDays, streakLastDate, eveningStreakDays, eveningStreakLast,
+      moodLog, lastMoodDate, parentPin, childName,
+    });
+  }, [theme, points, totalXp, streak, morning, evening, doneM, doneE, whoHome, departMin,
+      shopItems, shopState, choreState, pendingApprovals, packState, packAwarded,
+      weeklyDone, challenges, rozvrh, buttonConfig,
+      mascotName, soundOn, ttsOn, bedtime, wakeTime, praiseMessages,
+      streakDays, streakLastDate, eveningStreakDays, eveningStreakLast,
+      moodLog, lastMoodDate, parentPin, childName]);
+
+  // --- helpers
+  const tv = useMemo(() => THEMES[theme] || THEMES.cisto, [theme]);
+  const accent = tv['--accent'];
+
+  const showToast = useCallback((msg, icon) => {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    setToast({ msg, icon: icon || '⭐' });
+    toastTimerRef.current = setTimeout(() => setToast(null), 2600);
+  }, []);
+
+  const addPoints = useCallback((n, reason, celebrate) => {
+    setPoints(p => p + n); setTotalXp(x => x + n);
+    showToast(reason ? `+${n} bodů · ${reason}` : `+${n} bodů!`, '⭐');
+    if (celebrate) confetti.fire({ n:50 });
+  }, [showToast, confetti]);
+
+  // navigation
+  const go = useCallback((s) => { audio.tap(); setScreen(s); }, [audio]);
+  const startRoutine = useCallback((kind) => { audio.tap(); setActiveRoutine(kind); setScreen('routine'); }, [audio]);
+
+  // --- streak helpers
+  const bumpStreak = useCallback((kind) => {
+    const today = todayISO();
+    const yest = yesterdayISO();
+    if (kind === 'morning') {
+      if (streakLastDate === today) return; // už počítáno dnes
+      const newCount = (streakLastDate === yest) ? streakDays + 1 : 1;
+      setStreakDays(newCount);
+      setStreakLastDate(today);
+      if (newCount >= 2) {
+        if (newCount === 7 || newCount === 14 || newCount === 30) {
+          confetti.fire({ n: 140 });
+          audio.success();
+          showToast(`${newCount} dní v řadě! 🔥`, '🔥');
+          tts.sayRandom('streak', RIKI_PHRASES.streak);
+        } else {
+          showToast(`${newCount} dní v řadě 🔥`, '🔥');
+        }
+      }
+    } else {
+      if (eveningStreakLast === today) return;
+      const newCount = (eveningStreakLast === yest) ? eveningStreakDays + 1 : 1;
+      setEveningStreakDays(newCount);
+      setEveningStreakLast(today);
+    }
+  }, [streakDays, streakLastDate, eveningStreakDays, eveningStreakLast, confetti, audio, showToast, tts]);
+
+  const showPraise = useCallback(() => {
+    if (!praiseMessages || !praiseMessages.length) return;
+    const msg = praiseMessages[Math.floor(Math.random() * praiseMessages.length)];
+    setPraiseShown(msg);
+    setTimeout(() => setPraiseShown(null), 7000);
+    return msg;
+  }, [praiseMessages]);
+
+  // --- routine logic
+  const steps = (kind) => (kind === 'morning' ? morning : evening).filter(s => s.on);
+  const doneMap = (kind) => (kind === 'morning' ? doneM : doneE);
+  const setDone = (kind, m) => kind === 'morning' ? setDoneM(m) : setDoneE(m);
+
+  const checkStep = useCallback((kind, id) => {
+    const list = (kind==='morning'?morning:evening).filter(s=>s.on);
+    const cur = doneMap(kind);
+    const map = { ...cur, [id]: true };
+    setDone(kind, map);
+    const allDone = list.every(s => map[s.id]);
+    if (allDone) {
+      audio.success(); confetti.fire({ n: 110 });
+      setPoints(p => p + 10); setTotalXp(x => x + 10);
+      bumpStreak(kind);
+      // riki tančí + mluví + praise
+      setRikiDancing(true);
+      setTimeout(() => setRikiDancing(false), 3000);
+      tts.sayRandom('routineDone', RIKI_PHRASES.routineDone);
+      const msg = showPraise();
+      if (msg) setTimeout(() => tts.speak('praise-spoken', msg), 1500);
+    } else {
+      audio.ding(); confetti.fire({ y: 300, n: 26 });
+      // občas Riki řekne hlášku pro povzbuzení (cca každý 3. krok)
+      if (Math.random() < 0.35) tts.sayRandom('stepDone', RIKI_PHRASES.stepDone);
+    }
+  }, [morning, evening, doneM, doneE, audio, confetti, bumpStreak, tts, showPraise]);
+
+  const skipStep = useCallback((kind) => {
+    const list = steps(kind), map = doneMap(kind);
+    const cur = list.find(s => !map[s.id]); if (!cur) return;
+    audio.undo();
+    const nm = { ...map, [cur.id]: true };
+    setDone(kind, nm);
+    const allDone = list.every(s => nm[s.id]);
+    if (allDone) {
+      audio.success(); confetti.fire({n:90});
+      setPoints(p => p+10); setTotalXp(x => x+10);
+      bumpStreak(kind);
+    }
+    // eslint-disable-next-line
+  }, [morning, evening, doneM, doneE, audio, confetti, bumpStreak]);
+
+  // --- chores / shop / packing
+  const doChore = (c) => {
+    if (choreState[c.id]) return;
+    audio.coin();
+    setChoreState(s => ({ ...s, [c.id]: 'pending' }));
+    setPendingApprovals(p => [...p, { id:c.id, emoji:c.emoji, t:c.t, points:c.points }]);
+    showToast('Posláno rodiči ke schválení', '📨');
+  };
+  const approveChore = (id) => {
+    const item = pendingApprovals.find(p => p.id === id); if (!item) return;
+    audio.success(); confetti.fire({n:80});
+    setPoints(p => p + item.points); setTotalXp(x => x + item.points);
+    setChoreState(s => ({ ...s, [id]: 'done' }));
+    setPendingApprovals(p => p.filter(x => x.id !== id));
+    showToast(`+${item.points} bodů · ${item.t}`, '✅');
+  };
+  const rejectChore = (id) => {
+    audio.undo();
+    setChoreState(s => { const ns = {...s}; delete ns[id]; return ns; });
+    setPendingApprovals(p => p.filter(x => x.id !== id));
+  };
+  const redeem = (r) => {
+    if (shopState[r.id]) return;
+    if (points < r.cost) { audio.undo(); showToast('Ještě nemáš dost bodů', '🔒'); return; }
+    audio.coin();
+    setPoints(p => p - r.cost);
+    setShopState(s => ({ ...s, [r.id]: 'requested' }));
+    showToast('Požádáno · čeká na rodiče', '🎁');
+  };
+  const toggleWeekly = (id) => { audio.tap(); setWeeklyDone(s => ({ ...s, [id]: !s[id] })); };
+  const togglePack = (id, allIds) => {
+    audio.tap();
+    const cur = packState[id];
+    const ns = { ...packState, [id]: !cur };
+    setPackState(ns);
+    if (!cur) audio.ding(); else audio.undo();
+    if (!cur && allIds.every(x => ns[x]) && !packAwarded) {
+      setPackAwarded(true);
+      confetti.fire({ n: 80 });
+      addPoints(5, 'Sbaleno na zítřek', false);
+    }
+  };
+
+  // --- parent
+  const openParent = () => { audio.tap(); setParentOpen(true); };
+  const closeParent = () => setParentOpen(false);
+  const pinPress = (d) => {
+    audio.tap();
+    if (d === 'del') { setPin(p => p.slice(0,-1)); return; }
+    const np = (pin + d).slice(0,4);
+    setPin(np);
+    if (np.length === 4) {
+      setTimeout(() => {
+        if (np === parentPin) { audio.ding(); setParentLocked(false); setPin(''); }
+        else { audio.undo(); setPin(''); }
+      }, 150);
+    }
+  };
+  const skipPin = () => { audio.tap(); setParentLocked(false); };
+  const parentAddPoints = (n) => { audio.coin(); addPoints(n, null, true); };
+  const parentReason = (t) => { audio.coin(); addPoints(10, t, true); };
+  const changeDepart = (delta) => { audio.tap(); setDepartMin(d => Math.max(360, Math.min(600, d + delta))); };
+  const toggleEditStep = (kind, id) => {
+    audio.tap();
+    const setter = kind === 'morning' ? setMorning : setEvening;
+    setter(arr => arr.map(s => s.id === id ? { ...s, on: !s.on } : s));
+  };
+
+  // --- brushing
+  const openBrush = (fromKind) => {
+    audio.tap();
+    setBrushReturn(fromKind || null);
+    setBrushRunning(false); setBrushElapsed(0);
+    setScreen('zuby');
+  };
+  const startBrush = () => {
+    audio.tap();
+    setBrushElapsed(prev => prev >= 120 ? 0 : prev);
+    setBrushRunning(true);
+    if (brushTimerRef.current) clearInterval(brushTimerRef.current);
+    brushTimerRef.current = setInterval(() => {
+      setBrushElapsed(prev => {
+        const el = prev + 1;
+        const prevQuad = Math.floor(prev / 30);
+        const quad = Math.floor(el / 30);
+        if (quad !== prevQuad && el < 120) audio.ding();
+        if (el >= 120) {
+          clearInterval(brushTimerRef.current); brushTimerRef.current = null;
+          setBrushRunning(false);
+          audio.success(); confetti.fire({n:110});
+          // close + return to routine if applicable, and tick zuby step
+          setBrushReturn(rk => {
+            if (rk) {
+              checkStep(rk, 'zuby');
+              setTimeout(() => { setScreen('routine'); }, 1400);
+              return null;
+            }
+            return rk;
+          });
+          return 120;
+        }
+        return el;
+      });
+    }, 1000);
+  };
+  const pauseBrush = () => { audio.tap(); setBrushRunning(false); if (brushTimerRef.current) { clearInterval(brushTimerRef.current); brushTimerRef.current = null; } };
+  const resetBrush = () => { audio.undo(); setBrushElapsed(0); setBrushRunning(false); if (brushTimerRef.current) { clearInterval(brushTimerRef.current); brushTimerRef.current = null; } };
+
+  // --- admin editing
+  const addReward = () => {
+    const name = (newRewardName || '').trim();
+    const cost = parseInt(newRewardCost, 10);
+    if (!name || !cost || cost < 1) { audio.undo(); showToast('Vyplň název i cenu', '✏️'); return; }
+    audio.coin();
+    setShopItems(s => [...s, { id:'r'+Date.now(), emoji:'🎁', t:name, cost }]);
+    setNewRewardName(''); setNewRewardCost('');
+    showToast('Odměna přidána', '🎁');
+  };
+  const deleteReward = (id) => { audio.tap(); setShopItems(s => s.filter(x => x.id !== id)); };
+  const addChallenge = () => {
+    const t = (newChallengeText || '').trim();
+    if (!t) { audio.undo(); showToast('Napiš výzvu', '✏️'); return; }
+    audio.coin();
+    setChallenges(s => [...s, { id:'ch'+Date.now(), emoji:'⭐', t, done:false }]);
+    setNewChallengeText('');
+    showToast('Výzva přidána', '🏆');
+  };
+  const toggleChallenge = (id) => {
+    audio.tap();
+    const c = challenges.find(x => x.id === id);
+    if (c && !c.done) { audio.success(); confetti.fire({n:60}); }
+    setChallenges(s => s.map(x => x.id === id ? { ...x, done: !x.done } : x));
+  };
+  const deleteChallenge = (id) => { audio.tap(); setChallenges(s => s.filter(x => x.id !== id)); };
+  const rozvrhRemove = (day, pos) => {
+    audio.tap();
+    setRozvrh(r => { const cp = JSON.parse(JSON.stringify(r)); cp[day].splice(pos, 1); return cp; });
+  };
+  const rozvrhAdd = (day, code) => {
+    audio.tap();
+    setRozvrh(r => { const cp = JSON.parse(JSON.stringify(r)); cp[day] = [...(cp[day]||[]), code]; return cp; });
+  };
+
+  // --- smart buttons
+  const triggerTask = (t) => {
+    if (!t || t.key === 'none') return;
+    const todayKind = new Date(simNow).getHours() < 14 ? 'morning' : 'evening';
+    audio.success(); confetti.fire({n:70});
+    addPoints(t.points, t.label, false);
+    if (t.step) {
+      const list = steps(todayKind), map = doneMap(todayKind);
+      if (list.some(x => x.id === t.step) && !map[t.step]) checkStep(todayKind, t.step);
+    }
+  };
+  const pressDevice = (d) => triggerTask({ key:d.id, label:d.label, points:d.points, step:d.step });
+  const cycleButtonTask = (devId, g) => {
+    audio.tap();
+    const keys = TASK_CATALOG.map(t => t.key);
+    setButtonConfig(arr => arr.map(d => {
+      if (d.id !== devId) return d;
+      const idx = keys.indexOf(d.gestures[g]);
+      return { ...d, gestures: { ...d.gestures, [g]: keys[(idx+1) % keys.length] } };
+    }));
+  };
+
+
+  // ====================================================================
+  // COMPUTED VALUES
+  // ====================================================================
+  const now = new Date(simNow);
+  const h = now.getHours(), m = now.getMinutes();
+  const wd = (now.getDay() + 6) % 7; // 0=Mon
+
+  // greeting
+  let greeting;
+  if (h < 10) greeting = `Dobré ráno, ${childName}!`;
+  else if (h < 18) greeting = `Ahoj, ${childName}!`;
+  else greeting = `Dobrý večer, ${childName}!`;
+  const daysCS = ['Neděle','Pondělí','Úterý','Středa','Čtvrtek','Pátek','Sobota'];
+  const monthsCS = ['ledna','února','března','dubna','května','června','července','srpna','září','října','listopadu','prosince'];
+  const dateLine = `${daysCS[now.getDay()]} · ${now.getDate()}. ${monthsCS[now.getMonth()]}`;
+
+  // weather (Open-Meteo přes hook; pokud data nedorazí, fallback)
+  const wD = weather.data;
+  const wAdvice = (() => {
+    if (!wD) return 'Načítám počasí…';
+    if (wD.tmin != null && wD.tmin < 5) return 'Ráno bude zima, obleč se tepleji.';
+    if ((wD.rainProb || 0) > 60) return 'Bude pršet, vezmi si pláštěnku.';
+    if (wD.tmax != null && wD.tmax > 22) return 'Bude teplo, oblékni si lehké tričko.';
+    return 'Vypadá to na klidný den.';
+  })();
+  const wWearLine = weather.outfit ? weather.outfit.map(o => o.icon).join(' ') : '🌤️';
+  const wInfo = {
+    tempNow: wD && wD.temp != null ? Math.round(wD.temp) : '–',
+    tempMax: wD && wD.tmax != null ? Math.round(wD.tmax) : '–',
+    cond: weather.visual ? weather.visual.label : 'načítám',
+    emoji: weather.visual ? weather.visual.icon : '🌤️',
+    advice: wAdvice,
+    wear: wWearLine
+  };
+
+  // who-home today
+  const plToday = PLACES[whoHome] || PLACES.mama;
+  const whoTodayColor = tv[plToday.cvar];
+  const whoHomeToday = { label: plToday.label, short: plToday.short, color: whoTodayColor, ring: hexA(whoTodayColor, 0.18), bg: tv['--surface'] };
+
+  // semafor
+  const nowMinFloat = h*60 + m + now.getSeconds()/60;
+  const remain = departMin - nowMinFloat;
+  let semafor;
+  const off = 'rgba(255,255,255,0.14)';
+  const isWeekend = (now.getDay() === 0 || now.getDay() === 6);
+  const firstEv = (WEEK_EVENTS[wd] || [])[0];
+  if (isWeekend) {
+    semafor = { caption:'Dnes', big:'Víkend!', face:'🎈', status:'Žádná škola – užij si den',
+      sub: firstEv ? `Nejdřív: ${firstEv.time} ${firstEv.title}` : 'Volný den',
+      redOn:off, amberOn:off, greenOn:'#3ddc84', pillBg:'rgba(255,255,255,0.22)', pillInk:'#fff' };
+  } else if (remain > 0) {
+    const rh = Math.floor(remain/60), rm = Math.floor(remain % 60), rs = Math.floor((remain*60) % 60);
+    const big = (rh > 0 ? rh+':' : '') + pad2(rm) + ':' + pad2(rs);
+    let red = off, amber = off, green = off, face, status;
+    if (remain > 20) { green = '#3ddc84'; face = '😄'; status = 'Máš spoustu času'; }
+    else if (remain > 8) { amber = '#ffc23d'; face = '🙂'; status = 'Pomalu se chystej'; }
+    else { red = '#ff4d4d'; face = '🏃'; status = 'Honem, ať to stihneš!'; }
+    semafor = { caption:'Do školy zbývá', big, face, status,
+      sub: `Sraz u dveří v ${Math.floor(departMin/60)}:${pad2(departMin % 60)}`,
+      redOn:red, amberOn:amber, greenOn:green, pillBg:'rgba(255,255,255,0.22)', pillInk:'#fff' };
+  } else {
+    semafor = { caption:'Škola', big:'Ve škole', face:'🎒', status:'Užij si den!', sub:'Uvidíme se odpoledne',
+      redOn:off, amberOn:off, greenOn:'#3ddc84', pillBg:'rgba(255,255,255,0.22)', pillInk:'#fff' };
+  }
+
+  // today routine (morning before 14, else evening)
+  const todayKind = h < 14 ? 'morning' : 'evening';
+  const tList = steps(todayKind), tMap = doneMap(todayKind);
+  const tDone = tList.filter(x => tMap[x.id]).length;
+  const tNext = tList.find(x => !tMap[x.id]);
+  const todayRoutine = {
+    emoji: todayKind === 'morning' ? '☀️' : '🌙',
+    title: todayKind === 'morning' ? 'Ranní rutina' : 'Večerní rutina',
+    progressLabel: `${tDone} z ${tList.length} splněno`,
+    cta: tDone === 0 ? 'Začít' : (tNext ? 'Pokračovat' : 'Hotovo'),
+    dots: tList.map(x => ({ color: tMap[x.id] ? accent : tv['--soft'] })),
+    steps: tList.map(x => {
+      const dn = !!tMap[x.id];
+      return { t:x.t, icon:x.icon, check: dn?'✓':'', tickBg: dn?accent:'transparent', tickBorder: dn?accent:tv['--muted'], strike: dn?'line-through':'none', op: dn?0.5:1 };
+    }),
+  };
+
+  // today events
+  const todayEvents = (WEEK_EVENTS[wd] || []).map(e => ({
+    ...e, color: TYPE_COLOR[e.type] || accent,
+    sub: ({skola:'Vyučování', sport:'Nezapomeň věci', hudba:'Kroužek', vylet:'Celý den', rodina:'Společný čas'})[e.type] || ''
+  }));
+
+  // child
+  const level = Math.floor(totalXp / 100) + 1;
+  const xpPct = totalXp % 100;
+  const child = { name: childName, points, streak, levelLabel: 'Level ' + level, xpPct };
+
+  // routine screen data
+  const rKind = activeRoutine || todayKind;
+  const rList = steps(rKind), rMap = doneMap(rKind);
+  const rDoneCount = rList.filter(x => rMap[x.id]).length;
+  const rCurrent = rList.find(x => !rMap[x.id]);
+  const routine = {
+    title: rKind === 'morning' ? '☀️ Ranní rutina' : '🌙 Večerní rutina',
+    progressLabel: `${rDoneCount} z ${rList.length} hotovo`,
+    total: rList.length,
+    dots: rList.map(x => ({ color: rMap[x.id] ? accent : tv['--soft'] })),
+    hasCurrent: !!rCurrent,
+    allDone: !rCurrent,
+    current: rCurrent ? { ...rCurrent, num: rDoneCount + 1, isZuby: rCurrent.id === 'zuby' } : null,
+    doneTitle: rKind === 'morning' ? 'Připraven do školy!' : 'Hezky se vyspi!',
+    doneSub:   rKind === 'morning' ? 'Zvládl jsi celou ranní rutinu sám. Můžeš vyrazit s úsměvem.' : 'Všechno máš hotové. Zítra to dáš zase skvěle.',
+    reward: 10,
+  };
+
+  // calendar week
+  const monday = new Date(simNow); monday.setDate(monday.getDate() - wd); monday.setHours(0,0,0,0);
+  const dayShort = ['Po','Út','St','Čt','Pá','So','Ne'];
+  const calStart = 7, calEnd = 20, pxH = 46;
+  const calBodyH = (calEnd - calStart) * pxH;
+  const calHours = [];
+  for (let hh = calStart; hh <= calEnd; hh++) calHours.push({ label: hh+':00', top:(hh - calStart)*pxH });
+  const cal = { bodyH: calBodyH, hours: calHours };
+  const weekDays = dayShort.map((dn, i) => {
+    const dd = new Date(monday); dd.setDate(monday.getDate() + i);
+    const who = WEEK_WHO[i];
+    const isToday = i === wd;
+    const plc = PLACES[who] || PLACES.mama;
+    const wcol = tv[plc.cvar];
+    const evs = (WEEK_EVENTS[i] || []).map(e => {
+      const col = TYPE_COLOR[e.type] || accent;
+      const startDec = parseT(e.time);
+      let top = (startDec - calStart) * pxH;
+      let height = (e.dur || 1) * pxH - 4;
+      if (top < 0) { height += top; top = 0; }
+      if (top + height > calBodyH) height = calBodyH - top - 2;
+      if (height < 30) height = 30;
+      return { ...e, color: col, bg: hexA(col, isToday ? 0.18 : 0.12), top: Math.round(top), height: Math.round(height) };
+    });
+    return {
+      dayName:dn, date: dd.getDate()+'.', isToday,
+      outline: isToday ? `3px solid ${accent}` : 'none',
+      headBg: isToday ? accent : tv['--soft'], headInk: isToday ? '#fff' : tv['--ink'],
+      whoColor: wcol, whoBg: isToday ? 'rgba(255,255,255,0.22)' : tv['--surface'], whoInk: isToday ? '#fff' : tv['--muted'],
+      whoLabel: plc.short,
+      colBg: isToday ? hexA(accent, 0.05) : 'transparent',
+      events: evs,
+    };
+  });
+  const handover = 'Tento týden: Po–Út u mámy, St–Čt u táty, Pá u mámy, So u babičky, Ne u mámy. Předání ve středu ráno u školy.';
+  const placeLegend = PLACE_ORDER.map(k => ({ label: PLACES[k].short, color: tv[PLACES[k].cvar] }));
+
+  // rozvrh & packing
+  const fullDays = ['Pondělí','Úterý','Středa','Čtvrtek','Pátek','Sobota','Neděle'];
+  const dShort2 = ['Po','Út','St','Čt','Pá'];
+  const rozvrhWeek = [0,1,2,3,4].map(di => {
+    const isT = di === wd;
+    return {
+      dayName: fullDays[di], short: dShort2[di], isToday:isT,
+      rowBg: isT ? hexA(accent, 0.1) : tv['--soft'],
+      outline: isT ? `2px solid ${accent}` : 'none',
+      dayInk: isT ? accent : tv['--ink'],
+      lessons: (rozvrh[di] || []).map(c => SUBJECTS[c]),
+    };
+  });
+  let tIdx = wd, daysAhead = 0;
+  for (let k = 1; k <= 7; k++) { const cand = (wd + k) % 7; if (rozvrh[cand]) { tIdx = cand; daysAhead = k; break; } }
+  const dayAcc = { 'Pondělí':'na pondělí','Úterý':'na úterý','Středa':'na středu','Čtvrtek':'na čtvrtek','Pátek':'na pátek' };
+  const tomorrowLabel = daysAhead === 1 ? 'na zítra' : (dayAcc[fullDays[tIdx]] || 'na další den');
+  const tomorrowSubjects = (rozvrh[tIdx] || []).map(c => SUBJECTS[c]);
+  const packSeen = {}, packList = [];
+  (rozvrh[tIdx] || []).forEach(c => {
+    (SUBJECT_ITEMS[c] || []).forEach(it => {
+      if (!packSeen[it.t]) { packSeen[it.t] = 1; packList.push({ ...it, id: it.t, reason: SUBJECTS[c].t }); }
+    });
+  });
+  BASE_ITEMS.forEach(it => { if (!packSeen[it.t]) { packSeen[it.t] = 1; packList.push({ ...it, id: it.t, reason: 'Každý den' }); } });
+  const packIds = packList.map(it => it.id);
+  const packItems = packList.map(it => {
+    const pk = !!packState[it.id];
+    return { ...it, packed:pk, boxBg: pk ? tv['--good'] : 'transparent', boxBorder: pk ? tv['--good'] : tv['--muted'], check: pk ? '✓' : '', strike: pk ? 'line-through' : 'none' };
+  });
+  const packPct = Math.round(packItems.filter(it => it.packed).length / Math.max(1, packItems.length) * 100);
+
+  // brushing
+  const bEl = brushElapsed;
+  const bQuad = Math.min(3, Math.floor(bEl/30));
+  const bDone = bEl >= 120;
+  const quadNames = ['Horní pravá','Horní levá','Dolní levá','Dolní pravá'];
+  const secInQuad = bDone ? 0 : (bEl % 30);
+  const totalRem = Math.max(0, 120 - bEl);
+  const brush = {
+    running: brushRunning, done: bDone,
+    quadName: bDone ? 'Hotovo!' : quadNames[bQuad],
+    quadNum: bQuad + 1,
+    remQuad: bDone ? 0 : (30 - secInQuad),
+    quadPct: bDone ? 100 : Math.round(secInQuad/30 * 100),
+    totalPct: Math.round(Math.min(120, bEl)/120 * 100),
+    totalLabel: Math.floor(totalRem/60) + ':' + pad2(totalRem % 60),
+    startLabel: bEl === 0 ? 'Spustit' : (brushRunning ? 'Pauza' : (bDone ? 'Znovu' : 'Pokračovat')),
+    cells: quadNames.map((nm, i) => {
+      const st = bDone ? 'done' : (i < bQuad ? 'done' : (i === bQuad ? (brushRunning ? 'active' : 'next') : 'todo'));
+      const isActive = st === 'active', isDone = st === 'done';
+      return {
+        name:nm, num:i+1,
+        bg: isActive ? accent : (isDone ? hexA(accent, 0.14) : tv['--soft']),
+        ink: isActive ? '#fff' : (isDone ? accent : tv['--muted']),
+        icon: isDone ? '✓' : '🦷',
+        scale: isActive ? 'scale(1.04)' : 'scale(1)',
+        glow: isActive ? `0 12px 30px -6px ${hexA(accent, 0.6)}` : 'none',
+      };
+    }),
+  };
+
+  // shop computed
+  const shop = shopItems.map(r => {
+    const st = shopState[r.id];
+    const afford = points >= r.cost;
+    return {
+      ...r, opacity: st ? 0.7 : 1,
+      btnLabel2: st === 'requested' ? '⏳ Čeká na rodiče' : (afford ? 'Chci to! 🎉' : `Ještě ${r.cost - points} bodů`),
+      costBg: st === 'requested' ? tv['--soft'] : (afford ? hexA(accent, 0.15) : tv['--soft']),
+      costInk: afford && st !== 'requested' ? accent : tv['--muted'],
+      btnBg:   st === 'requested' ? tv['--soft'] : (afford ? accent : tv['--soft']),
+      btnInk:  st === 'requested' ? tv['--muted'] : (afford ? '#fff' : tv['--muted']),
+      cursor:  st || !afford ? 'default' : 'pointer',
+    };
+  });
+
+  const challengesKid = challenges.map(c => ({
+    ...c, bg: c.done ? hexA(accent, 0.13) : tv['--soft'], ink: c.done ? accent : tv['--ink'],
+    badge: c.done ? '✓ Splněno' : 'Sbírej',
+    badgeBg: c.done ? hexA(accent, 0.18) : 'rgba(0,0,0,0.04)',
+    mark: c.done ? '🏆' : c.emoji,
+  }));
+
+  const chores = CHORES_LIST.map(c => {
+    const st = choreState[c.id];
+    return {
+      ...c,
+      btnLabel: st === 'pending' ? '⏳ Čeká' : (st === 'done' ? '✓ Hotovo' : 'Hotovo'),
+      btnBg: st === 'pending' ? tv['--soft'] : (st === 'done' ? tv['--good'] : accent),
+      btnInk: st === 'pending' ? tv['--muted'] : '#fff',
+      cursor: st ? 'default' : 'pointer',
+    };
+  });
+  const weeklyChoresR = WEEKLY_CHORES.map(w => {
+    const done = weeklyDone[w.id];
+    return { ...w, check: done ? '✓' : '', boxBg: done ? tv['--good'] : 'transparent', boxBorder: done ? tv['--good'] : tv['--muted'], strike: done ? 'line-through' : 'none' };
+  });
+
+  // parent computed
+  const challengesAdmin = challenges.map(c => ({ ...c, toggleBg: c.done ? tv['--good'] : '#d4d4dd', knobLeft: c.done ? '23px' : '3px' }));
+  const subjectOrder = ['ces','mat','prv','aj','tv','hv','vv','pl','pc'];
+  const rDay = rozvrhDay || 0;
+  const rozvrhDayTabs = [0,1,2,3,4].map(di => ({ label:['Po','Út','St','Čt','Pá'][di], active: di === rDay, bg: di === rDay ? accent : '#f0f0f7', ink: di === rDay ? '#fff' : '#6a6680' }));
+  const rozvrhEditItems = (rozvrh[rDay] || []).map((code, pos) => ({ ...SUBJECTS[code], pos }));
+  const rozvrhAddOptions = subjectOrder.map(code => ({ ...SUBJECTS[code], code }));
+
+  const gLabels = { single:'1× stisk', double:'2× stisk', long:'Dlouhý stisk' };
+  const taskByKey = (k) => TASK_CATALOG.find(t => t.key === k) || TASK_CATALOG[TASK_CATALOG.length - 1];
+  const buttonDevices = buttonConfig.map(d => ({
+    id:d.id, name:d.name,
+    gestures: ['single','double','long'].map(g => {
+      const t = taskByKey(d.gestures[g]);
+      return { g, gLabel: gLabels[g], taskLabel:t.label, taskEmoji:t.emoji, hasTask: t.key !== 'none',
+        pointsLabel: t.key === 'none' ? '' : ('+' + t.points),
+        pillBg: t.key === 'none' ? '#f0f0f7' : hexA(accent, 0.12),
+        pillInk: t.key === 'none' ? '#9a96ac' : accent,
+        url: `detsky-pomocnik.app/hue?b=${d.id}&g=${g}`,
+        task: t,
+      };
+    }),
+  }));
+
+  const editKind = editRoutine;
+  const editSteps = (editKind === 'morning' ? morning : evening).map(st => ({
+    ...st, toggleBg: st.on ? '#16a34a' : '#d4d4dd', knobLeft: st.on ? '23px' : '3px'
+  }));
+
+  const parentTabsR = [
+    { id:'body',     icon:'⭐', label:'Body' },
+    { id:'dnes',     icon:'🏠', label:'Dnes' },
+    { id:'rutiny',   icon:'✅', label:'Rutiny' },
+    { id:'odmeny',   icon:'🎁', label:'Odměny' },
+    { id:'kalendar', icon:'📅', label:'Kalendář' },
+    { id:'tlacitka', icon:'🔘', label:'Tlačítka' },
+    { id:'nalada',   icon:'💜', label:'Nálada' },
+    { id:'vzkazy',   icon:'💌', label:'Vzkazy' },
+    { id:'nastav',   icon:'⚙️', label:'Nastavení' },
+  ].map(t => ({ ...t, op: parentTab === t.id ? 1 : 0.4, ink: parentTab === t.id ? accent : '#9a96ac' }));
+
+  const pinKeysRaw = ['1','2','3','4','5','6','7','8','9','','0','del'];
+  const pinKeys = pinKeysRaw.map(k => ({ k, label: k === 'del' ? '⌫' : k, bg: k === '' ? 'transparent' : 'rgba(255,255,255,0.12)' }));
+  const pinDots = [0,1,2,3].map(i => ({ bg: i < pin.length ? '#fff' : 'transparent' }));
+
+  const themeChips = [
+    { id:'energie', label:'Energie' }, { id:'klid', label:'Klid' }, { id:'cisto', label:'Čisto' }
+  ].map(t => ({ ...t, bg: theme === t.id ? accent : 'transparent', ink: theme === t.id ? '#fff' : tv['--muted'] }));
+
+  const ent = (i) => entered ? 'none' : `slideUp .6s cubic-bezier(.2,.85,.3,1) ${(0.06 + i*0.1).toFixed(2)}s both`;
+
+  const rootStyle = {
+    ...tv,
+    '--display': "'Baloo 2', 'Nunito Sans', system-ui, sans-serif",
+    '--gridline': 'rgba(120,120,140,0.13)',
+    width:'100%', height:'100%', overflow:'hidden', position:'relative',
+    fontFamily: "'Nunito Sans', system-ui, sans-serif", color:'var(--ink)', background:'var(--bg)',
+  };
+
+  const placeButtons = PLACE_ORDER.map(k => {
+    const pl = PLACES[k]; const active = whoHome === k; const col = tv[pl.cvar];
+    return { k, label: pl.short, bg: active ? col : '#f0f0f7', ink: active ? '#fff' : '#6a6680' };
+  });
+  const pendingList = pendingApprovals;
+  const shopAdmin = shopItems;
+
+  // --- v2 computed: noční režim (počítá s REÁLNÝM časem, ne simNow)
+  const realNow = new Date();
+  const realH = realNow.getHours(), realM = realNow.getMinutes();
+  const realMin = realH * 60 + realM;
+  const bedMin = parseT(bedtime) * 60;
+  const wakeMin = parseT(wakeTime) * 60;
+  // okno noci: od bedMin do wakeMin (přes půlnoc)
+  const isNightMode = wakeMin > bedMin
+    ? (realMin >= bedMin || realMin < wakeMin)
+    : (realMin >= bedMin && realMin < wakeMin);
+  const isRikiSleeping = isNightMode;
+
+  // --- streak text
+  const streakText = streakDays >= 2 ? `${streakDays} dní v řadě 🔥` : null;
+
+  // --- mood
+  const todayMoodDone = lastMoodDate === todayISO();
+  const moodOptions = [
+    { e:'😄', t:'super' },
+    { e:'🙂', t:'fajn' },
+    { e:'😐', t:'jde to' },
+    { e:'😕', t:'mizerně' },
+    { e:'😢', t:'smutno' },
+    { e:'😡', t:'naštvaně' },
+  ];
+  const moodHistory = useMemo(() => {
+    var arr = [];
+    for (var i = 6; i >= 0; i--) {
+      var d = new Date(); d.setDate(d.getDate() - i);
+      var iso = d.getFullYear() + '-' + pad2(d.getMonth()+1) + '-' + pad2(d.getDate());
+      arr.push({ iso, day: ['Ne','Po','Út','St','Čt','Pá','So'][d.getDay()], mood: moodLog[iso] || null });
+    }
+    return arr;
+  }, [moodLog]);
+
+  // --- v2 handlers
+  const logMood = useCallback((emoji) => {
+    const today = todayISO();
+    setMoodLog(m => ({ ...m, [today]: emoji }));
+    setLastMoodDate(today);
+    setShowMoodPrompt(false);
+    audio.coin();
+    showToast('Díky, že jsi to napsal/a!', '💜');
+  }, [audio, showToast]);
+
+  const addPraiseMessage = useCallback((txt) => {
+    if (!txt || !txt.trim()) return;
+    setPraiseMessages(m => [...m, txt.trim()]);
+    setNewPraiseText('');
+  }, []);
+
+  const removePraiseMessage = useCallback((idx) => {
+    setPraiseMessages(m => m.filter((_, i) => i !== idx));
+  }, []);
+
+  const resetAllData = useCallback(() => {
+    if (!window.confirm('Opravdu smazat všechna data? Tohle nelze vrátit.')) return;
+    try { localStorage.removeItem(LS_KEY); } catch(e) {}
+    window.location.reload();
+  }, []);
+
+  const exportData = useCallback(() => {
+    try {
+      const data = localStorage.getItem(LS_KEY) || '{}';
+      const blob = new Blob([data], { type:'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'domaci-pomocnik-zaloha-' + todayISO() + '.json';
+      a.click();
+      URL.revokeObjectURL(url);
+      showToast('Záloha stažena', '💾');
+    } catch(e) { showToast('Chyba zálohy', '⚠️'); }
+  }, [showToast]);
+
+  const importData = useCallback((e) => {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const txt = ev.target.result;
+        JSON.parse(txt); // validace
+        if (!window.confirm('Naimportovat data ze zálohy? Stávající data budou přepsána.')) return;
+        localStorage.setItem(LS_KEY, txt);
+        window.location.reload();
+      } catch(err) { showToast('Neplatný soubor', '⚠️'); }
+    };
+    reader.readAsText(file);
+  }, [showToast]);
+
+  // ukázat mood prompt po dokončení ranní rutiny (jen 1x za den)
+  useEffect(() => {
+    const list = morning.filter(s => s.on);
+    const allDone = list.length > 0 && list.every(s => doneM[s.id]);
+    if (allDone && !todayMoodDone && !showMoodPrompt) {
+      // krátké zpoždění aby si dítě nejdřív užilo konfety
+      const t = setTimeout(() => setShowMoodPrompt(true), 4500);
+      return () => clearTimeout(t);
+    }
+  }, [doneM, morning, todayMoodDone, showMoodPrompt]);
+
+  // greeting TTS jednou při vstupu
+  const greetedRef = useRef(false);
+  useEffect(() => {
+    if (entered && !greetedRef.current && ttsOn) {
+      greetedRef.current = true;
+      setTimeout(() => tts.sayRandom('hello', RIKI_PHRASES.hello), 800);
+    }
+  }, [entered, ttsOn, tts]);
+
+  // proaktivní cache (bez SW - jednoduchý warmup pro offline použití)
+  // Pro plný offline-first režim přidej sw.js vedle index.html (viz README)
+  useEffect(() => {
+    if (!('caches' in window)) return;
+    try {
+      const urls = [
+        location.href,
+        'https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;600;700;800&family=Nunito+Sans:opsz,wght@6..12,400;6..12,600;6..12,700;6..12,800;6..12,900&display=swap',
+        'https://unpkg.com/react@18.3.1/umd/react.production.min.js',
+        'https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js',
+        'https://unpkg.com/@babel/standalone@7.24.7/babel.min.js'
+      ];
+      caches.open('dp-v3-warm').then(c => {
+        urls.forEach(u => { c.add(u).catch(() => {}); });
+      }).catch(() => {});
+    } catch(e) {}
+  }, []);
+
+  // ====================================================================
+  // RENDER
+  // ====================================================================
+  return (
+    <div style={rootStyle}>
+      <div ref={confetti.ref} style={{ position:'absolute', inset:0, pointerEvents:'none', zIndex:90, overflow:'hidden' }}/>
+
+
+      {/* ===================== TABLET: HOME ===================== */}
+      {screen === 'home' && (
+      <div data-screen-label="Tablet — Domů" style={{ position:'absolute', inset:0, padding:'30px 34px', display:'flex', flexDirection:'column', gap:20 }}>
+
+        {/* top bar */}
+        <div style={{ display:'flex', alignItems:'center', gap:18, animation: ent(0) }}>
+          <div style={{ flex:1, minWidth:0 }}>
+            <div style={{ fontSize:17, fontWeight:800, letterSpacing:'.14em', textTransform:'uppercase', color:'var(--muted)' }}>{dateLine}</div>
+            <div style={{ fontFamily:'var(--display)', fontSize:42, fontWeight:600, lineHeight:1.05, color:'var(--ink)', marginTop:2 }}>{greeting}</div>
+          </div>
+          <div onClick={() => go('tlacitka')} style={{ cursor:'pointer', width:54, height:54, borderRadius:18, background:'var(--surface)', border:'var(--hair)', boxShadow:'var(--shadow)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:24 }} title="Chytrá tlačítka">🔘</div>
+          <div onClick={openParent} style={{ cursor:'pointer', width:54, height:54, borderRadius:18, background:'var(--surface)', border:'var(--hair)', boxShadow:'var(--shadow)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:24 }} title="Rodičovský režim">🔒</div>
+        </div>
+
+        {/* main grid */}
+        <div style={{ flex:1, minHeight:0, display:'grid', gridTemplateColumns:'1.32fr 1fr', gap:20 }}>
+
+          {/* LEFT */}
+          <div style={{ display:'flex', flexDirection:'column', gap:20, minHeight:0 }}>
+
+            {/* semafor */}
+            <div style={{ background:'var(--hero)', borderRadius:28, padding:'24px 26px', display:'flex', alignItems:'center', gap:26, boxShadow:'var(--shadow)', position:'relative', overflow:'hidden', border:'var(--hair)', animation: ent(1) }}>
+              <div style={{ display:'flex', flexDirection:'column', gap:11, padding:'14px 13px', background:'rgba(20,18,40,.18)', borderRadius:20 }}>
+                <div style={{ width:46, height:46, borderRadius:'50%', background: semafor.redOn, transition:'all .4s' }}/>
+                <div style={{ width:46, height:46, borderRadius:'50%', background: semafor.amberOn, transition:'all .4s' }}/>
+                <div style={{ width:46, height:46, borderRadius:'50%', background: semafor.greenOn, transition:'all .4s' }}/>
+              </div>
+              <div style={{ flex:1, minWidth:0 }}>
+                <div style={{ fontSize:15, fontWeight:800, letterSpacing:'.1em', textTransform:'uppercase', color:'var(--onhero-mut)' }}>{semafor.caption}</div>
+                <div style={{ fontFamily:'var(--display)', fontSize:74, fontWeight:600, lineHeight:.98, color:'var(--onhero)', letterSpacing:'.01em', margin:'4px 0 2px' }}>{semafor.big}</div>
+                <div style={{ display:'inline-flex', alignItems:'center', gap:9, background: semafor.pillBg, color: semafor.pillInk, fontWeight:800, fontSize:18, padding:'8px 15px', borderRadius:14 }}>
+                  <span style={{ fontSize:21 }}>{semafor.face}</span>{semafor.status}
+                </div>
+                <div style={{ fontSize:15, fontWeight:700, color:'var(--onhero-mut)', marginTop:11 }}>{semafor.sub}</div>
+              </div>
+            </div>
+
+            {/* routine card */}
+            <div onClick={() => startRoutine(todayKind)} style={{ cursor:'pointer', flex:1, minHeight:0, background:'var(--surface)', border:'var(--hair)', borderRadius:28, padding:'26px 28px', display:'flex', flexDirection:'column', boxShadow:'var(--shadow)', position:'relative', overflow:'hidden', animation: ent(3) }}>
+              <div style={{ display:'flex', alignItems:'flex-start', gap:16 }}>
+                <div style={{ fontSize:46, lineHeight:1 }}>{todayRoutine.emoji}</div>
+                <div style={{ flex:1 }}>
+                  <div style={{ fontFamily:'var(--display)', fontSize:30, fontWeight:600, color:'var(--ink)', lineHeight:1.05 }}>{todayRoutine.title}</div>
+                  <div style={{ fontSize:17, fontWeight:700, color:'var(--muted)', marginTop:3 }}>{todayRoutine.progressLabel}</div>
+                </div>
+                <div style={{ display:'flex', alignItems:'center', gap:9, background:'var(--accent)', color:'#fff', fontFamily:'var(--display)', fontWeight:600, fontSize:19, padding:'13px 22px', borderRadius:16, boxShadow:'0 8px 20px -6px var(--accentShadow)' }}>{todayRoutine.cta} →</div>
+              </div>
+              <div style={{ marginTop:22, display:'flex', gap:10, alignItems:'stretch' }}>
+                {todayRoutine.dots.map((d, i) => (
+                  <div key={i} style={{ flex:1, height:13, borderRadius:8, background: d.color, transition:'background .3s' }}/>
+                ))}
+              </div>
+              <div style={{ marginTop:16, flex:1, minHeight:0, display:'flex', flexDirection:'column', gap:7, overflow:'auto' }}>
+                {todayRoutine.steps.map((st, i) => (
+                  <div key={i} style={{ display:'flex', alignItems:'center', gap:12, padding:'9px 12px', background:'var(--soft)', borderRadius:13, opacity: st.op }}>
+                    <div style={{ width:26, height:26, flex:'none', borderRadius:8, background: st.tickBg, border: `2px solid ${st.tickBorder}`, display:'flex', alignItems:'center', justifyContent:'center', color:'#fff', fontSize:16 }}>{st.check}</div>
+                    <div style={{ fontSize:22 }}>{st.icon}</div>
+                    <div style={{ flex:1, fontFamily:'var(--display)', fontSize:17, fontWeight:500, color:'var(--ink)', textDecoration: st.strike }}>{st.t}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* RIGHT */}
+          <div style={{ display:'flex', flexDirection:'column', gap:20, minHeight:0 }}>
+
+            {/* maskot */}
+            <div onClick={() => go('rewards')} style={{ cursor:'pointer', background:'var(--maskotCard)', border:'var(--hair)', borderRadius:28, padding:'22px 24px', display:'flex', alignItems:'center', gap:18, boxShadow:'var(--shadow)', position:'relative', overflow:'hidden', animation: ent(2) }}>
+              <div style={{ flex:'none' }}><Mascot size={96} dancing={rikiDancing} sleeping={isRikiSleeping}/></div>
+              <div style={{ flex:1, minWidth:0 }}>
+                <div style={{ fontFamily:'var(--display)', fontSize:23, fontWeight:600, color:'var(--ink)' }}>{mascotName} · {child.levelLabel}</div>
+                <div style={{ display:'flex', alignItems:'center', gap:14, margin:'9px 0' }}>
+                  <div style={{ display:'flex', alignItems:'baseline', gap:5 }}>
+                    <span style={{ fontFamily:'var(--display)', fontSize:34, fontWeight:600, color:'var(--accent)' }}>{child.points}</span>
+                    <span style={{ fontSize:15, fontWeight:800, color:'var(--muted)' }}>bodů</span>
+                  </div>
+                  <div style={{ display:'flex', alignItems:'center', gap:5, background:'var(--soft)', padding:'6px 11px', borderRadius:12 }}>
+                    <span style={{ fontSize:18 }}>🔥</span>
+                    <span style={{ fontFamily:'var(--display)', fontSize:18, fontWeight:600, color:'var(--ink)' }}>{streakDays || child.streak}</span>
+                  </div>
+                </div>
+                <div style={{ height:11, background:'var(--soft)', borderRadius:8, overflow:'hidden' }}>
+                  <div style={{ height:'100%', width: child.xpPct+'%', background:'linear-gradient(90deg,var(--accent2),var(--accent))', borderRadius:8, transition:'width .6s' }}/>
+                </div>
+              </div>
+            </div>
+
+            {/* today */}
+            <div onClick={() => go('calendar')} style={{ cursor:'pointer', flex:1, minHeight:0, background:'var(--surface)', border:'var(--hair)', borderRadius:28, padding:'20px 22px', display:'flex', flexDirection:'column', boxShadow:'var(--shadow)', animation: ent(4) }}>
+              <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
+                <div style={{ display:'flex', alignItems:'center', gap:14, background:'var(--soft)', borderRadius:16, padding:'14px 17px' }}>
+                  <div style={{ fontSize:42, lineHeight:1 }}>{wInfo.emoji}</div>
+                  <div style={{ flex:1, minWidth:0 }}>
+                    <div style={{ fontFamily:'var(--display)', fontSize:24, fontWeight:600, color:'var(--ink)', lineHeight:1 }}>{wInfo.tempNow}° · {wInfo.cond}</div>
+                    <div style={{ fontSize:14, fontWeight:700, color:'var(--muted)', lineHeight:1.25, marginTop:3 }}>{wInfo.advice}</div>
+                  </div>
+                  <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:2, alignSelf:'center' }}>
+                    <div style={{ fontSize:28, letterSpacing:1, whiteSpace:'nowrap' }}>{wInfo.wear}</div>
+                    <div style={{ fontSize:11, fontWeight:800, color:'var(--muted)', textTransform:'uppercase', letterSpacing:'.05em' }}>Vezmi si</div>
+                  </div>
+                </div>
+                <div style={{ display:'flex', alignItems:'center', gap:13, background:'var(--soft)', borderRadius:16, padding:'14px 17px' }}>
+                  <div style={{ width:17, height:17, borderRadius:'50%', background: whoHomeToday.color, boxShadow:`0 0 0 4px ${whoHomeToday.ring}` }}/>
+                  <div style={{ fontSize:13, fontWeight:800, textTransform:'uppercase', letterSpacing:'.06em', color:'var(--muted)' }}>Dnes jsi</div>
+                  <div style={{ fontFamily:'var(--display)', fontSize:23, fontWeight:600, color:'var(--ink)' }}>{whoHomeToday.label}</div>
+                </div>
+              </div>
+              <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginTop:16 }}>
+                <div style={{ fontFamily:'var(--display)', fontSize:20, fontWeight:600, color:'var(--ink)' }}>Dnes tě čeká</div>
+                <div style={{ fontSize:14, fontWeight:800, color:'var(--accent)' }}>Kalendář →</div>
+              </div>
+              <div style={{ marginTop:11, display:'flex', flexDirection:'column', gap:9, flex:1, minHeight:0, overflow:'auto' }}>
+                {todayEvents.map((e, i) => (
+                  <div key={i} style={{ display:'flex', alignItems:'center', gap:11, padding:'10px 12px', background:'var(--soft)', borderRadius:14, borderLeft:`4px solid ${e.color}` }}>
+                    <div style={{ fontSize:22 }}>{e.emoji}</div>
+                    <div style={{ flex:1, minWidth:0 }}>
+                      <div style={{ fontFamily:'var(--display)', fontSize:16, fontWeight:500, color:'var(--ink)', lineHeight:1.1 }}>{e.title}</div>
+                      <div style={{ fontSize:13, fontWeight:700, color:'var(--muted)' }}>{e.sub}</div>
+                    </div>
+                    <div style={{ fontFamily:'var(--display)', fontSize:16, fontWeight:600, color:'var(--ink)' }}>{e.time}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* tiles */}
+            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:12, animation: ent(5) }}>
+              <div onClick={() => go('rozvrh')} style={{ cursor:'pointer', background:'linear-gradient(135deg,var(--accent2),var(--accent))', borderRadius:20, padding:'15px 13px', display:'flex', flexDirection:'column', gap:7, boxShadow:'var(--shadow)' }}>
+                <div style={{ fontSize:27 }}>📚</div>
+                <div>
+                  <div style={{ fontFamily:'var(--display)', fontSize:17, fontWeight:600, color:'#fff', lineHeight:1 }}>Rozvrh</div>
+                  <div style={{ fontSize:12, fontWeight:800, color:'rgba(255,255,255,.85)' }}>Sbal se na zítřek</div>
+                </div>
+              </div>
+              <div onClick={() => go('chores')} style={{ cursor:'pointer', background:'var(--tile1)', borderRadius:20, padding:'15px 13px', display:'flex', flexDirection:'column', gap:7, boxShadow:'var(--shadow)' }}>
+                <div style={{ fontSize:27 }}>✨</div>
+                <div>
+                  <div style={{ fontFamily:'var(--display)', fontSize:17, fontWeight:600, color:'#fff', lineHeight:1 }}>Extra úkoly</div>
+                  <div style={{ fontSize:12, fontWeight:800, color:'rgba(255,255,255,.85)' }}>Bodíky navíc</div>
+                </div>
+              </div>
+              <div onClick={() => go('rewards')} style={{ cursor:'pointer', background:'var(--tile2)', borderRadius:20, padding:'15px 13px', display:'flex', flexDirection:'column', gap:7, boxShadow:'var(--shadow)' }}>
+                <div style={{ fontSize:27 }}>🎁</div>
+                <div>
+                  <div style={{ fontFamily:'var(--display)', fontSize:17, fontWeight:600, color:'#fff', lineHeight:1 }}>Odměny</div>
+                  <div style={{ fontSize:12, fontWeight:800, color:'rgba(255,255,255,.85)' }}>Tvá přání</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      )}
+
+
+      {/* ===================== ROUTINE ===================== */}
+      {screen === 'routine' && (
+      <div data-screen-label="Rutina" style={{ position:'absolute', inset:0, background:'var(--routineBg)', display:'flex', flexDirection:'column' }}>
+        <div style={{ padding:'26px 34px', display:'flex', alignItems:'center', gap:18 }}>
+          <div onClick={() => go('home')} style={{ cursor:'pointer', width:54, height:54, borderRadius:18, background:'var(--surface)', border:'var(--hair)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:24, boxShadow:'var(--shadow)' }}>←</div>
+          <div style={{ flex:1 }}>
+            <div style={{ fontFamily:'var(--display)', fontSize:30, fontWeight:600, color:'var(--ink)', lineHeight:1 }}>{routine.title}</div>
+            <div style={{ fontSize:16, fontWeight:800, color:'var(--muted)', marginTop:2 }}>{routine.progressLabel}</div>
+          </div>
+          <div style={{ display:'flex', gap:9 }}>
+            {routine.dots.map((d, i) => (
+              <div key={i} style={{ width:34, height:13, borderRadius:8, background: d.color, transition:'background .3s' }}/>
+            ))}
+          </div>
+        </div>
+
+        {routine.hasCurrent && (
+        <div style={{ flex:1, minHeight:0, display:'flex', alignItems:'center', justifyContent:'center', padding:'10px 34px 30px' }}>
+          <div style={{ width:'100%', maxWidth:1080, display:'grid', gridTemplateColumns:'1.1fr 1fr', gap:30, alignItems:'center' }}>
+            <div style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:18 }}>
+              <div key={routine.current.id} style={{ width:300, height:300, borderRadius:'50%', background:'var(--stepRing)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:150, boxShadow:'var(--shadow)', animation:'popIn .5s ease' }}>{routine.current.icon}</div>
+            </div>
+            <div style={{ display:'flex', flexDirection:'column', gap:20 }}>
+              <div>
+                <div style={{ fontSize:17, fontWeight:900, letterSpacing:'.12em', textTransform:'uppercase', color:'var(--accent)' }}>Krok {routine.current.num} z {routine.total}</div>
+                <div style={{ fontFamily:'var(--display)', fontSize:54, fontWeight:600, color:'var(--ink)', lineHeight:1.02, marginTop:6 }}>{routine.current.t}</div>
+              </div>
+              <div style={{ display:'flex', alignItems:'flex-start', gap:13, background:'var(--surface)', border:'var(--hair)', borderRadius:20, padding:'18px 20px', boxShadow:'var(--shadow)' }}>
+                <div style={{ fontSize:30 }}>💬</div>
+                <div style={{ fontSize:20, fontWeight:700, color:'var(--ink)', lineHeight:1.35 }}>{routine.current.hint}</div>
+              </div>
+              {routine.current.isZuby && (
+                <div onClick={() => openBrush(rKind)} style={{ cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:10, background:'var(--accent2)', color:'#fff', fontFamily:'var(--display)', fontSize:22, fontWeight:600, padding:16, borderRadius:18, boxShadow:'0 12px 26px -8px var(--accent2)' }}>⏱️ Vyčistit s časovačem (2 min)</div>
+              )}
+              <div style={{ display:'flex', gap:14, alignItems:'center' }}>
+                <div onClick={() => checkStep(rKind, routine.current.id)} style={{ cursor:'pointer', flex:1, background:'var(--accent)', color:'#fff', fontFamily:'var(--display)', fontSize:30, fontWeight:600, padding:22, borderRadius:22, textAlign:'center', boxShadow:'0 14px 30px -8px var(--accentShadow)' }}>Hotovo! ✓</div>
+                <div onClick={() => skipStep(rKind)} style={{ cursor:'pointer', padding:'22px 24px', borderRadius:22, background:'var(--surface)', border:'var(--hair)', fontFamily:'var(--display)', fontSize:20, fontWeight:500, color:'var(--muted)' }}>Přeskočit</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        )}
+
+        {routine.allDone && (
+        <div style={{ flex:1, minHeight:0, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:22, padding:30, textAlign:'center' }}>
+          <div style={{ fontSize:140, animation:'popIn .6s ease' }}>🎉</div>
+          <div style={{ fontFamily:'var(--display)', fontSize:60, fontWeight:600, color:'var(--ink)', lineHeight:1 }}>{routine.doneTitle}</div>
+          <div style={{ fontSize:24, fontWeight:700, color:'var(--muted)', maxWidth:620 }}>{routine.doneSub}</div>
+          <div style={{ display:'flex', alignItems:'center', gap:11, background:'var(--accent)', color:'#fff', fontFamily:'var(--display)', fontSize:30, fontWeight:600, padding:'16px 30px', borderRadius:20, boxShadow:'0 14px 30px -8px var(--accentShadow)', animation:'popIn .6s ease .15s both' }}>+{routine.reward} bodů ⭐</div>
+          <div onClick={() => go('home')} style={{ cursor:'pointer', marginTop:6, padding:'16px 34px', borderRadius:18, background:'var(--surface)', border:'var(--hair)', fontFamily:'var(--display)', fontSize:22, fontWeight:500, color:'var(--ink)', boxShadow:'var(--shadow)' }}>Zpátky domů</div>
+        </div>
+        )}
+      </div>
+      )}
+
+      {/* ===================== CALENDAR ===================== */}
+      {screen === 'calendar' && (
+      <div data-screen-label="Kalendář" style={{ position:'absolute', inset:0, padding:'26px 30px', display:'flex', flexDirection:'column', gap:18 }}>
+        <div style={{ display:'flex', alignItems:'center', gap:16 }}>
+          <div onClick={() => go('home')} style={{ cursor:'pointer', width:52, height:52, borderRadius:17, background:'var(--surface)', border:'var(--hair)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:23, boxShadow:'var(--shadow)' }}>←</div>
+          <div style={{ flex:1 }}>
+            <div style={{ fontFamily:'var(--display)', fontSize:32, fontWeight:600, color:'var(--ink)', lineHeight:1 }}>Tvůj týden</div>
+            <div style={{ fontSize:15, fontWeight:800, color:'var(--muted)', marginTop:2, display:'flex', alignItems:'center', gap:8 }}>
+              <span style={{ display:'inline-flex', alignItems:'center', gap:5, color:'var(--good)' }}>● Připojeno na Google kalendář</span>
+            </div>
+          </div>
+          <div style={{ display:'flex', gap:14 }}>
+            {placeLegend.map((l, i) => (
+              <div key={i} style={{ display:'flex', alignItems:'center', gap:8 }}>
+                <div style={{ width:15, height:15, borderRadius:5, background: l.color }}/>
+                <span style={{ fontWeight:800, color:'var(--ink)' }}>{l.label}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div style={{ flex:1, minHeight:0, display:'flex', flexDirection:'column', background:'var(--surface)', border:'var(--hair)', borderRadius:22, boxShadow:'var(--shadow)', overflow:'hidden' }}>
+          <div style={{ display:'grid', gridTemplateColumns:'54px repeat(7,1fr)', borderBottom:'var(--hair)', flex:'none' }}>
+            <div/>
+            {weekDays.map((day, i) => (
+              <div key={i} style={{ padding:'9px 8px 8px', textAlign:'center', background: day.headBg, color: day.headInk, borderLeft:'1px solid var(--gridline)' }}>
+                <div style={{ fontFamily:'var(--display)', fontSize:16, fontWeight:600, lineHeight:1 }}>{day.dayName} {day.date}</div>
+                <div style={{ marginTop:5, display:'inline-flex', alignItems:'center', gap:5, background: day.whoBg, padding:'3px 8px', borderRadius:8 }}>
+                  <div style={{ width:8, height:8, borderRadius:'50%', background: day.whoColor }}/>
+                  <span style={{ fontSize:11, fontWeight:900, color: day.whoInk }}>{day.whoLabel}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+          <div style={{ flex:1, minHeight:0, overflow:'auto' }}>
+            <div style={{ display:'grid', gridTemplateColumns:'54px repeat(7,1fr)', height: cal.bodyH, position:'relative' }}>
+              <div style={{ position:'relative' }}>
+                {cal.hours.map((hh, i) => (
+                  <div key={i} style={{ position:'absolute', top: hh.top, right:8, transform:'translateY(-50%)', fontSize:12, fontWeight:800, color:'var(--muted)' }}>{hh.label}</div>
+                ))}
+              </div>
+              {weekDays.map((day, di) => (
+                <div key={di} style={{ position:'relative', borderLeft:'1px solid var(--gridline)', background: day.colBg }}>
+                  {cal.hours.map((hh, i) => (
+                    <div key={i} style={{ position:'absolute', left:0, right:0, top: hh.top, borderTop:'1px solid var(--gridline)' }}/>
+                  ))}
+                  {day.events.map((e, i) => (
+                    <div key={i} style={{ position:'absolute', left:4, right:4, top: e.top, height: e.height, background: e.bg, borderLeft:`4px solid ${e.color}`, borderRadius:9, padding:'5px 8px', overflow:'hidden' }}>
+                      <div style={{ fontSize:11, fontWeight:900, color: e.color }}>{e.time}</div>
+                      <div style={{ display:'flex', alignItems:'center', gap:5, marginTop:1 }}>
+                        <span style={{ fontSize:14 }}>{e.emoji}</span>
+                        <span style={{ fontFamily:'var(--display)', fontSize:13, fontWeight:600, color:'var(--ink)', lineHeight:1.05 }}>{e.title}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+        <div style={{ display:'flex', alignItems:'center', gap:12, background:'var(--soft)', borderRadius:16, padding:'13px 18px' }}>
+          <div style={{ fontSize:26 }}>🤝</div>
+          <div style={{ fontWeight:800, color:'var(--ink)', fontSize:17 }}>{handover}</div>
+        </div>
+      </div>
+      )}
+
+
+      {/* ===================== REWARDS ===================== */}
+      {screen === 'rewards' && (
+      <div data-screen-label="Odměny" style={{ position:'absolute', inset:0, padding:'26px 30px', display:'flex', flexDirection:'column', gap:18, overflow:'auto' }}>
+        <div style={{ display:'flex', alignItems:'center', gap:16 }}>
+          <div onClick={() => go('home')} style={{ cursor:'pointer', width:52, height:52, borderRadius:17, background:'var(--surface)', border:'var(--hair)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:23, boxShadow:'var(--shadow)' }}>←</div>
+          <div style={{ fontFamily:'var(--display)', fontSize:32, fontWeight:600, color:'var(--ink)', flex:1 }}>Body a odměny</div>
+        </div>
+
+        <div style={{ display:'grid', gridTemplateColumns:'1fr 1.4fr', gap:18 }}>
+          {/* maskot panel */}
+          <div style={{ background:'var(--maskotCard)', border:'var(--hair)', borderRadius:26, padding:26, display:'flex', flexDirection:'column', alignItems:'center', gap:16, boxShadow:'var(--shadow)' }}>
+            <Mascot size={170} dancing={rikiDancing} sleeping={isRikiSleeping}/>
+            <div style={{ textAlign:'center' }}>
+              <div style={{ fontFamily:'var(--display)', fontSize:26, fontWeight:600, color:'var(--ink)' }}>Lišák {mascotName}</div>
+              <div style={{ fontSize:15, fontWeight:800, color:'var(--muted)' }}>{child.levelLabel} · čím víc plníš, tím víc roste</div>
+            </div>
+            <div style={{ width:'100%', height:14, background:'var(--soft)', borderRadius:9, overflow:'hidden' }}>
+              <div style={{ height:'100%', width: child.xpPct+'%', background:'linear-gradient(90deg,var(--accent2),var(--accent))' }}/>
+            </div>
+            <div style={{ display:'flex', gap:12, width:'100%' }}>
+              <div style={{ flex:1, textAlign:'center', background:'var(--soft)', borderRadius:16, padding:14 }}>
+                <div style={{ fontFamily:'var(--display)', fontSize:30, fontWeight:600, color:'var(--accent)' }}>{child.points}</div>
+                <div style={{ fontSize:13, fontWeight:800, color:'var(--muted)' }}>bodů</div>
+              </div>
+              <div style={{ flex:1, textAlign:'center', background:'var(--soft)', borderRadius:16, padding:14 }}>
+                <div style={{ fontFamily:'var(--display)', fontSize:30, fontWeight:600, color:'var(--ink)' }}>🔥 {child.streak}</div>
+                <div style={{ fontSize:13, fontWeight:800, color:'var(--muted)' }}>dní v řadě</div>
+              </div>
+            </div>
+          </div>
+
+          {/* shop */}
+          <div style={{ background:'var(--surface)', border:'var(--hair)', borderRadius:26, padding:'22px 24px', boxShadow:'var(--shadow)' }}>
+            <div style={{ fontFamily:'var(--display)', fontSize:23, fontWeight:600, color:'var(--ink)', marginBottom:14 }}>Obchůdek odměn</div>
+            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>
+              {shop.map((r) => (
+                <div key={r.id} style={{ display:'flex', flexDirection:'column', gap:9, padding:15, background:'var(--soft)', borderRadius:18, opacity: r.opacity }}>
+                  <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', gap:8 }}>
+                    <div style={{ fontSize:38, lineHeight:1 }}>{r.emoji}</div>
+                    <div style={{ display:'flex', alignItems:'center', gap:4, background: r.costBg, color: r.costInk, fontFamily:'var(--display)', fontWeight:600, fontSize:16, padding:'5px 11px', borderRadius:12, whiteSpace:'nowrap' }}>{r.cost} ⭐</div>
+                  </div>
+                  <div style={{ fontFamily:'var(--display)', fontSize:18, fontWeight:500, color:'var(--ink)', lineHeight:1.12, minHeight:42 }}>{r.t}</div>
+                  <div onClick={() => redeem(r)} style={{ cursor: r.cursor, textAlign:'center', background: r.btnBg, color: r.btnInk, fontFamily:'var(--display)', fontSize:16, fontWeight:600, padding:10, borderRadius:13 }}>{r.btnLabel2}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* challenges */}
+        <div style={{ background:'var(--surface)', border:'var(--hair)', borderRadius:26, padding:'22px 24px', boxShadow:'var(--shadow)' }}>
+          <div style={{ fontFamily:'var(--display)', fontSize:23, fontWeight:600, color:'var(--ink)' }}>Výzvy týdne 🏆</div>
+          <div style={{ fontSize:14, fontWeight:700, color:'var(--muted)', margin:'4px 0 14px' }}>Speciální mise na tenhle týden — nastavuje rodič v aplikaci</div>
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:14 }}>
+            {challengesKid.map((c) => (
+              <div key={c.id} style={{ display:'flex', alignItems:'center', gap:14, padding:16, background: c.bg, borderRadius:18 }}>
+                <div style={{ fontSize:38, lineHeight:1 }}>{c.mark}</div>
+                <div style={{ flex:1, minWidth:0 }}>
+                  <div style={{ fontFamily:'var(--display)', fontSize:18, fontWeight:500, color: c.ink, lineHeight:1.12 }}>{c.t}</div>
+                  <div style={{ display:'inline-block', marginTop:7, fontSize:12, fontWeight:800, color: c.ink, background: c.badgeBg, padding:'3px 10px', borderRadius:9 }}>{c.badge}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+      )}
+
+      {/* ===================== CHORES ===================== */}
+      {screen === 'chores' && (
+      <div data-screen-label="Extra úkoly" style={{ position:'absolute', inset:0, padding:'26px 30px', display:'flex', flexDirection:'column', gap:18, overflow:'auto' }}>
+        <div style={{ display:'flex', alignItems:'center', gap:16 }}>
+          <div onClick={() => go('home')} style={{ cursor:'pointer', width:52, height:52, borderRadius:17, background:'var(--surface)', border:'var(--hair)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:23, boxShadow:'var(--shadow)' }}>←</div>
+          <div style={{ flex:1 }}>
+            <div style={{ fontFamily:'var(--display)', fontSize:32, fontWeight:600, color:'var(--ink)', lineHeight:1 }}>Extra úkoly</div>
+            <div style={{ fontSize:15, fontWeight:800, color:'var(--muted)' }}>Uděláš práci navíc → rodič ti schválí bodíky</div>
+          </div>
+        </div>
+
+        <div style={{ display:'grid', gridTemplateColumns:'1.5fr 1fr', gap:18 }}>
+          <div>
+            <div style={{ fontFamily:'var(--display)', fontSize:20, fontWeight:600, color:'var(--ink)', marginBottom:12 }}>Můžeš si vydělat</div>
+            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>
+              {chores.map((c) => (
+                <div key={c.id} style={{ background:'var(--surface)', border:'var(--hair)', borderRadius:20, padding:'17px 18px', display:'flex', alignItems:'center', gap:13, boxShadow:'var(--shadow)' }}>
+                  <div style={{ fontSize:34 }}>{c.emoji}</div>
+                  <div style={{ flex:1, minWidth:0 }}>
+                    <div style={{ fontFamily:'var(--display)', fontSize:19, fontWeight:500, color:'var(--ink)', lineHeight:1.05 }}>{c.t}</div>
+                    <div style={{ fontSize:14, fontWeight:900, color:'var(--accent)' }}>+{c.points} bodů</div>
+                  </div>
+                  <div onClick={() => doChore(c)} style={{ cursor: c.cursor, background: c.btnBg, color: c.btnInk, fontFamily:'var(--display)', fontSize:16, fontWeight:600, padding:'11px 14px', borderRadius:13, whiteSpace:'nowrap' }}>{c.btnLabel}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div>
+            <div style={{ fontFamily:'var(--display)', fontSize:20, fontWeight:600, color:'var(--ink)', marginBottom:12 }}>Týdenní povinnosti</div>
+            <div style={{ background:'var(--surface)', border:'var(--hair)', borderRadius:20, padding:'8px 10px', boxShadow:'var(--shadow)' }}>
+              {weeklyChoresR.map((w) => (
+                <div key={w.id} style={{ display:'flex', alignItems:'center', gap:12, padding:'13px 10px', borderBottom:'var(--hair)' }}>
+                  <div onClick={() => toggleWeekly(w.id)} style={{ cursor:'pointer', width:30, height:30, borderRadius:9, background: w.boxBg, border:`2px solid ${w.boxBorder}`, display:'flex', alignItems:'center', justifyContent:'center', color:'#fff', fontSize:18 }}>{w.check}</div>
+                  <div style={{ fontSize:24 }}>{w.emoji}</div>
+                  <div style={{ flex:1 }}>
+                    <div style={{ fontFamily:'var(--display)', fontSize:18, fontWeight:500, color:'var(--ink)', lineHeight:1, textDecoration: w.strike }}>{w.t}</div>
+                    <div style={{ fontSize:13, fontWeight:800, color:'var(--muted)' }}>{w.day}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+      )}
+
+      {/* ===================== ROZVRH & BALENÍ ===================== */}
+      {screen === 'rozvrh' && (
+      <div data-screen-label="Rozvrh" style={{ position:'absolute', inset:0, padding:'26px 30px', display:'flex', flexDirection:'column', gap:18, overflow:'auto' }}>
+        <div style={{ display:'flex', alignItems:'center', gap:16 }}>
+          <div onClick={() => go('home')} style={{ cursor:'pointer', width:52, height:52, borderRadius:17, background:'var(--surface)', border:'var(--hair)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:23, boxShadow:'var(--shadow)' }}>←</div>
+          <div style={{ flex:1 }}>
+            <div style={{ fontFamily:'var(--display)', fontSize:32, fontWeight:600, color:'var(--ink)', lineHeight:1 }}>Rozvrh &amp; balení</div>
+            <div style={{ fontSize:15, fontWeight:800, color:'var(--muted)' }}>Sbal si tašku večer — ráno ti nic nebude chybět</div>
+          </div>
+        </div>
+        <div style={{ display:'grid', gridTemplateColumns:'1.25fr 1fr', gap:18, flex:1, minHeight:0 }}>
+          <div style={{ background:'var(--surface)', border:'var(--hair)', borderRadius:24, padding:'20px 22px', boxShadow:'var(--shadow)', display:'flex', flexDirection:'column', gap:11 }}>
+            <div style={{ fontFamily:'var(--display)', fontSize:22, fontWeight:600, color:'var(--ink)' }}>Týdenní rozvrh</div>
+            {rozvrhWeek.map((d, di) => (
+              <div key={di} style={{ display:'flex', alignItems:'center', gap:13, padding:'11px 13px', background: d.rowBg, borderRadius:16, outline: d.outline }}>
+                <div style={{ width:40, flex:'none', fontFamily:'var(--display)', fontSize:18, fontWeight:600, color: d.dayInk }}>{d.short}</div>
+                <div style={{ flex:1, display:'flex', flexWrap:'wrap', gap:7 }}>
+                  {d.lessons.map((l, li) => (
+                    <div key={li} style={{ display:'flex', alignItems:'center', gap:5, background:'var(--soft)', borderRadius:10, padding:'5px 9px' }}>
+                      <span style={{ fontSize:15 }}>{l.emoji}</span>
+                      <span style={{ fontSize:13, fontWeight:800, color:'var(--ink)' }}>{l.t}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+          <div style={{ background:'var(--surface)', border:'var(--hair)', borderRadius:24, padding:'20px 22px', boxShadow:'var(--shadow)', display:'flex', flexDirection:'column', gap:12, minHeight:0 }}>
+            <div>
+              <div style={{ fontFamily:'var(--display)', fontSize:22, fontWeight:600, color:'var(--ink)' }}>Sbal se {tomorrowLabel}</div>
+              <div style={{ display:'flex', flexWrap:'wrap', gap:6, marginTop:8 }}>
+                {tomorrowSubjects.map((l, i) => (
+                  <div key={i} style={{ display:'flex', alignItems:'center', gap:5, background:'var(--soft)', borderRadius:9, padding:'4px 8px' }}>
+                    <span style={{ fontSize:14 }}>{l.emoji}</span>
+                    <span style={{ fontSize:12, fontWeight:800, color:'var(--muted)' }}>{l.t}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div style={{ height:11, background:'var(--soft)', borderRadius:8, overflow:'hidden' }}>
+              <div style={{ height:'100%', width: packPct+'%', background:'linear-gradient(90deg,var(--accent2),var(--accent))', transition:'width .4s' }}/>
+            </div>
+            <div style={{ flex:1, minHeight:0, overflow:'auto', display:'flex', flexDirection:'column', gap:9 }}>
+              {packItems.map((it) => (
+                <div key={it.id} onClick={() => togglePack(it.id, packIds)} style={{ cursor:'pointer', display:'flex', alignItems:'center', gap:12, padding:'11px 13px', background:'var(--soft)', borderRadius:14 }}>
+                  <div style={{ width:30, height:30, flex:'none', borderRadius:9, background: it.boxBg, border:`2px solid ${it.boxBorder}`, display:'flex', alignItems:'center', justifyContent:'center', color:'#fff', fontSize:18 }}>{it.check}</div>
+                  <div style={{ fontSize:24 }}>{it.emoji}</div>
+                  <div style={{ flex:1, minWidth:0 }}>
+                    <div style={{ fontFamily:'var(--display)', fontSize:17, fontWeight:500, color:'var(--ink)', lineHeight:1.05, textDecoration: it.strike }}>{it.t}</div>
+                    <div style={{ fontSize:12, fontWeight:800, color:'var(--muted)' }}>{it.reason}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+      )}
+
+
+      {/* ===================== ČIŠTĚNÍ ZUBŮ ===================== */}
+      {screen === 'zuby' && (
+      <div data-screen-label="Čištění zubů" style={{ position:'absolute', inset:0, background:'var(--routineBg)', display:'flex', flexDirection:'column' }}>
+        <div style={{ padding:'26px 34px', display:'flex', alignItems:'center', gap:18 }}>
+          <div onClick={() => { pauseBrush(); setScreen(brushReturn ? 'routine' : 'home'); }} style={{ cursor:'pointer', width:54, height:54, borderRadius:18, background:'var(--surface)', border:'var(--hair)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:24, boxShadow:'var(--shadow)' }}>←</div>
+          <div style={{ flex:1 }}>
+            <div style={{ fontFamily:'var(--display)', fontSize:30, fontWeight:600, color:'var(--ink)', lineHeight:1 }}>🪥 Čištění zubů</div>
+            <div style={{ fontSize:16, fontWeight:800, color:'var(--muted)', marginTop:2 }}>2 minuty · po částech, ať vyčistíš všechno</div>
+          </div>
+          <div style={{ fontFamily:'var(--display)', fontSize:34, fontWeight:600, color:'var(--ink)' }}>{brush.totalLabel}</div>
+        </div>
+        <div style={{ flex:1, minHeight:0, display:'flex', alignItems:'center', justifyContent:'center', padding:'6px 34px 30px' }}>
+          <div style={{ width:'100%', maxWidth:1000, display:'grid', gridTemplateColumns:'1fr 1fr', gap:40, alignItems:'center' }}>
+            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:16 }}>
+              {brush.cells.map((c, i) => (
+                <div key={i} style={{ minHeight:150, aspectRatio:1.4, borderRadius:22, background: c.bg, boxShadow: c.glow, transform: c.scale, transition:'all .3s', display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:8 }}>
+                  <div style={{ fontSize:54, lineHeight:1, color: c.ink }}>{c.icon}</div>
+                  <div style={{ fontFamily:'var(--display)', fontSize:19, fontWeight:600, color: c.ink }}>{c.name}</div>
+                </div>
+              ))}
+            </div>
+            <div style={{ display:'flex', flexDirection:'column', gap:22 }}>
+              <div>
+                <div style={{ fontSize:17, fontWeight:900, letterSpacing:'.12em', textTransform:'uppercase', color:'var(--accent)' }}>Teď čisti</div>
+                <div style={{ fontFamily:'var(--display)', fontSize:52, fontWeight:600, color:'var(--ink)', lineHeight:1.02, marginTop:6 }}>{brush.quadName}</div>
+              </div>
+              <div style={{ display:'flex', alignItems:'center', gap:18 }}>
+                <div style={{ fontFamily:'var(--display)', fontSize:62, fontWeight:600, color:'var(--ink)', minWidth:96 }}>{brush.remQuad}<span style={{ fontSize:24, color:'var(--muted)', fontWeight:800 }}> s</span></div>
+                <div style={{ flex:1 }}>
+                  <div style={{ fontSize:13, fontWeight:800, color:'var(--muted)', marginBottom:6 }}>Celkový postup</div>
+                  <div style={{ height:16, background:'var(--surface)', border:'var(--hair)', borderRadius:10, overflow:'hidden' }}>
+                    <div style={{ height:'100%', width: brush.totalPct+'%', background:'linear-gradient(90deg,var(--accent2),var(--accent))', transition:'width .9s linear' }}/>
+                  </div>
+                </div>
+              </div>
+              <div style={{ display:'flex', gap:14 }}>
+                <div onClick={() => (brush.running ? pauseBrush() : startBrush())} style={{ cursor:'pointer', flex:1, background:'var(--accent)', color:'#fff', fontFamily:'var(--display)', fontSize:26, fontWeight:600, padding:20, borderRadius:20, textAlign:'center', boxShadow:'0 14px 30px -8px var(--accentShadow)' }}>{brush.startLabel}</div>
+                <div onClick={resetBrush} style={{ cursor:'pointer', padding:'20px 24px', borderRadius:20, background:'var(--surface)', border:'var(--hair)', fontFamily:'var(--display)', fontSize:24, fontWeight:500, color:'var(--muted)' }}>↺</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      )}
+
+      {/* ===================== CHYTRÁ TLAČÍTKA ===================== */}
+      {screen === 'tlacitka' && (
+      <div data-screen-label="Chytrá tlačítka" style={{ position:'absolute', inset:0, padding:'26px 30px', display:'flex', flexDirection:'column', gap:18, overflow:'auto' }}>
+        <div style={{ display:'flex', alignItems:'center', gap:16 }}>
+          <div onClick={() => go('home')} style={{ cursor:'pointer', width:52, height:52, borderRadius:17, background:'var(--surface)', border:'var(--hair)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:23, boxShadow:'var(--shadow)' }}>←</div>
+          <div style={{ flex:1 }}>
+            <div style={{ fontFamily:'var(--display)', fontSize:32, fontWeight:600, color:'var(--ink)', lineHeight:1 }}>Chytrá tlačítka 🔘</div>
+            <div style={{ fontSize:15, fontWeight:800, color:'var(--muted)' }}>Jakmile něco uděláš, zmáčkni tlačítko — hned máš body</div>
+          </div>
+        </div>
+
+        <div style={{ display:'flex', alignItems:'center', gap:14, background:'var(--soft)', borderRadius:18, padding:'16px 18px' }}>
+          <div style={{ fontSize:30 }}>💡</div>
+          <div style={{ fontSize:15, fontWeight:700, color:'var(--ink)', lineHeight:1.4 }}>Doma jsou tahle tlačítka nalepená u záchodu a u umyvadla. Tady si stisk vyzkoušíš — chová se přesně jako to opravdové.</div>
+        </div>
+
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:18 }}>
+          {DEVICES.map((d) => (
+            <div key={d.id} onClick={() => pressDevice(d)} style={{ cursor:'pointer', background:'var(--surface)', border:'var(--hair)', borderRadius:26, padding:'26px 20px', display:'flex', flexDirection:'column', alignItems:'center', gap:14, boxShadow:'var(--shadow)', transition:'transform .12s' }}>
+              <div style={{ width:130, height:130, borderRadius:'50%', background:'radial-gradient(circle at 50% 35%, var(--accent), var(--accent2))', display:'flex', alignItems:'center', justifyContent:'center', fontSize:62, boxShadow:'0 14px 0 -2px rgba(0,0,0,.12), 0 18px 34px -10px var(--accentShadow)' }}>{d.emoji}</div>
+              <div style={{ textAlign:'center' }}>
+                <div style={{ fontFamily:'var(--display)', fontSize:24, fontWeight:600, color:'var(--ink)', lineHeight:1.05 }}>{d.label}</div>
+                <div style={{ fontSize:14, fontWeight:800, color:'var(--muted)', marginTop:3 }}>{d.sub}</div>
+              </div>
+              <div style={{ display:'flex', alignItems:'center', gap:6, background:'var(--soft)', color:'var(--accent)', fontFamily:'var(--display)', fontWeight:600, fontSize:18, padding:'8px 16px', borderRadius:14 }}>+{d.points} bodů ⭐</div>
+            </div>
+          ))}
+        </div>
+
+        <div style={{ background:'var(--surface)', border:'var(--hair)', borderRadius:22, padding:'20px 22px', boxShadow:'var(--shadow)' }}>
+          <div style={{ fontFamily:'var(--display)', fontSize:20, fontWeight:600, color:'var(--ink)', marginBottom:8 }}>Jak to zapojit doopravdy</div>
+          <div style={{ fontSize:15, fontWeight:700, color:'var(--muted)', lineHeight:1.5 }}>Stačí malé bezdrátové tlačítko (např. <span style={{ color:'var(--ink)' }}>Flic</span>, <span style={{ color:'var(--ink)' }}>Shelly Button</span> nebo <span style={{ color:'var(--ink)' }}>ESP32</span>). Nalepíš ho u záchodu a umyvadla. Při stisku pošle přes Wi‑Fi signál do téhle aplikace, ta sama odškrtne krok a přičte body — dítě nemusí na nic sahat na tabletu.</div>
+        </div>
+      </div>
+      )}
+
+
+      {/* ===================== PARENT PHONE OVERLAY ===================== */}
+      {parentOpen && (
+      <div data-screen-label="Rodičovský mobil" style={{ position:'absolute', inset:0, zIndex:80, background:'rgba(15,12,28,.55)', backdropFilter:'blur(4px)', display:'flex', alignItems:'center', justifyContent:'flex-end', padding:'24px 48px' }}>
+        <div onClick={closeParent} style={{ position:'absolute', inset:0 }}/>
+        <div style={{ position:'relative', width:392, height:760, background:'#0c0a14', borderRadius:46, padding:13, boxShadow:'0 40px 90px -20px rgba(0,0,0,.7)', animation:'slideUp .4s ease' }}>
+          <div style={{ position:'absolute', top:24, left:'50%', transform:'translateX(-50%)', width:120, height:26, background:'#0c0a14', borderRadius:'0 0 16px 16px', zIndex:5 }}/>
+          <div style={{ width:'100%', height:'100%', background:'#f4f4fb', borderRadius:36, overflow:'hidden', display:'flex', flexDirection:'column' }}>
+
+            {parentLocked && (
+            <div style={{ flex:1, background:'linear-gradient(170deg,#2a2350,#161229)', display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:22, padding:34, textAlign:'center' }}>
+              <div style={{ fontSize:50 }}>🔒</div>
+              <div style={{ fontFamily:'var(--display)', fontSize:25, fontWeight:600, color:'#fff' }}>Rodičovský režim</div>
+              <div style={{ fontSize:14, fontWeight:700, color:'rgba(255,255,255,.6)' }}>Zadej PIN (demo: 1234)</div>
+              <div style={{ display:'flex', gap:13 }}>
+                {pinDots.map((p, i) => (
+                  <div key={i} style={{ width:17, height:17, borderRadius:'50%', background: p.bg, border:'2px solid rgba(255,255,255,.4)' }}/>
+                ))}
+              </div>
+              <div style={{ display:'grid', gridTemplateColumns:'repeat(3,64px)', gap:14, marginTop:6 }}>
+                {pinKeys.map((k, i) => (
+                  <div key={i} onClick={() => { if (k.k !== '') pinPress(k.k); }} style={{ cursor: k.k === '' ? 'default' : 'pointer', height:64, borderRadius:'50%', background: k.bg, display:'flex', alignItems:'center', justifyContent:'center', fontFamily:'var(--display)', fontSize:26, fontWeight:500, color:'#fff' }}>{k.label}</div>
+                ))}
+              </div>
+              <div onClick={skipPin} style={{ cursor:'pointer', fontSize:14, fontWeight:800, color:'rgba(255,255,255,.55)', textDecoration:'underline', marginTop:4 }}>Přeskočit (demo)</div>
+            </div>
+            )}
+
+            {!parentLocked && (
+            <div style={{ flex:1, minHeight:0, display:'flex', flexDirection:'column' }}>
+              <div style={{ background:'linear-gradient(135deg,var(--accent),var(--accent2))', padding:'30px 22px 18px', color:'#fff' }}>
+                <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+                  <div>
+                    <div style={{ fontSize:13, fontWeight:800, opacity:.85, textTransform:'uppercase', letterSpacing:'.08em' }}>Rodičovský režim</div>
+                    <div style={{ fontFamily:'var(--display)', fontSize:25, fontWeight:600 }}>{childName} · {child.points} bodů</div>
+                  </div>
+                  <div onClick={closeParent} style={{ cursor:'pointer', width:38, height:38, borderRadius:'50%', background:'rgba(255,255,255,.22)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:20 }}>✕</div>
+                </div>
+              </div>
+
+              <div style={{ flex:1, minHeight:0, overflow:'auto', padding:16 }}>
+                {/* TAB: body */}
+                {parentTab === 'body' && (
+                <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
+                  <div style={{ background:'#fff', borderRadius:20, padding:18, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
+                    <div style={{ fontFamily:'var(--display)', fontSize:18, fontWeight:600, color:'#1a1530' }}>Přidat body</div>
+                    <div style={{ display:'flex', gap:10, marginTop:12 }}>
+                      {[5,10,20].map((n) => (
+                        <div key={n} onClick={() => parentAddPoints(n)} style={{ cursor:'pointer', flex:1, textAlign:'center', background:'linear-gradient(135deg,var(--accent),var(--accent2))', color:'#fff', fontFamily:'var(--display)', fontSize:24, fontWeight:600, padding:'16px 0', borderRadius:16 }}>+{n}</div>
+                      ))}
+                    </div>
+                    <div style={{ fontSize:13, fontWeight:800, color:'#8a86a0', margin:'14px 0 8px' }}>Za co? (rychlý důvod)</div>
+                    <div style={{ display:'flex', flexWrap:'wrap', gap:8 }}>
+                      {['Uklidil pokoj','Pomohl s nádobím','Bez připomínání','Hezky se učil'].map((t) => (
+                        <div key={t} onClick={() => parentReason(t)} style={{ cursor:'pointer', background:'rgba(124,92,255,0.1)', color:'#5a4bd0', fontWeight:800, fontSize:14, padding:'9px 13px', borderRadius:12 }}>{t}</div>
+                      ))}
+                    </div>
+                  </div>
+                  <div style={{ background:'#fff', borderRadius:20, padding:18, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
+                    <div style={{ fontFamily:'var(--display)', fontSize:18, fontWeight:600, color:'#1a1530', display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+                      Ke schválení <span style={{ fontSize:13, fontWeight:900, color:'var(--accent)' }}>{pendingList.length}</span>
+                    </div>
+                    {pendingList.length > 0 ? (
+                      <div style={{ display:'flex', flexDirection:'column', gap:9, marginTop:11 }}>
+                        {pendingList.map((p) => (
+                          <div key={p.id} style={{ display:'flex', alignItems:'center', gap:10, background:'#f4f4fb', borderRadius:14, padding:'11px 12px' }}>
+                            <div style={{ fontSize:24 }}>{p.emoji}</div>
+                            <div style={{ flex:1, minWidth:0 }}>
+                              <div style={{ fontFamily:'var(--display)', fontSize:15, fontWeight:500, color:'#1a1530', lineHeight:1.05 }}>{p.t}</div>
+                              <div style={{ fontSize:12, fontWeight:900, color:'var(--accent)' }}>+{p.points}</div>
+                            </div>
+                            <div onClick={() => approveChore(p.id)} style={{ cursor:'pointer', background:'#16a34a', color:'#fff', fontWeight:800, fontSize:13, padding:'9px 11px', borderRadius:11 }}>Schválit</div>
+                            <div onClick={() => rejectChore(p.id)} style={{ cursor:'pointer', background:'#eee', color:'#888', fontWeight:800, fontSize:13, padding:'9px 11px', borderRadius:11 }}>✕</div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div style={{ fontSize:14, fontWeight:700, color:'#9a96ac', marginTop:10 }}>Nic nečeká. 👌</div>
+                    )}
+                  </div>
+                </div>
+                )}
+
+                {/* TAB: dnes */}
+                {parentTab === 'dnes' && (
+                <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
+                  <div style={{ background:'#fff', borderRadius:20, padding:18, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
+                    <div style={{ fontFamily:'var(--display)', fontSize:18, fontWeight:600, color:'#1a1530' }}>Kde je {childName} dnes?</div>
+                    <div style={{ display:'flex', flexWrap:'wrap', gap:9, marginTop:12 }}>
+                      {placeButtons.map((b) => (
+                        <div key={b.k} onClick={() => { audio.tap(); setWhoHome(b.k); }} style={{ cursor:'pointer', flex:1, minWidth:90, textAlign:'center', padding:'15px 8px', borderRadius:16, background: b.bg, color: b.ink, fontFamily:'var(--display)', fontSize:18, fontWeight:600 }}>{b.label}</div>
+                      ))}
+                    </div>
+                    <div style={{ fontSize:12, fontWeight:700, color:'#9a96ac', marginTop:9 }}>Změnu hned uvidí dítě na tabletu.</div>
+                  </div>
+                  <div style={{ background:'#fff', borderRadius:20, padding:18, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
+                    <div style={{ fontFamily:'var(--display)', fontSize:18, fontWeight:600, color:'#1a1530' }}>Časy a odpočty</div>
+                    <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginTop:13, paddingBottom:12, borderBottom:'1px solid #eee' }}>
+                      <div>
+                        <div style={{ fontWeight:800, color:'#1a1530', fontSize:15 }}>🎒 Odchod do školy</div>
+                        <div style={{ fontSize:12, fontWeight:700, color:'#9a96ac' }}>Ukazuje semafor na tabletu</div>
+                      </div>
+                      <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+                        <div onClick={() => changeDepart(-5)} style={{ cursor:'pointer', width:32, height:32, borderRadius:10, background:'#f0f0f7', display:'flex', alignItems:'center', justifyContent:'center', fontSize:20, fontWeight:800 }}>−</div>
+                        <div style={{ fontFamily:'var(--display)', fontSize:20, fontWeight:600, color:'#1a1530', minWidth:64, textAlign:'center' }}>{Math.floor(departMin/60)}:{pad2(departMin%60)}</div>
+                        <div onClick={() => changeDepart(5)} style={{ cursor:'pointer', width:32, height:32, borderRadius:10, background:'#f0f0f7', display:'flex', alignItems:'center', justifyContent:'center', fontSize:20, fontWeight:800 }}>+</div>
+                      </div>
+                    </div>
+                    <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginTop:12 }}>
+                      <div>
+                        <div style={{ fontWeight:800, color:'#1a1530', fontSize:15 }}>🌙 Večerka</div>
+                        <div style={{ fontSize:12, fontWeight:700, color:'#9a96ac' }}>Spustí večerní rutinu</div>
+                      </div>
+                      <div style={{ fontFamily:'var(--display)', fontSize:20, fontWeight:600, color:'#1a1530' }}>20:30</div>
+                    </div>
+                  </div>
+                  <div style={{ background:'#fff', borderRadius:20, padding:18, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
+                    <div style={{ fontFamily:'var(--display)', fontSize:18, fontWeight:600, color:'#1a1530' }}>Počasí v Praze</div>
+                    <div style={{ display:'flex', alignItems:'center', gap:12, marginTop:11 }}>
+                      <div style={{ fontSize:34 }}>{wInfo.emoji}</div>
+                      <div>
+                        <div style={{ fontWeight:800, color:'#1a1530' }}>{wInfo.tempNow}° · {wInfo.cond}</div>
+                        <div style={{ fontSize:12, fontWeight:700, color:'#9a96ac' }}>Automaticky · rada na oblékání zapnutá</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                )}
+
+                {/* TAB: rutiny */}
+                {parentTab === 'rutiny' && (
+                <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
+                  <div style={{ display:'flex', gap:8 }}>
+                    <div onClick={() => { audio.tap(); setEditRoutine('morning'); }} style={{ cursor:'pointer', flex:1, textAlign:'center', padding:11, borderRadius:13, background: editKind === 'morning' ? accent : '#f0f0f7', color: editKind === 'morning' ? '#fff' : '#6a6680', fontFamily:'var(--display)', fontWeight:600 }}>☀️ Ranní</div>
+                    <div onClick={() => { audio.tap(); setEditRoutine('evening'); }} style={{ cursor:'pointer', flex:1, textAlign:'center', padding:11, borderRadius:13, background: editKind === 'evening' ? accent : '#f0f0f7', color: editKind === 'evening' ? '#fff' : '#6a6680', fontFamily:'var(--display)', fontWeight:600 }}>🌙 Večerní</div>
+                  </div>
+                  <div style={{ background:'#fff', borderRadius:20, padding:'10px 14px', boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
+                    {editSteps.map((s) => (
+                      <div key={s.id} style={{ display:'flex', alignItems:'center', gap:11, padding:'12px 2px', borderBottom:'1px solid #f0f0f5' }}>
+                        <div style={{ fontSize:24 }}>{s.icon}</div>
+                        <div style={{ flex:1, fontFamily:'var(--display)', fontSize:16, fontWeight:500, color:'#1a1530' }}>{s.t}</div>
+                        <div onClick={() => toggleEditStep(editKind, s.id)} style={{ cursor:'pointer', width:48, height:28, borderRadius:16, background: s.toggleBg, position:'relative', transition:'background .2s' }}>
+                          <div style={{ position:'absolute', top:3, left: s.knobLeft, width:22, height:22, borderRadius:'50%', background:'#fff', transition:'left .2s', boxShadow:'0 2px 4px rgba(0,0,0,.2)' }}/>
+                        </div>
+                      </div>
+                    ))}
+                    <div style={{ fontSize:13, fontWeight:800, color:'#9a96ac', padding:'12px 2px' }}>Vypnuté kroky se dítěti na tabletu neukážou.</div>
+                  </div>
+                </div>
+                )}
+
+                {/* TAB: odmeny */}
+                {parentTab === 'odmeny' && (
+                <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
+                  <div style={{ background:'#fff', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
+                    <div style={{ fontFamily:'var(--display)', fontSize:18, fontWeight:600, color:'#1a1530', marginBottom:8 }}>Odměny v obchůdku</div>
+                    {shopAdmin.map((r) => (
+                      <div key={r.id} style={{ display:'flex', alignItems:'center', gap:10, padding:'9px 2px', borderBottom:'1px solid #f0f0f5' }}>
+                        <div style={{ fontSize:24 }}>{r.emoji}</div>
+                        <div style={{ flex:1, fontFamily:'var(--display)', fontSize:15, fontWeight:500, color:'#1a1530' }}>{r.t}</div>
+                        <div style={{ fontFamily:'var(--display)', fontWeight:600, color:'var(--accent)', fontSize:15 }}>{r.cost} ⭐</div>
+                        <div onClick={() => deleteReward(r.id)} style={{ cursor:'pointer', width:28, height:28, borderRadius:8, background:'#fdeaea', color:'#e23', display:'flex', alignItems:'center', justifyContent:'center', fontWeight:800 }}>✕</div>
+                      </div>
+                    ))}
+                    <div style={{ display:'flex', gap:8, marginTop:12 }}>
+                      <input value={newRewardName} onChange={(e) => setNewRewardName(e.target.value)} placeholder="Název odměny" style={{ flex:1, minWidth:0, border:'1px solid #e3e3ea', borderRadius:11, padding:'11px 12px', fontFamily:'Nunito Sans', fontSize:14, fontWeight:700, color:'#1a1530', outline:'none' }}/>
+                      <input value={newRewardCost} onChange={(e) => setNewRewardCost(e.target.value)} placeholder="Body" inputMode="numeric" style={{ width:68, border:'1px solid #e3e3ea', borderRadius:11, padding:'11px 10px', fontFamily:'Nunito Sans', fontSize:14, fontWeight:700, color:'#1a1530', outline:'none', textAlign:'center' }}/>
+                    </div>
+                    <div onClick={addReward} style={{ cursor:'pointer', textAlign:'center', marginTop:9, background:'linear-gradient(135deg,var(--accent),var(--accent2))', color:'#fff', fontFamily:'var(--display)', fontWeight:600, fontSize:15, padding:11, borderRadius:13 }}>+ Přidat odměnu</div>
+                  </div>
+                  <div style={{ background:'#fff', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
+                    <div style={{ fontFamily:'var(--display)', fontSize:18, fontWeight:600, color:'#1a1530' }}>Výzvy týdne 🏆</div>
+                    <div style={{ fontSize:12, fontWeight:700, color:'#9a96ac', margin:'3px 0 10px' }}>Každý týden můžeš dát jiné — běžné i vtipné.</div>
+                    {challengesAdmin.map((c) => (
+                      <div key={c.id} style={{ display:'flex', alignItems:'center', gap:10, padding:'9px 2px', borderBottom:'1px solid #f0f0f5' }}>
+                        <div style={{ fontSize:22 }}>{c.emoji}</div>
+                        <div style={{ flex:1, fontFamily:'var(--display)', fontSize:14, fontWeight:500, color:'#1a1530', lineHeight:1.15 }}>{c.t}</div>
+                        <div onClick={() => toggleChallenge(c.id)} style={{ cursor:'pointer', width:44, height:26, borderRadius:15, background: c.toggleBg, position:'relative' }}>
+                          <div style={{ position:'absolute', top:3, left: c.knobLeft, width:20, height:20, borderRadius:'50%', background:'#fff', boxShadow:'0 2px 4px rgba(0,0,0,.2)' }}/>
+                        </div>
+                        <div onClick={() => deleteChallenge(c.id)} style={{ cursor:'pointer', width:28, height:28, borderRadius:8, background:'#fdeaea', color:'#e23', display:'flex', alignItems:'center', justifyContent:'center', fontWeight:800 }}>✕</div>
+                      </div>
+                    ))}
+                    <div style={{ display:'flex', gap:8, marginTop:12 }}>
+                      <input value={newChallengeText} onChange={(e) => setNewChallengeText(e.target.value)} placeholder="Nová výzva…" style={{ flex:1, minWidth:0, border:'1px solid #e3e3ea', borderRadius:11, padding:'11px 12px', fontFamily:'Nunito Sans', fontSize:14, fontWeight:700, color:'#1a1530', outline:'none' }}/>
+                      <div onClick={addChallenge} style={{ cursor:'pointer', background:'linear-gradient(135deg,var(--accent),var(--accent2))', color:'#fff', fontFamily:'var(--display)', fontWeight:600, fontSize:15, padding:'11px 16px', borderRadius:13, whiteSpace:'nowrap' }}>+ Přidat</div>
+                    </div>
+                  </div>
+                </div>
+                )}
+
+                {/* TAB: kalendar */}
+                {parentTab === 'kalendar' && (
+                <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
+                  <div style={{ background:'#fff', borderRadius:20, padding:18, boxShadow:'0 4px 16px rgba(20,16,40,.06)', display:'flex', alignItems:'center', gap:12 }}>
+                    <div style={{ width:42, height:42, borderRadius:11, background:'#e8f0fe', display:'flex', alignItems:'center', justifyContent:'center', fontSize:22 }}>📅</div>
+                    <div style={{ flex:1 }}>
+                      <div style={{ fontFamily:'var(--display)', fontSize:16, fontWeight:600, color:'#1a1530' }}>Google kalendář</div>
+                      <div style={{ fontSize:12, fontWeight:800, color:'#16a34a' }}>● Připojeno · synchronizováno</div>
+                    </div>
+                    <div style={{ width:48, height:28, borderRadius:16, background:'#16a34a', position:'relative' }}>
+                      <div style={{ position:'absolute', top:3, left:23, width:22, height:22, borderRadius:'50%', background:'#fff' }}/>
+                    </div>
+                  </div>
+                  <div style={{ background:'#fff', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
+                    <div style={{ fontFamily:'var(--display)', fontSize:16, fontWeight:600, color:'#1a1530', marginBottom:9 }}>Střídavá péče</div>
+                    <div style={{ fontSize:14, fontWeight:700, color:'#5a566e', lineHeight:1.5 }}>{handover}</div>
+                    <div style={{ fontSize:13, fontWeight:800, color:'#9a96ac', marginTop:10 }}>Barevné dny na tabletu dítěti jasně ukážou, kde zrovna je.</div>
+                  </div>
+                  <div style={{ background:'#fff', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
+                    <div style={{ fontFamily:'var(--display)', fontSize:16, fontWeight:600, color:'#1a1530', marginBottom:10 }}>Rozvrh hodin</div>
+                    <div style={{ display:'flex', gap:6, marginBottom:12 }}>
+                      {rozvrhDayTabs.map((d, di) => (
+                        <div key={di} onClick={() => { audio.tap(); setRozvrhDay(di); }} style={{ cursor:'pointer', flex:1, textAlign:'center', padding:'9px 0', borderRadius:11, background: d.bg, color: d.ink, fontFamily:'var(--display)', fontWeight:600, fontSize:15 }}>{d.label}</div>
+                      ))}
+                    </div>
+                    <div style={{ display:'flex', flexWrap:'wrap', gap:7, marginBottom:13 }}>
+                      {rozvrhEditItems.map((l, i) => (
+                        <div key={i} onClick={() => rozvrhRemove(rDay, l.pos)} style={{ cursor:'pointer', display:'flex', alignItems:'center', gap:5, background:'#f0f0f7', borderRadius:11, padding:'7px 10px' }}>
+                          <span style={{ fontSize:15 }}>{l.emoji}</span>
+                          <span style={{ fontSize:13, fontWeight:800, color:'#1a1530' }}>{l.t}</span>
+                          <span style={{ color:'#e23', fontWeight:800, marginLeft:2 }}>✕</span>
+                        </div>
+                      ))}
+                    </div>
+                    <div style={{ fontSize:12, fontWeight:800, color:'#9a96ac', marginBottom:7 }}>Přidat předmět:</div>
+                    <div style={{ display:'flex', flexWrap:'wrap', gap:7 }}>
+                      {rozvrhAddOptions.map((o, i) => (
+                        <div key={i} onClick={() => rozvrhAdd(rDay, o.code)} style={{ cursor:'pointer', display:'flex', alignItems:'center', gap:5, background:'#eef4ff', borderRadius:11, padding:'7px 10px' }}>
+                          <span style={{ fontSize:15 }}>{o.emoji}</span>
+                          <span style={{ fontSize:13, fontWeight:800, color:'var(--accent)' }}>+ {o.t}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+                )}
+
+                {/* TAB: tlacitka */}
+                {parentTab === 'tlacitka' && (
+                <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
+                  <div style={{ background:'#fff', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
+                    <div style={{ fontFamily:'var(--display)', fontSize:18, fontWeight:600, color:'#1a1530' }}>Chytrá tlačítka (Hue) 🔘</div>
+                    <div style={{ fontSize:13, fontWeight:700, color:'#5a566e', lineHeight:1.5, marginTop:7 }}>U každého tlačítka vyber, co spustí. Pak v <b>Apple Home → Automatizace</b> přidej „Když se stiskne tlačítko" → převeď na <b>Zkratku</b> → akce <b>Načíst obsah URL</b> a vlož níže uvedenou adresu. Apple TV to spouští pořád.</div>
+                  </div>
+                  {buttonDevices.map((d) => (
+                    <div key={d.id} style={{ background:'#fff', borderRadius:20, padding:'14px 16px', boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
+                      <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:10 }}>
+                        <div style={{ fontSize:20 }}>🔘</div>
+                        <div style={{ fontFamily:'var(--display)', fontSize:17, fontWeight:600, color:'#1a1530' }}>{d.name}</div>
+                      </div>
+                      {d.gestures.map((g) => (
+                        <div key={g.g} style={{ padding:'11px 0', borderTop:'1px solid #f0f0f5' }}>
+                          <div style={{ display:'flex', alignItems:'center', gap:9 }}>
+                            <div style={{ width:78, flex:'none', fontSize:13, fontWeight:800, color:'#9a96ac' }}>{g.gLabel}</div>
+                            <div onClick={() => cycleButtonTask(d.id, g.g)} style={{ cursor:'pointer', flex:1, minWidth:0, display:'flex', alignItems:'center', gap:7, background: g.pillBg, borderRadius:12, padding:'9px 11px' }}>
+                              <span style={{ fontSize:18 }}>{g.taskEmoji}</span>
+                              <span style={{ flex:1, fontFamily:'var(--display)', fontSize:15, fontWeight:600, color: g.pillInk, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{g.taskLabel}</span>
+                              <span style={{ fontSize:13, fontWeight:800, color: g.pillInk }}>{g.pointsLabel}</span>
+                              <span style={{ color:'#bbb', fontWeight:800 }}>⇄</span>
+                            </div>
+                            <div onClick={() => triggerTask(g.task)} style={{ cursor:'pointer', flex:'none', background:'#eef4ff', color:'var(--accent)', fontWeight:800, fontSize:13, padding:'9px 11px', borderRadius:11 }}>Test</div>
+                          </div>
+                          <div onClick={() => { try { navigator.clipboard.writeText('https://'+g.url); } catch(e) {} showToast('URL zkopírována', '📋'); }} style={{ cursor:'pointer', display:'flex', alignItems:'center', gap:7, marginTop:7, background:'#f7f7fb', borderRadius:10, padding:'8px 10px' }}>
+                            <span style={{ fontSize:13 }}>🔗</span>
+                            <span style={{ flex:1, minWidth:0, fontFamily:'monospace', fontSize:11, fontWeight:700, color:'#6a6680', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{g.url}</span>
+                            <span style={{ fontSize:12, fontWeight:800, color:'var(--accent)', whiteSpace:'nowrap' }}>📋 Kopírovat</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ))}
+                </div>
+                )}
+
+                {/* TAB: nalada (mood history) */}
+                {parentTab === 'nalada' && (
+                <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
+                  <div style={{ background:'#fff', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
+                    <div style={{ fontFamily:'var(--display)', fontSize:18, fontWeight:600, color:'#1a1530' }}>Nálada za poslední týden 💜</div>
+                    <div style={{ fontSize:13, fontWeight:700, color:'#5a566e', marginTop:6 }}>Dítě si po ranní rutině vybere jeden obrázek. Tady vidíš trend.</div>
+                  </div>
+                  <div style={{ background:'#fff', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
+                    <div style={{ display:'grid', gridTemplateColumns:'repeat(7, 1fr)', gap:6 }}>
+                      {moodHistory.map((d, i) => (
+                        <div key={i} style={{ background:'#f7f7fb', borderRadius:12, padding:'10px 4px', textAlign:'center' }}>
+                          <div style={{ fontSize:11, fontWeight:800, color:'#9a96ac' }}>{d.day}</div>
+                          <div style={{ fontSize:30, marginTop:6, minHeight:36 }}>{d.mood || '—'}</div>
+                        </div>
+                      ))}
+                    </div>
+                    {!todayMoodDone && (
+                      <div onClick={() => { setShowMoodPrompt(true); setParentOpen(false); }} style={{ cursor:'pointer', marginTop:12, background:'var(--accent)', color:'#fff', borderRadius:12, padding:'10px 14px', textAlign:'center', fontWeight:800, fontSize:14 }}>Spustit dotaz teď</div>
+                    )}
+                  </div>
+                  <div style={{ background:'#fff', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
+                    <div style={{ fontFamily:'var(--display)', fontSize:16, fontWeight:600, color:'#1a1530' }}>🔥 Série úspěchů</div>
+                    <div style={{ display:'flex', gap:10, marginTop:10 }}>
+                      <div style={{ flex:1, background:'#f7f7fb', borderRadius:12, padding:12 }}>
+                        <div style={{ fontSize:11, fontWeight:800, color:'#9a96ac', textTransform:'uppercase' }}>Ráno</div>
+                        <div style={{ fontFamily:'var(--display)', fontSize:28, fontWeight:600, color:'#1a1530' }}>{streakDays || 0} <span style={{ fontSize:14, color:'#9a96ac' }}>dní</span></div>
+                      </div>
+                      <div style={{ flex:1, background:'#f7f7fb', borderRadius:12, padding:12 }}>
+                        <div style={{ fontSize:11, fontWeight:800, color:'#9a96ac', textTransform:'uppercase' }}>Večer</div>
+                        <div style={{ fontFamily:'var(--display)', fontSize:28, fontWeight:600, color:'#1a1530' }}>{eveningStreakDays || 0} <span style={{ fontSize:14, color:'#9a96ac' }}>dní</span></div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                )}
+
+                {/* TAB: vzkazy (praise messages) */}
+                {parentTab === 'vzkazy' && (
+                <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
+                  <div style={{ background:'#fff', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
+                    <div style={{ fontFamily:'var(--display)', fontSize:18, fontWeight:600, color:'#1a1530' }}>Vzkazy pro dítě 💌</div>
+                    <div style={{ fontSize:13, fontWeight:700, color:'#5a566e', lineHeight:1.5, marginTop:6 }}>Vzkazy se objevují náhodně po dokončení ranní rutiny. Riki je i přečte nahlas (pokud je hlas zapnutý).</div>
+                  </div>
+                  <div style={{ background:'#fff', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
+                    <div style={{ display:'flex', gap:8, marginBottom:12 }}>
+                      <input value={newPraiseText} onChange={(e) => setNewPraiseText(e.target.value)} placeholder="Napiš vzkaz…" style={{ flex:1, border:'1px solid #e6e6ec', borderRadius:12, padding:'10px 12px', fontSize:14 }} />
+                      <div onClick={() => addPraiseMessage(newPraiseText)} style={{ cursor:'pointer', background:'var(--accent)', color:'#fff', borderRadius:12, padding:'10px 16px', fontWeight:800, fontSize:14 }}>Přidat</div>
+                    </div>
+                    <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
+                      {praiseMessages.map((msg, i) => (
+                        <div key={i} style={{ display:'flex', alignItems:'center', gap:10, background:'#f7f7fb', borderRadius:12, padding:'10px 12px' }}>
+                          <div style={{ flex:1, fontSize:14, fontWeight:600, color:'#1a1530' }}>{msg}</div>
+                          <div onClick={() => removePraiseMessage(i)} style={{ cursor:'pointer', color:'#dc2626', fontSize:18, padding:'0 6px' }}>×</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  <div onClick={() => { const m = showPraise(); if (m) { setParentOpen(false); } }} style={{ cursor:'pointer', background:'linear-gradient(135deg, #ff80ab, #ff5d8f)', color:'#fff', borderRadius:14, padding:'12px 16px', textAlign:'center', fontWeight:800, fontSize:14 }}>Ukázat náhodný vzkaz teď</div>
+                </div>
+                )}
+
+                {/* TAB: nastav (settings + admin) */}
+                {parentTab === 'nastav' && (
+                <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
+                  <div style={{ background:'#fff', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
+                    <div style={{ fontFamily:'var(--display)', fontSize:18, fontWeight:600, color:'#1a1530', marginBottom:10 }}>Dítě 👧🧒</div>
+                    <div style={{ fontSize:13, fontWeight:700, color:'#5a566e', marginBottom:8 }}>Jméno dítěte</div>
+                    <input value={childName} onChange={(e) => setChildName(e.target.value || 'Adam')} style={{ width:'100%', border:'1px solid #e6e6ec', borderRadius:12, padding:'10px 12px', fontSize:14 }} />
+                  </div>
+
+                  <div style={{ background:'#fff', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
+                    <div style={{ fontFamily:'var(--display)', fontSize:18, fontWeight:600, color:'#1a1530', marginBottom:10 }}>Maskot 🦊</div>
+                    <div style={{ fontSize:13, fontWeight:700, color:'#5a566e', marginBottom:8 }}>Jméno maskota</div>
+                    <input value={mascotName} onChange={(e) => setMascotName(e.target.value || 'Riki')} style={{ width:'100%', border:'1px solid #e6e6ec', borderRadius:12, padding:'10px 12px', fontSize:14 }} />
+                  </div>
+
+                  <div style={{ background:'#fff', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
+                    <div style={{ fontFamily:'var(--display)', fontSize:18, fontWeight:600, color:'#1a1530', marginBottom:10 }}>PIN rodičovský 🔒</div>
+                    <div style={{ fontSize:13, fontWeight:700, color:'#5a566e', marginBottom:8 }}>4 číslice (aktuální: {parentPin})</div>
+                    <input value={parentPin} onChange={(e) => { const v = e.target.value.replace(/\D/g,'').slice(0,4); if (v.length === 4) setParentPin(v); else if (v.length < 4) setParentPin(v); }} inputMode="numeric" maxLength={4} placeholder="1234" style={{ width:'100%', border:'1px solid #e6e6ec', borderRadius:12, padding:'10px 12px', fontSize:18, fontFamily:'monospace', letterSpacing:'.4em', textAlign:'center' }} />
+                    <div style={{ fontSize:11, color:'#9a96ac', marginTop:6 }}>Pokud zapomeneš, smaž data v prohlížeči (Chrome: F12 → Application → Local Storage → smazat).</div>
+                  </div>
+
+                  <div style={{ background:'#fff', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
+                    <div style={{ fontFamily:'var(--display)', fontSize:18, fontWeight:600, color:'#1a1530', marginBottom:10 }}>Zvuk a hlas 🔊</div>
+                    <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'8px 0' }}>
+                      <div>
+                        <div style={{ fontSize:14, fontWeight:700, color:'#1a1530' }}>Zvukové efekty</div>
+                        <div style={{ fontSize:12, color:'#9a96ac' }}>Ding, mince, fanfára</div>
+                      </div>
+                      <div onClick={() => setSoundOn(!soundOn)} style={{ cursor:'pointer', width:48, height:26, background: soundOn ? '#16a34a' : '#d4d4dd', borderRadius:14, position:'relative', transition:'background .2s' }}>
+                        <div style={{ position:'absolute', top:3, left: soundOn ? 25 : 3, width:20, height:20, background:'#fff', borderRadius:'50%', transition:'left .2s', boxShadow:'0 2px 4px rgba(0,0,0,.2)' }}/>
+                      </div>
+                    </div>
+                    <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'8px 0', borderTop:'1px solid #f0f0f5' }}>
+                      <div>
+                        <div style={{ fontSize:14, fontWeight:700, color:'#1a1530' }}>Riki mluví (TTS)</div>
+                        <div style={{ fontSize:12, color:'#9a96ac' }}>Hlasové promluvy v češtině</div>
+                      </div>
+                      <div onClick={() => setTtsOn(!ttsOn)} style={{ cursor:'pointer', width:48, height:26, background: ttsOn ? '#16a34a' : '#d4d4dd', borderRadius:14, position:'relative', transition:'background .2s' }}>
+                        <div style={{ position:'absolute', top:3, left: ttsOn ? 25 : 3, width:20, height:20, background:'#fff', borderRadius:'50%', transition:'left .2s', boxShadow:'0 2px 4px rgba(0,0,0,.2)' }}/>
+                      </div>
+                    </div>
+                    <div onClick={() => tts.speak('test', 'Ahoj, já jsem ' + mascotName + '. Jsem ráda, že jsme spolu.')} style={{ cursor:'pointer', marginTop:10, background:'#eef4ff', color:'var(--accent)', borderRadius:12, padding:'10px 12px', textAlign:'center', fontSize:13, fontWeight:800 }}>🔊 Otestovat hlas</div>
+                  </div>
+
+                  <div style={{ background:'#fff', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
+                    <div style={{ fontFamily:'var(--display)', fontSize:18, fontWeight:600, color:'#1a1530', marginBottom:10 }}>Noční režim 🌙</div>
+                    <div style={{ fontSize:13, fontWeight:700, color:'#5a566e', marginBottom:8 }}>Od kdy spát (večerka)</div>
+                    <input type="time" value={bedtime} onChange={(e) => setBedtime(e.target.value)} style={{ width:'100%', border:'1px solid #e6e6ec', borderRadius:12, padding:'10px 12px', fontSize:14, marginBottom:10 }} />
+                    <div style={{ fontSize:13, fontWeight:700, color:'#5a566e', marginBottom:8 }}>Do kdy spát (probuzení)</div>
+                    <input type="time" value={wakeTime} onChange={(e) => setWakeTime(e.target.value)} style={{ width:'100%', border:'1px solid #e6e6ec', borderRadius:12, padding:'10px 12px', fontSize:14 }} />
+                    <div style={{ fontSize:12, color:'#9a96ac', marginTop:8, lineHeight:1.4 }}>V tomto okně se obrazovka ztmaví a {mascotName} spí.</div>
+                  </div>
+
+                  <div style={{ background:'#fff', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
+                    <div style={{ fontFamily:'var(--display)', fontSize:18, fontWeight:600, color:'#1a1530', marginBottom:10 }}>Data 💾</div>
+                    <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
+                      <div onClick={exportData} style={{ cursor:'pointer', background:'#eef4ff', color:'var(--accent)', borderRadius:12, padding:'12px 14px', fontWeight:800, fontSize:14, textAlign:'center' }}>⬇️ Stáhnout zálohu (JSON)</div>
+                      <label style={{ cursor:'pointer', background:'#fef3c7', color:'#92400e', borderRadius:12, padding:'12px 14px', fontWeight:800, fontSize:14, textAlign:'center', display:'block' }}>
+                        ⬆️ Načíst ze zálohy
+                        <input type="file" accept=".json,application/json" onChange={importData} style={{ display:'none' }} />
+                      </label>
+                      <div onClick={resetAllData} style={{ cursor:'pointer', background:'#fee2e2', color:'#991b1b', borderRadius:12, padding:'12px 14px', fontWeight:800, fontSize:14, textAlign:'center' }}>🗑️ Smazat všechna data</div>
+                    </div>
+                  </div>
+
+                  <div style={{ background:'#fff', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
+                    <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'#1a1530' }}>Verze: Domácí pomocník v3</div>
+                    <div style={{ fontSize:12, color:'#9a96ac', marginTop:4 }}>Build 2026-06-20 · 19:20</div>
+                  </div>
+                </div>
+                )}
+              </div>
+
+              {/* bottom nav */}
+              <div style={{ display:'flex', background:'#fff', borderTop:'1px solid #ececf2', padding:'9px 6px 14px' }}>
+                {parentTabsR.map((t) => (
+                  <div key={t.id} onClick={() => { audio.tap(); setParentTab(t.id); }} style={{ cursor:'pointer', flex:1, textAlign:'center', padding:'5px 0' }}>
+                    <div style={{ fontSize:21, opacity: t.op }}>{t.icon}</div>
+                    <div style={{ fontSize:11, fontWeight:800, color: t.ink, marginTop:2 }}>{t.label}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+            )}
+          </div>
+        </div>
+      </div>
+      )}
+
+      {/* toast */}
+      {toast && (
+      <div style={{ position:'absolute', top:26, left:'50%', transform:'translateX(-50%)', zIndex:95, background:'#16a34a', color:'#fff', fontFamily:'var(--display)', fontSize:20, fontWeight:600, padding:'14px 26px', borderRadius:18, boxShadow:'0 16px 40px -10px rgba(0,0,0,.4)', animation:'toastIn .35s ease', display:'flex', alignItems:'center', gap:10 }}>
+        <span style={{ fontSize:24 }}>{toast.icon}</span>{toast.msg}
+      </div>
+      )}
+
+      {/* v2: Praise message popup (vzkaz od rodiče) */}
+      {praiseShown && !parentOpen && (
+        <div style={{ position:'absolute', top:'50%', left:'50%', transform:'translate(-50%,-50%)', zIndex:75, background:'linear-gradient(135deg, #ff80ab, #ff5d8f)', color:'#fff', padding:'28px 36px', borderRadius:24, boxShadow:'0 24px 60px -10px rgba(255,93,143,.55)', animation:'popIn .55s ease', maxWidth:560, textAlign:'center' }}>
+          <div style={{ fontSize:42, marginBottom:8 }}>💌</div>
+          <div style={{ fontFamily:'var(--display)', fontSize:22, fontWeight:700, lineHeight:1.3 }}>{praiseShown}</div>
+          <div style={{ fontSize:13, fontWeight:700, opacity:.85, marginTop:14, textTransform:'uppercase', letterSpacing:'.1em' }}>od mámy</div>
+        </div>
+      )}
+
+      {/* v2: Mood prompt (po dokončení ranní rutiny) */}
+      {showMoodPrompt && !parentOpen && (
+        <div style={{ position:'absolute', inset:0, zIndex:78, background:'rgba(10,8,30,.55)', display:'flex', alignItems:'center', justifyContent:'center', backdropFilter:'blur(6px)' }}>
+          <div style={{ background:'var(--surface)', borderRadius:28, padding:'34px 38px', maxWidth:620, width:'90%', boxShadow:'var(--shadow)', animation:'popIn .4s ease' }}>
+            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'start', marginBottom:18 }}>
+              <div>
+                <div style={{ fontFamily:'var(--display)', fontSize:26, fontWeight:700, color:'var(--ink)' }}>Jak ti dneska je?</div>
+                <div style={{ fontSize:14, color:'var(--muted)', fontWeight:700, marginTop:4 }}>Ťukni na obrázek, který sedí.</div>
+              </div>
+              <div onClick={() => setShowMoodPrompt(false)} style={{ cursor:'pointer', fontSize:24, color:'var(--muted)', padding:8 }}>✕</div>
+            </div>
+            <div style={{ display:'grid', gridTemplateColumns:'repeat(3, 1fr)', gap:14 }}>
+              {moodOptions.map(o => (
+                <div key={o.e} onClick={() => logMood(o.e)} style={{ cursor:'pointer', background:'var(--soft)', borderRadius:18, padding:'20px 12px', textAlign:'center', transition:'transform .12s' }}
+                  onMouseDown={(e) => e.currentTarget.style.transform='scale(.95)'}
+                  onMouseUp={(e) => e.currentTarget.style.transform='scale(1)'}>
+                  <div style={{ fontSize:52, lineHeight:1 }}>{o.e}</div>
+                  <div style={{ fontSize:13, fontWeight:800, color:'var(--ink)', marginTop:6 }}>{o.t}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* v2: Noční režim overlay */}
+      {isNightMode && !parentOpen && (
+        <div style={{ position:'absolute', inset:0, zIndex:65, background:'linear-gradient(180deg, #0a0820 0%, #1a1140 100%)', display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', color:'#fff', animation:'popIn .8s ease' }}>
+          {/* hvězdy */}
+          {[...Array(40)].map((_, i) => (
+            <div key={i} style={{ position:'absolute', top: (Math.random()*60)+'%', left: (Math.random()*100)+'%', width: (Math.random()*3+1)+'px', height: (Math.random()*3+1)+'px', background:'#fff', borderRadius:'50%', opacity: 0.3+Math.random()*0.7, animation:`blink ${3+Math.random()*4}s infinite` }}/>
+          ))}
+          <div style={{ position:'absolute', top:30, right:40, fontSize:46 }}>🌙</div>
+          <div style={{ transform:'scale(1.4)', marginBottom:30 }}>
+            <Mascot size={180} sleeping={true}/>
+          </div>
+          <div style={{ fontFamily:'var(--display)', fontSize:46, fontWeight:700, textAlign:'center' }}>Dobrou noc</div>
+          <div style={{ fontSize:18, fontWeight:700, opacity:.7, marginTop:8, textAlign:'center' }}>{mascotName} už spí. Spinkej krásně.</div>
+          <div style={{ marginTop:36, display:'flex', gap:14 }}>
+            <div onClick={() => { setParentOpen(true); audio.tap(); }} style={{ cursor:'pointer', background:'rgba(255,255,255,.12)', border:'1px solid rgba(255,255,255,.22)', borderRadius:14, padding:'12px 22px', fontSize:14, fontWeight:800, letterSpacing:'.05em' }}>Rodič</div>
+          </div>
+        </div>
+      )}
+
+      {/* theme switcher */}
+      <div style={{ position:'absolute', bottom:16, left:16, zIndex:70, display:'flex', gap:7, background:'var(--surface)', border:'var(--hair)', borderRadius:16, padding:7, boxShadow:'var(--shadow)' }}>
+        {themeChips.map((t) => (
+          <div key={t.id} onClick={() => { audio.tap(); setTheme(t.id); }} style={{ cursor:'pointer', padding:'7px 13px', borderRadius:11, background: t.bg, color: t.ink, fontWeight:800, fontSize:13 }}>{t.label}</div>
+        ))}
+      </div>
+
+    </div>
+  );
+}
+
+// ====================================================================
+// MOUNT
+// ====================================================================
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(<App />);
+
+</script>
+</body>
+</html>
