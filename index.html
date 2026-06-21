@@ -2625,7 +2625,7 @@ function App() {
 
       {/* ===================== TABLET: HOME ===================== */}
       {screen === 'home' && (
-      <div data-screen-label="Tablet — Domů" style={{ position:'absolute', inset:0, padding:'30px 34px', display:'flex', flexDirection:'column', gap:20 }}>
+      <div data-screen-label="Tablet — Domů" style={{ position:'absolute', inset:0, padding:'24px 28px', display:'flex', flexDirection:'column', gap:16, overflowY:'auto', overflowX:'hidden' }}>
 
         {/* top bar */}
         <div style={{ display:'flex', alignItems:'center', gap:18, animation: ent(0) }}>
@@ -2804,10 +2804,10 @@ function App() {
         })()}
 
         {/* main grid */}
-        <div style={{ flex:1, minHeight:0, display:'grid', gridTemplateColumns:'1.32fr 1fr', gap:20 }}>
+        <div style={{ display:'grid', gridTemplateColumns:'1.32fr 1fr', gap:16 }}>
 
           {/* LEFT */}
-          <div style={{ display:'flex', flexDirection:'column', gap:14, minHeight:0 }}>
+          <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
 
             {/* semafor */}
             <div style={{ background:'var(--hero)', borderRadius:24, padding:'18px 22px', display:'flex', alignItems:'center', gap:20, boxShadow:'var(--shadow)', position:'relative', overflow:'hidden', border:'var(--hair)', animation: ent(1) }}>
@@ -2827,7 +2827,7 @@ function App() {
             </div>
 
             {/* routine card */}
-            <div onClick={() => startRoutine(todayKind)} style={{ cursor:'pointer', flex:1, minHeight:0, background:'var(--surface)', border:'var(--hair)', borderRadius:28, padding:'26px 28px', display:'flex', flexDirection:'column', boxShadow:'var(--shadow)', position:'relative', overflow:'hidden', animation: ent(3) }}>
+            <div onClick={() => startRoutine(todayKind)} style={{ cursor:'pointer', background:'var(--surface)', border:'var(--hair)', borderRadius:24, padding:'20px 24px', display:'flex', flexDirection:'column', boxShadow:'var(--shadow)', position:'relative', overflow:'hidden', animation: ent(3) }}>
               <div style={{ display:'flex', alignItems:'flex-start', gap:16 }}>
                 <div style={{ fontSize:46, lineHeight:1 }}>{todayRoutine.emoji}</div>
                 <div style={{ flex:1 }}>
@@ -2841,7 +2841,7 @@ function App() {
                   <div key={i} style={{ flex:1, height:13, borderRadius:8, background: d.color, transition:'background .3s' }}/>
                 ))}
               </div>
-              <div style={{ marginTop:16, flex:1, minHeight:0, display:'flex', flexDirection:'column', gap:7, overflow:'auto' }}>
+              <div style={{ marginTop:14, display:'flex', flexDirection:'column', gap:7 }}>
                 {todayRoutine.steps.map((st, i) => (
                   <div key={i} style={{ display:'flex', alignItems:'center', gap:12, padding:'9px 12px', background:'var(--soft)', borderRadius:13, opacity: st.op }}>
                     <div style={{ width:26, height:26, flex:'none', borderRadius:8, background: st.tickBg, border: `2px solid ${st.tickBorder}`, display:'flex', alignItems:'center', justifyContent:'center', color:'#fff', fontSize:16 }}>{st.check}</div>
@@ -2854,7 +2854,7 @@ function App() {
           </div>
 
           {/* RIGHT */}
-          <div style={{ display:'flex', flexDirection:'column', gap:14, minHeight:0 }}>
+          <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
 
             {/* maskot - tamagotchi verze */}
             <div style={{ background:'var(--maskotCard)', border:'var(--hair)', borderRadius:24, padding:'16px 20px', boxShadow:'var(--shadow)', position:'relative', overflow:'hidden', animation: ent(2) }}>
@@ -2934,7 +2934,7 @@ function App() {
             </div>
 
             {/* today */}
-            <div onClick={() => go('calendar')} style={{ cursor:'pointer', flex:1, minHeight:0, background:'var(--surface)', border:'var(--hair)', borderRadius:24, padding:'14px 18px', display:'flex', flexDirection:'column', boxShadow:'var(--shadow)', animation: ent(4), overflow:'hidden' }}>
+            <div onClick={() => go('calendar')} style={{ cursor:'pointer', background:'var(--surface)', border:'var(--hair)', borderRadius:24, padding:'14px 18px', display:'flex', flexDirection:'column', boxShadow:'var(--shadow)', animation: ent(4), overflow:'hidden' }}>
               <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
                 <div style={{ display:'flex', alignItems:'center', gap:12, background:'var(--soft)', borderRadius:14, padding:'10px 14px' }}>
                   <div style={{ fontSize:32, lineHeight:1 }}>{wInfo.emoji}</div>
@@ -2963,7 +2963,7 @@ function App() {
                   <span style={{ fontSize:11, fontWeight:600 }}>Užij si volný čas!</span>
                 </div>
               ) : (
-                <div style={{ marginTop:11, display:'flex', flexDirection:'column', gap:9, flex:1, minHeight:0, overflow:'auto' }}>
+                <div style={{ marginTop:9, display:'flex', flexDirection:'column', gap:9 }}>
                   {todayEvents.map((e, i) => (
                     <div key={i} style={{ display:'flex', alignItems:'center', gap:11, padding:'10px 12px', background:'var(--soft)', borderRadius:14, borderLeft:`4px solid ${e.color}` }}>
                       <div style={{ fontSize:22 }}>{e.emoji}</div>
@@ -5026,8 +5026,8 @@ function App() {
                   </div>
 
                   <div style={{ background:'#fff', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
-                    <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'#1a1530' }}>Verze: Domácí pomocník v34</div>
-                    <div style={{ fontSize:12, color:'#9a96ac', marginTop:4 }}>Build 2026-06-21 · 13:19</div>
+                    <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'#1a1530' }}>Verze: Domácí pomocník v35</div>
+                    <div style={{ fontSize:12, color:'#9a96ac', marginTop:4 }}>Build 2026-06-21 · 13:30</div>
                   </div>
                 </div>
                 )}
