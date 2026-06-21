@@ -291,27 +291,52 @@ function getBossForWeek(weekId) {
 // Seznam eventů kde můžeš vlepit URL na MP3 (např. voices/hello.mp3)
 // Když je URL nastavená, přehraje se místo Web Speech robota.
 const VOICE_EVENTS = [
-  { id:'hello',          group:'Pozdravy',  label:'Pozdrav',            example:'"Ahoj! Tak co dneska? Jdeme na to."' },
-  { id:'morning',        group:'Pozdravy',  label:'Dobré ráno',          example:'"Dobré ráno, Tobiku!"' },
-  { id:'evening',        group:'Pozdravy',  label:'Dobrý večer',         example:'"Dobrý večer, Tobiku!"' },
-  { id:'routineStart',   group:'Rutina',    label:'Start rutiny',        example:'"Pojď, dáme to spolu."' },
-  { id:'stepDone',       group:'Rutina',    label:'Splnění kroku',       example:'"Super, jdeme dál."' },
-  { id:'routineDone',    group:'Rutina',    label:'Hotová rutina',       example:'"Hotovo! Tak to byla parádní práce."' },
-  { id:'teethTime',      group:'Rutina',    label:'Připomínka zubů',     example:'"Pojď si vyčistit zoubky."' },
-  { id:'streak',         group:'Rutina',    label:'Série úspěchů',       example:'"Sedmidenní série! Ty jsi fakt borec."' },
-  { id:'goodNight',      group:'Noc',       label:'Dobrou noc',          example:'"Dobrou noc, ať se ti hezky spí."' },
-  { id:'petSleep',       group:'Tamagotchi',label:'Riki jde spát',       example:'"Dobrou noc, vrátím se až přijdeš zpátky."' },
-  { id:'petWake',        group:'Tamagotchi',label:'Riki se probudil',    example:'"Ahoj, už jsi zpátky!"' },
-  { id:'questComplete',  group:'Hero Quest',label:'QUEST COMPLETE',      example:'"Quest hotový, hrdino!"' },
-  { id:'lootCommon',     group:'Hero Quest',label:'Padl běžný předmět',  example:'"Něco ti padlo do truhly."' },
-  { id:'lootRare',       group:'Hero Quest',label:'Padl vzácný předmět', example:'"Vzácný předmět! Páni."' },
-  { id:'lootEpic',       group:'Hero Quest',label:'Padl epický předmět', example:'"Epický loot, ty se máš!"' },
-  { id:'lootLegendary',  group:'Hero Quest',label:'LEGENDÁRNÍ',          example:'"LEGENDA! To se nestává každý den!"' },
-  { id:'bossDefeated',   group:'Hero Quest',label:'Boss poražen',        example:'"Boss padl! Sto bodů pro tebe!"' },
-  { id:'moodPrompt',     group:'Ostatní',   label:'Otázka na náladu',    example:'"Jak ti dneska je? Posuň čudlík."' },
-  { id:'shopBuy',        group:'Ostatní',   label:'Žádost o odměnu',     example:'"Žádost odeslána rodiči!"' },
-  { id:'shopApproved',   group:'Ostatní',   label:'Odměna schválena',    example:'"Máma ti odměnu schválila! Vyzvedni si ji."' },
-  { id:'choreApproved',  group:'Ostatní',   label:'Úkol schválen',       example:'"Skvělé! Body jsou tvoje."' },
+  // Pozdravy
+  { id:'hello',          group:'Pozdravy',  label:'Pozdrav (Riki)',      example:'„Ahoj! Tak co dneska?" / „Čau, kámo!"' },
+  { id:'morning',        group:'Pozdravy',  label:'Dobré ráno',           example:'„Dobré ráno!"' },
+  { id:'evening',        group:'Pozdravy',  label:'Dobrý večer',          example:'„Dobrý večer!"' },
+  // Rutina
+  { id:'routineStart',   group:'Rutina',    label:'Start rutiny',         example:'„Pojď, dáme to spolu." / „Jdeme na to, kámo!"' },
+  { id:'stepDone',       group:'Rutina',    label:'Splnění kroku',        example:'„Super, jdeme dál." / „Paráda!" / „Jedeš jak drak."' },
+  { id:'routineDone',    group:'Rutina',    label:'Hotová rutina',        example:'„Hotovo!" / „Mašle, ty jsi hvězda."' },
+  { id:'teethTime',      group:'Rutina',    label:'Připomínka zubů',      example:'„Pojď čistit zoubky." / „Zoubky čekají!"' },
+  { id:'streak',         group:'Rutina',    label:'Série úspěchů',        example:'„Sedmidenní série!"' },
+  // Noc
+  { id:'goodNight',      group:'Noc',       label:'Dobrou noc',           example:'„Dobrou noc." / „Spinkej krásně."' },
+  { id:'petSleep',       group:'Tamagotchi',label:'Riki jde spát',        example:'„Dobrou noc, vrátím se až přijdeš zpátky."' },
+  { id:'petWake',        group:'Tamagotchi',label:'Riki se probudil',     example:'„Ahoj, už jsi zpátky!"' },
+  // Hero Quest
+  { id:'questComplete',  group:'Hero Quest',label:'QUEST COMPLETE',       example:'„Quest hotový, hrdino!"' },
+  { id:'lootCommon',     group:'Hero Quest',label:'Loot - běžný',         example:'„Něco padlo do truhly."' },
+  { id:'lootRare',       group:'Hero Quest',label:'Loot - vzácný',        example:'„Vzácný předmět!"' },
+  { id:'lootEpic',       group:'Hero Quest',label:'Loot - epický',        example:'„Epický loot!"' },
+  { id:'lootLegendary',  group:'Hero Quest',label:'Loot - LEGENDÁRNÍ',    example:'„LEGENDA!"' },
+  { id:'bossDefeated',   group:'Hero Quest',label:'Boss poražen',         example:'„Boss padl! Sto bodů!"' },
+  // Toasty
+  { id:'moodPrompt',     group:'Toasty',    label:'Díky za náladu',       example:'„Díky, že jsi to napsal!"' },
+  { id:'shopBuy',        group:'Toasty',    label:'Žádost o odměnu',      example:'„Požádáno, čeká na rodiče."' },
+  { id:'shopApproved',   group:'Toasty',    label:'Odměna schválena',     example:'„Schváleno, vyzvedni si!"' },
+  { id:'shopClaim',      group:'Toasty',    label:'Vyzvednutí odměny',    example:'„Užij si odměnu!"' },
+  { id:'choreApproved',  group:'Toasty',    label:'Úkol schválen',        example:'„Skvělé, body jsou tvoje!"' },
+  { id:'choreSent',      group:'Toasty',    label:'Úkol odeslán',         example:'„Posláno rodiči."' },
+  { id:'worrySent',      group:'Toasty',    label:'Vzkaz odeslán',        example:'„Posláno mámě."' },
+  { id:'stickerNew',     group:'Toasty',    label:'Nová nálepka',         example:'„Nová nálepka!"' },
+  { id:'noPoints',       group:'Toasty',    label:'Málo bodů',            example:'„Ještě nemáš dost bodů."' },
+  // Návody krok (hraje se když dítě vstoupí na krok rutiny - musí mít step.id v ID)
+  { id:'hint-vstat',     group:'Návody krok',label:'Návod: postel',       example:'„Hezky narovnej polštář."' },
+  { id:'hint-wc',        group:'Návody krok',label:'Návod: záchod/ruce',  example:'„Mýdlo a teplá voda."' },
+  { id:'hint-oblicej',   group:'Návody krok',label:'Návod: mytí obličeje',example:'„Studenou vodou. Probudí tě to."' },
+  { id:'hint-zuby',      group:'Návody krok',label:'Návod: zuby ráno',    example:'„Nahoře i dole, krouživě."' },
+  { id:'hint-obleci',    group:'Návody krok',label:'Návod: oblečení',     example:'„Mrkni co je za počasí."' },
+  { id:'hint-snidane',   group:'Návody krok',label:'Návod: snídaně',      example:'„V klidu, ať máš sílu."' },
+  { id:'hint-aktovka',   group:'Návody krok',label:'Návod: aktovka',      example:'„Úkoly, svačina, láhev."' },
+  { id:'hint-boty',      group:'Návody krok',label:'Návod: boty',         example:'„Zvládneš to v pohodě."' },
+  { id:'hint-uklid',     group:'Návody krok',label:'Návod: talíř',        example:'„Do myčky a stůl utři."' },
+  { id:'hint-priprava',  group:'Návody krok',label:'Návod: příprava',     example:'„Sbal aktovku na zítra."' },
+  { id:'hint-sprcha',    group:'Návody krok',label:'Návod: sprcha',       example:'„Vlasy i za ušima."' },
+  { id:'hint-zuby-vecer',group:'Návody krok',label:'Návod: zuby večer',   example:'„Večer obzvlášť pořádně."' },
+  { id:'hint-cteni',     group:'Návody krok',label:'Návod: čtení',        example:'„Vyber si knížku."' },
+  { id:'hint-spani',     group:'Návody krok',label:'Návod: spaní',        example:'„Zítra tě čeká fajn den."' },
 ];
 
 // v17: Plánovaný den - milníky pro vizuální timeline (Time Timer + TEACCH)
@@ -327,6 +352,21 @@ const DAY_BLUEPRINT = [
   { id:'shower',    time:'19:00', emoji:'🛀', label:'koupel' },
   { id:'read',      time:'19:45', emoji:'📖', label:'čtení' },
   { id:'sleep',     time:'20:30', emoji:'😴', label:'spát' },
+];
+
+// v19: víkendový blueprint - bez školy, později vstávat
+const WEEKEND_BLUEPRINT = [
+  { id:'wake',      time:'08:00', emoji:'🛏️', label:'vstávat' },
+  { id:'breakfast', time:'08:30', emoji:'🥣', label:'snídaně' },
+  { id:'play1',     time:'09:30', emoji:'🎲', label:'hraní' },
+  { id:'lunch',     time:'12:30', emoji:'🍝', label:'oběd' },
+  { id:'play2',     time:'13:30', emoji:'🌳', label:'venku / aktivita' },
+  { id:'snack',     time:'16:00', emoji:'🍪', label:'svačina' },
+  { id:'family',    time:'17:00', emoji:'👨‍👩‍👦', label:'společný čas' },
+  { id:'dinner',    time:'18:30', emoji:'🍽️', label:'večeře' },
+  { id:'shower',    time:'19:30', emoji:'🛀', label:'koupel' },
+  { id:'read',      time:'20:00', emoji:'📖', label:'čtení' },
+  { id:'sleep',     time:'21:00', emoji:'😴', label:'spát' },
 ];
 
 // Návrh oblečení podle teploty
@@ -428,8 +468,8 @@ const saveState = (s) => {
       whoHomeSchedule: s.whoHomeSchedule,
       // v17
       voiceMap: s.voiceMap, voiceBaseUrl: s.voiceBaseUrl,
-      // v18
-      dayBlueprint: s.dayBlueprint,
+      // v18+v19
+      dayBlueprintByDay: s.dayBlueprintByDay,
     };
     localStorage.setItem(LS_KEY, JSON.stringify(persistable));
   } catch(e) {}
@@ -828,8 +868,37 @@ function App() {
   // v17: hlasové vzkazy (mapování event id → URL na MP3)
   const [voiceMap, setVoiceMap] = useState((persisted && persisted.voiceMap && typeof persisted.voiceMap === 'object') ? persisted.voiceMap : {});
   const [voiceBaseUrl, setVoiceBaseUrl] = useState((persisted && persisted.voiceBaseUrl) || ''); // např. "voices/" pokud chce relativní cestu
-  // v18: editovatelný denní rozvrh (TEACCH timeline)
-  const [dayBlueprint, setDayBlueprint] = useState((persisted && Array.isArray(persisted.dayBlueprint) && persisted.dayBlueprint.length > 0) ? persisted.dayBlueprint : DAY_BLUEPRINT.map(b => ({...b})));
+  // v18+v19: editovatelný denní rozvrh pro každý den v týdnu zvlášť (0=Po ... 6=Ne)
+  const [dayBlueprintByDay, setDayBlueprintByDay] = useState(() => {
+    // Migrace ze staré verze: pokud byl jen dayBlueprint, použij ho pro pracovní dny, víkend default
+    if (persisted && Array.isArray(persisted.dayBlueprintByDay) && persisted.dayBlueprintByDay.length === 7) {
+      return persisted.dayBlueprintByDay;
+    }
+    if (persisted && Array.isArray(persisted.dayBlueprint) && persisted.dayBlueprint.length > 0) {
+      // Migrace: starý jediný blueprint -> pracovní dny; víkend default
+      return [
+        persisted.dayBlueprint.map(b => ({...b})),
+        persisted.dayBlueprint.map(b => ({...b})),
+        persisted.dayBlueprint.map(b => ({...b})),
+        persisted.dayBlueprint.map(b => ({...b})),
+        persisted.dayBlueprint.map(b => ({...b})),
+        WEEKEND_BLUEPRINT.map(b => ({...b, id: b.id + '-sa'})),
+        WEEKEND_BLUEPRINT.map(b => ({...b, id: b.id + '-su'})),
+      ];
+    }
+    // Default: Po-Pá weekday, So-Ne weekend
+    return [
+      DAY_BLUEPRINT.map(b => ({...b})),
+      DAY_BLUEPRINT.map(b => ({...b})),
+      DAY_BLUEPRINT.map(b => ({...b})),
+      DAY_BLUEPRINT.map(b => ({...b})),
+      DAY_BLUEPRINT.map(b => ({...b})),
+      WEEKEND_BLUEPRINT.map(b => ({...b, id: b.id + '-sa'})),
+      WEEKEND_BLUEPRINT.map(b => ({...b, id: b.id + '-su'})),
+    ];
+  });
+  // Pro admin: který den se právě edituje (default = dnes)
+  const [bpEditDayIdx, setBpEditDayIdx] = useState(() => { const d = new Date(); return (d.getDay() + 6) % 7; });
   // v8 step timer (časovač pro děti s časovou slepotou)
   const [currentStepStart, setCurrentStepStart] = useState(null); // timestamp začátku aktuálního kroku
   const [nowTick, setNowTick] = useState(Date.now()); // pro re-render každou vteřinu
@@ -886,7 +955,7 @@ function App() {
       petMood, petEnergy, petSleeping, petLastDecay,
       inventory, bossState,
       lastDayKey, gcalUrl, gcalEvents, gcalLastFetch, whoHomeSchedule,
-      voiceMap, voiceBaseUrl, dayBlueprint,
+      voiceMap, voiceBaseUrl, dayBlueprintByDay,
     });
   }, [theme, points, totalXp, streak, morning, evening, doneM, doneE, whoHome, departMin,
       shopItems, shopState, choreState, pendingApprovals, packState, packAwarded,
@@ -899,7 +968,7 @@ function App() {
       petMood, petEnergy, petSleeping, petLastDecay,
       inventory, bossState,
       lastDayKey, gcalUrl, gcalEvents, gcalLastFetch, whoHomeSchedule,
-      voiceMap, voiceBaseUrl, dayBlueprint]);
+      voiceMap, voiceBaseUrl, dayBlueprintByDay]);
 
   // --- helpers
   const tv = useMemo(() => THEMES[theme] || THEMES.cisto, [theme]);
@@ -1138,26 +1207,33 @@ function App() {
   const voiceAudioRef = useRef(null);
   const playVoice = useCallback((eventId, fallbackText) => {
     if (!soundOn) return;
-    const rawUrl = voiceMapRef.current[eventId];
-    const url = resolveVoiceUrl(rawUrl);
-    if (url) {
-      try {
-        if (voiceAudioRef.current) {
-          try { voiceAudioRef.current.pause(); } catch(e) {}
+    const rawValue = voiceMapRef.current[eventId];
+    if (rawValue) {
+      // v19: podpora víc variant - rozdělíme po řádcích/čárkách a vybereme náhodně
+      const variants = String(rawValue).split(/[\n,]+/).map(s => s.trim()).filter(Boolean);
+      if (variants.length > 0) {
+        const pick = variants[Math.floor(Math.random() * variants.length)];
+        const url = resolveVoiceUrl(pick);
+        if (url) {
+          try {
+            if (voiceAudioRef.current) {
+              try { voiceAudioRef.current.pause(); } catch(e) {}
+            }
+            const a = new Audio(url);
+            a.volume = 0.95;
+            voiceAudioRef.current = a;
+            const playPromise = a.play();
+            if (playPromise && playPromise.catch) {
+              playPromise.catch((err) => {
+                console.warn('Voice MP3 fail, fallback to TTS:', err);
+                if (ttsOn && fallbackText) tts.speak(eventId, fallbackText);
+              });
+            }
+            return;
+          } catch(e) {
+            console.warn('Voice playback error:', e);
+          }
         }
-        const a = new Audio(url);
-        a.volume = 0.95;
-        voiceAudioRef.current = a;
-        const playPromise = a.play();
-        if (playPromise && playPromise.catch) {
-          playPromise.catch((err) => {
-            console.warn('Voice MP3 fail, fallback to TTS:', err);
-            if (ttsOn && fallbackText) tts.speak(eventId, fallbackText);
-          });
-        }
-        return;
-      } catch(e) {
-        console.warn('Voice playback error:', e);
       }
     }
     if (ttsOn && fallbackText) tts.speak(eventId, fallbackText);
@@ -1925,6 +2001,19 @@ function App() {
     }
   }, [screen, currentStepStart]);
 
+  // v19: Když se změní aktuální krok rutiny, přehraj hint MP3 (pokud nastaven)
+  useEffect(() => {
+    if (screen !== 'routine' || !currentStepStart || !activeRoutine) return;
+    const list = (activeRoutine === 'morning' ? morning : evening).filter(s => s.on);
+    const map = activeRoutine === 'morning' ? doneM : doneE;
+    const current = list.find(s => !map[s.id]);
+    if (current) {
+      // Krátké zpoždění aby předchozí zvuk doběhl
+      const t = setTimeout(() => playVoice('hint-' + current.id, current.hint), 700);
+      return () => clearTimeout(t);
+    }
+  }, [screen, currentStepStart, activeRoutine, morning, evening, doneM, doneE, playVoice]);
+
   // Re-render každou vteřinu pro plynulý časovač (jen když je rutina aktivní)
   useEffect(() => {
     if (screen !== 'routine') return;
@@ -2027,7 +2116,7 @@ function App() {
     if (isArr(s.whoHomeSchedule) && s.whoHomeSchedule.length === 7) setWhoHomeSchedule(s.whoHomeSchedule);
     if (isObj(s.voiceMap)) setVoiceMap(s.voiceMap);
     if (isStr(s.voiceBaseUrl)) setVoiceBaseUrl(s.voiceBaseUrl);
-    if (isArr(s.dayBlueprint) && s.dayBlueprint.length > 0) setDayBlueprint(s.dayBlueprint);
+    if (isArr(s.dayBlueprintByDay) && s.dayBlueprintByDay.length === 7) setDayBlueprintByDay(s.dayBlueprintByDay);
   }, []);
 
   // PULL ze serveru (manuální nebo periodicky)
@@ -2323,7 +2412,8 @@ function App() {
           else             { phase = 'NOC';       phaseColor = '#1e3a8a'; phaseEmoji = '🌙'; phaseTextColor='#1e3a8a'; }
 
           // Najdi co je teď a co dál v blueprintu
-          const blueprintMins = dayBlueprint.map(b => ({ ...b, mins: (function(){ const p = String(b.time||'0:0').split(':'); return parseInt(p[0])*60+parseInt(p[1]); })() }));
+          const todaysBp = (dayBlueprintByDay && dayBlueprintByDay[todayDayIdx]) || DAY_BLUEPRINT;
+          const blueprintMins = todaysBp.map(b => ({ ...b, mins: (function(){ const p = String(b.time||'0:0').split(':'); return parseInt(p[0])*60+parseInt(p[1]); })() }));
           let currentIdx = -1;
           for (let i = blueprintMins.length - 1; i >= 0; i--) {
             if (blueprintMins[i].mins <= totalMins) { currentIdx = i; break; }
@@ -3580,50 +3670,99 @@ function App() {
                     })()}
                   </div>
 
-                  {/* v18: Rozvrh dne (TEACCH timeline na home) */}
+                  {/* v18+v19: Rozvrh dne (TEACCH timeline na home) - 7 dní zvlášť */}
                   <div style={{ background:'#fff', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
                     <div style={{ fontFamily:'var(--display)', fontSize:18, fontWeight:600, color:'#1a1530', marginBottom:4 }}>📍 Rozvrh dne (timeline na home)</div>
                     <div style={{ fontSize:12, fontWeight:700, color:'#9a96ac', marginBottom:12, lineHeight:1.4 }}>
-                      Tohle dítě uvidí na home obrazovce — řadu ikon postupně během dne (TEACCH metoda). Edituj čas / emoji / popisek pro každý milník. Šipkami změníš pořadí.
+                      Každý den v týdnu má svůj rozvrh. Vyber den a edituj. Dítě uvidí na home jen rozvrh pro DNEŠEK.
                     </div>
-                    {dayBlueprint.map((b, idx) => (
+                    {/* Den picker */}
+                    <div style={{ display:'grid', gridTemplateColumns:'repeat(7, 1fr)', gap:4, marginBottom:14 }}>
+                      {['Po','Út','St','Čt','Pá','So','Ne'].map((dn, idx) => {
+                        const active = idx === bpEditDayIdx;
+                        const isToday = idx === todayDayIdx;
+                        const isWeekend = idx >= 5;
+                        return (
+                          <div key={idx} onClick={() => { audio.tap(); setBpEditDayIdx(idx); }} style={{
+                            cursor:'pointer',
+                            textAlign:'center',
+                            padding:'10px 4px',
+                            borderRadius:10,
+                            background: active ? 'var(--accent)' : isWeekend ? '#fef3c7' : '#f0f0f7',
+                            color: active ? '#fff' : isWeekend ? '#92400e' : '#1a1530',
+                            fontWeight: 800,
+                            fontSize: 13,
+                            position:'relative'
+                          }}>
+                            {dn}
+                            {isToday && <div style={{ position:'absolute', top:1, right:3, width:6, height:6, borderRadius:'50%', background: active ? '#fff' : '#dc2626' }}/>}
+                          </div>
+                        );
+                      })}
+                    </div>
+                    {/* Kopírovací tlačítka */}
+                    <div style={{ display:'flex', gap:6, marginBottom:14, flexWrap:'wrap' }}>
+                      <div onClick={() => {
+                        if (!window.confirm(`Zkopírovat tento den na všechny dny v týdnu?`)) return;
+                        const src = dayBlueprintByDay[bpEditDayIdx];
+                        audio.tap();
+                        setDayBlueprintByDay(arr => arr.map(() => src.map(b => ({...b}))));
+                      }} style={{ cursor:'pointer', background:'#eef4ff', color:'var(--accent)', borderRadius:8, padding:'7px 11px', fontSize:11, fontWeight:800 }}>📋 → všechny dny</div>
+                      <div onClick={() => {
+                        if (!window.confirm(`Zkopírovat tento den na pracovní dny (Po-Pá)?`)) return;
+                        const src = dayBlueprintByDay[bpEditDayIdx];
+                        audio.tap();
+                        setDayBlueprintByDay(arr => arr.map((day, i) => i < 5 ? src.map(b => ({...b})) : day));
+                      }} style={{ cursor:'pointer', background:'#eef4ff', color:'var(--accent)', borderRadius:8, padding:'7px 11px', fontSize:11, fontWeight:800 }}>📋 → Po-Pá</div>
+                      <div onClick={() => {
+                        if (!window.confirm(`Zkopírovat tento den na víkend (So+Ne)?`)) return;
+                        const src = dayBlueprintByDay[bpEditDayIdx];
+                        audio.tap();
+                        setDayBlueprintByDay(arr => arr.map((day, i) => i >= 5 ? src.map(b => ({...b})) : day));
+                      }} style={{ cursor:'pointer', background:'#fef3c7', color:'#92400e', borderRadius:8, padding:'7px 11px', fontSize:11, fontWeight:800 }}>📋 → So+Ne</div>
+                    </div>
+
+                    {(dayBlueprintByDay[bpEditDayIdx] || []).map((b, idx) => (
                       <div key={b.id} style={{ display:'flex', alignItems:'center', gap:8, padding:'8px 2px', borderBottom:'1px solid #f0f0f5' }}>
                         <div style={{ display:'flex', flexDirection:'column', gap:1 }}>
                           <div onClick={() => {
                             if (idx === 0) return; audio.tap();
-                            setDayBlueprint(arr => { const a = [...arr]; [a[idx-1], a[idx]] = [a[idx], a[idx-1]]; return a; });
+                            setDayBlueprintByDay(all => all.map((day, i) => {
+                              if (i !== bpEditDayIdx) return day;
+                              const a = [...day]; [a[idx-1], a[idx]] = [a[idx], a[idx-1]]; return a;
+                            }));
                           }} style={{ cursor: idx === 0 ? 'default' : 'pointer', opacity: idx === 0 ? 0.25 : 1, width:24, height:18, borderRadius:5, background:'#f0f0f7', display:'flex', alignItems:'center', justifyContent:'center', fontSize:11, fontWeight:800 }}>▲</div>
                           <div onClick={() => {
-                            if (idx === dayBlueprint.length-1) return; audio.tap();
-                            setDayBlueprint(arr => { const a = [...arr]; [a[idx], a[idx+1]] = [a[idx+1], a[idx]]; return a; });
-                          }} style={{ cursor: idx === dayBlueprint.length-1 ? 'default' : 'pointer', opacity: idx === dayBlueprint.length-1 ? 0.25 : 1, width:24, height:18, borderRadius:5, background:'#f0f0f7', display:'flex', alignItems:'center', justifyContent:'center', fontSize:11, fontWeight:800 }}>▼</div>
+                            const list = dayBlueprintByDay[bpEditDayIdx];
+                            if (idx === list.length-1) return; audio.tap();
+                            setDayBlueprintByDay(all => all.map((day, i) => {
+                              if (i !== bpEditDayIdx) return day;
+                              const a = [...day]; [a[idx], a[idx+1]] = [a[idx+1], a[idx]]; return a;
+                            }));
+                          }} style={{ cursor: idx === (dayBlueprintByDay[bpEditDayIdx]||[]).length-1 ? 'default' : 'pointer', opacity: idx === (dayBlueprintByDay[bpEditDayIdx]||[]).length-1 ? 0.25 : 1, width:24, height:18, borderRadius:5, background:'#f0f0f7', display:'flex', alignItems:'center', justifyContent:'center', fontSize:11, fontWeight:800 }}>▼</div>
                         </div>
-                        {/* Time picker */}
                         <input type="time" value={b.time} onChange={(e) => {
                           const val = e.target.value;
-                          setDayBlueprint(arr => arr.map(x => x.id === b.id ? {...x, time: val} : x));
+                          setDayBlueprintByDay(all => all.map((day, i) => i === bpEditDayIdx ? day.map(x => x.id === b.id ? {...x, time: val} : x) : day));
                         }} style={{ width:88, fontSize:14, fontWeight:800, border:'1px solid #e3e3ea', borderRadius:8, padding:'6px 8px', background:'#fafafd' }} />
-                        {/* Emoji */}
                         <input value={b.emoji} maxLength={4} onChange={(e) => {
                           const val = e.target.value;
-                          setDayBlueprint(arr => arr.map(x => x.id === b.id ? {...x, emoji: val} : x));
+                          setDayBlueprintByDay(all => all.map((day, i) => i === bpEditDayIdx ? day.map(x => x.id === b.id ? {...x, emoji: val} : x) : day));
                         }} style={{ width:42, fontSize:22, border:'1px solid #e3e3ea', borderRadius:8, padding:'4px 2px', textAlign:'center', background:'#fafafd' }} />
-                        {/* Label */}
                         <input value={b.label} onChange={(e) => {
                           const val = e.target.value;
-                          setDayBlueprint(arr => arr.map(x => x.id === b.id ? {...x, label: val} : x));
+                          setDayBlueprintByDay(all => all.map((day, i) => i === bpEditDayIdx ? day.map(x => x.id === b.id ? {...x, label: val} : x) : day));
                         }} style={{ flex:1, minWidth:0, fontFamily:'var(--display)', fontSize:14, fontWeight:500, color:'#1a1530', border:'1px solid #e3e3ea', borderRadius:8, padding:'8px 10px' }} />
-                        {/* Delete */}
                         <div onClick={() => {
                           if (!window.confirm(`Smazat milník "${b.label}"?`)) return;
-                          setDayBlueprint(arr => arr.filter(x => x.id !== b.id));
+                          setDayBlueprintByDay(all => all.map((day, i) => i === bpEditDayIdx ? day.filter(x => x.id !== b.id) : day));
                           audio.undo();
                         }} style={{ cursor:'pointer', width:24, height:24, borderRadius:6, background:'#fdeaea', color:'#e23', display:'flex', alignItems:'center', justifyContent:'center', fontWeight:800, fontSize:13 }}>✕</div>
                       </div>
                     ))}
                     <div onClick={() => {
-                      // Najdi další volný čas + 30 min od posledního
-                      const last = dayBlueprint[dayBlueprint.length-1];
+                      const list = dayBlueprintByDay[bpEditDayIdx] || [];
+                      const last = list[list.length-1];
                       let nextTime = '12:00';
                       if (last) {
                         const p = String(last.time||'12:0').split(':');
@@ -3631,14 +3770,16 @@ function App() {
                         const h = Math.floor(m/60) % 24, mm = m % 60;
                         nextTime = (h < 10 ? '0' : '') + h + ':' + (mm < 10 ? '0' : '') + mm;
                       }
-                      setDayBlueprint(arr => [...arr, { id:'mb'+Date.now(), time: nextTime, emoji:'⭐', label:'nový milník' }]);
+                      setDayBlueprintByDay(all => all.map((day, i) => i === bpEditDayIdx ? [...day, { id:'mb'+Date.now(), time: nextTime, emoji:'⭐', label:'nový milník' }] : day));
                       audio.coin();
                     }} style={{ cursor:'pointer', background:'var(--accent)', color:'#fff', fontWeight:600, fontSize:14, padding:'12px 14px', borderRadius:11, textAlign:'center', marginTop:14 }}>+ Přidat milník</div>
                     <div onClick={() => {
-                      if (!window.confirm('Resetovat rozvrh dne na výchozí (vstávat, snídaně, škola, oběd, …)?')) return;
-                      setDayBlueprint(DAY_BLUEPRINT.map(b => ({...b})));
+                      if (!window.confirm('Resetovat tento den na výchozí?')) return;
+                      const isWeekend = bpEditDayIdx >= 5;
+                      const def = isWeekend ? WEEKEND_BLUEPRINT.map(b => ({...b, id: b.id + '-' + (bpEditDayIdx === 5 ? 'sa' : 'su')})) : DAY_BLUEPRINT.map(b => ({...b}));
+                      setDayBlueprintByDay(all => all.map((day, i) => i === bpEditDayIdx ? def : day));
                       audio.ding();
-                    }} style={{ cursor:'pointer', background:'#f0f0f7', color:'#6a6680', fontWeight:600, fontSize:12, padding:'8px 12px', borderRadius:10, textAlign:'center', marginTop:8 }}>↻ Reset na výchozí</div>
+                    }} style={{ cursor:'pointer', background:'#f0f0f7', color:'#6a6680', fontWeight:600, fontSize:12, padding:'8px 12px', borderRadius:10, textAlign:'center', marginTop:8 }}>↻ Reset tohoto dne</div>
                   </div>
 
                   {/* Pomoci doma - editovatelný seznam s reorderem */}
@@ -4228,11 +4369,12 @@ function App() {
                                     }} style={{ cursor:'pointer', background:'#16a34a', color:'#fff', borderRadius:8, padding:'7px 12px', fontWeight:800, fontSize:13, whiteSpace:'nowrap' }}>▶ Test</div>
                                   )}
                                 </div>
-                                <input
+                                <textarea
                                   value={cur}
                                   onChange={(e) => setVoiceMap(m => ({ ...m, [ev.id]: e.target.value }))}
-                                  placeholder={ev.id + '.mp3'}
-                                  style={{ width:'100%', boxSizing:'border-box', border:'1px solid #e3e3ea', borderRadius:8, padding:'8px 10px', fontSize:11, fontFamily:'monospace', outline:'none' }}
+                                  placeholder={ev.id + '.mp3   nebo:\n' + ev.id + '-1.mp3\n' + ev.id + '-2.mp3'}
+                                  rows={cur.includes('\n') || cur.includes(',') ? 3 : 1}
+                                  style={{ width:'100%', boxSizing:'border-box', border:'1px solid #e3e3ea', borderRadius:8, padding:'8px 10px', fontSize:11, fontFamily:'monospace', outline:'none', resize:'vertical', minHeight:32 }}
                                 />
                               </div>
                             );
@@ -4362,8 +4504,8 @@ function App() {
                   </div>
 
                   <div style={{ background:'#fff', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
-                    <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'#1a1530' }}>Verze: Domácí pomocník v18</div>
-                    <div style={{ fontSize:12, color:'#9a96ac', marginTop:4 }}>Build 2026-06-21 · 07:35</div>
+                    <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'#1a1530' }}>Verze: Domácí pomocník v19</div>
+                    <div style={{ fontSize:12, color:'#9a96ac', marginTop:4 }}>Build 2026-06-21 · 07:42</div>
                   </div>
                 </div>
                 )}
