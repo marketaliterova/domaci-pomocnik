@@ -944,6 +944,8 @@ function App() {
   });
   // Pro admin: který den se právě edituje (default = dnes)
   const [bpEditDayIdx, setBpEditDayIdx] = useState(() => { const d = new Date(); return (d.getDay() + 6) % 7; });
+  // v24: voice panel default sbalený
+  const [showVoicePanel, setShowVoicePanel] = useState(false);
   // v8 step timer (časovač pro děti s časovou slepotou)
   const [currentStepStart, setCurrentStepStart] = useState(null); // timestamp začátku aktuálního kroku
   const [nowTick, setNowTick] = useState(Date.now()); // pro re-render každou vteřinu
@@ -4403,15 +4405,29 @@ function App() {
                     <div onClick={() => tts.speak('test', 'Ahoj, já jsem ' + mascotName + '. Jsem ráda, že jsme spolu.')} style={{ cursor:'pointer', marginTop:10, background:'#eef4ff', color:'var(--accent)', borderRadius:12, padding:'10px 12px', textAlign:'center', fontSize:13, fontWeight:800 }}>🔊 Otestovat hlas</div>
                   </div>
 
-                  {/* v17: Hlasové vzkazy ElevenLabs */}
-                  <div style={{ background:'linear-gradient(135deg, #fef3c7, #fde68a)', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)', border:'2px solid #f59e0b' }}>
-                    <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:6 }}>
+                  {/* v17+v24: Hlasové vzkazy ElevenLabs - rozklikávací */}
+                  <div style={{ background:'linear-gradient(135deg, #fef3c7, #fde68a)', borderRadius:20, padding:showVoicePanel ? 16 : 12, boxShadow:'0 4px 16px rgba(20,16,40,.06)', border:'2px solid #f59e0b' }}>
+                    <div onClick={() => { audio.tap(); setShowVoicePanel(v => !v); }} style={{ cursor:'pointer', display:'flex', alignItems:'center', gap:10, marginBottom: showVoicePanel ? 6 : 0 }}>
                       <span style={{ fontSize:24 }}>🎙</span>
-                      <div style={{ fontFamily:'var(--display)', fontSize:18, fontWeight:600, color:'#7c2d12' }}>Hlasové vzkazy (ElevenLabs)</div>
+                      <div style={{ flex:1, minWidth:0 }}>
+                        <div style={{ fontFamily:'var(--display)', fontSize:18, fontWeight:600, color:'#7c2d12' }}>Hlasové vzkazy (ElevenLabs)</div>
+                        {!showVoicePanel && (
+                          <div style={{ fontSize:11, fontWeight:700, color:'#92400e' }}>
+                            {Object.keys(voiceMap).filter(k => (voiceMap[k]||'').trim()).length > 0
+                              ? `${Object.keys(voiceMap).filter(k => (voiceMap[k]||'').trim()).length} vlastních hlasů · klepni pro úpravu`
+                              : 'Auto-fallback ze složky voices/ · klepni pro úpravu'}
+                          </div>
+                        )}
+                      </div>
+                      <div style={{ background:'#fff', borderRadius:8, padding:'6px 10px', fontWeight:900, fontSize:13, color:'#92400e' }}>
+                        {showVoicePanel ? '▲ Skrýt' : '▼ Rozbalit'}
+                      </div>
                     </div>
-                    <div style={{ fontSize:12, fontWeight:700, color:'#92400e', lineHeight:1.5, marginBottom:10 }}>
-                      Když vlepíš URL na MP3, místo robotického hlasu zazní tvoje nahrávka. Pokud necháš prázdné → fallback na Web Speech.
-                    </div>
+                    {showVoicePanel && (
+                      <React.Fragment>
+                        <div style={{ fontSize:12, fontWeight:700, color:'#92400e', lineHeight:1.5, marginBottom:10 }}>
+                          Když vlepíš URL na MP3, místo robotického hlasu zazní tvoje nahrávka. Pokud necháš prázdné → fallback na Web Speech.
+                        </div>
                     {/* Base URL */}
                     <div style={{ background:'#fff', borderRadius:12, padding:'10px 12px', marginBottom:12 }}>
                       <div style={{ fontSize:11, fontWeight:800, color:'#92400e', marginBottom:4, textTransform:'uppercase', letterSpacing:'.05em' }}>Společný základ URL (volitelné)</div>
@@ -4470,6 +4486,8 @@ function App() {
                     <div style={{ background:'#fff', borderRadius:10, padding:'10px 12px', fontSize:11, color:'#92400e', lineHeight:1.5 }}>
                       <b>Tip:</b> nahraj MP3 do GitHub repo (např. složka <code>voices/</code>) → commitni → app je hned vidí. Cesta může být relativní (<code>hello.mp3</code>) nebo absolutní (<code>https://…</code>).
                     </div>
+                      </React.Fragment>
+                    )}
                   </div>
 
                   <div style={{ background:'#fff', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
@@ -4589,8 +4607,8 @@ function App() {
                   </div>
 
                   <div style={{ background:'#fff', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
-                    <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'#1a1530' }}>Verze: Domácí pomocník v23</div>
-                    <div style={{ fontSize:12, color:'#9a96ac', marginTop:4 }}>Build 2026-06-21 · 08:16</div>
+                    <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'#1a1530' }}>Verze: Domácí pomocník v24</div>
+                    <div style={{ fontSize:12, color:'#9a96ac', marginTop:4 }}>Build 2026-06-21 · 08:23</div>
                   </div>
                 </div>
                 )}
