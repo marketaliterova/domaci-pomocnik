@@ -1257,6 +1257,16 @@ function App() {
       setActiveRoutine('morning'); setScreen('routine');
     } else if (action.type === 'routine-evening') {
       setActiveRoutine('evening'); setScreen('routine');
+    } else if (action.type === 'praise') {
+      // v33: Pochvala mimo rutinu - drobná oslava, bez schvalování, pouze body
+      const pts = parseInt(action.ref, 10) || 5;
+      setPoints(p => p + pts); setTotalXp(x => x + pts);
+      feedPet(2, 1);
+      audio.success();
+      confetti.fire({ y: 300, n: Math.min(50, pts * 5) });
+      const msg = label ? `${label} +${pts}` : `Šikulka! +${pts} bodů`;
+      showToast(msg, '🎉');
+      if (playVoiceRef.current) playVoiceRef.current('praise', msg);
     }
   }, [morning, evening, doneM, doneE, audio, confetti, showToast, feedPet, choresList, choreState]);
 
@@ -4670,10 +4680,17 @@ function App() {
                                   else if (val === 'routine-evening') newAction = { type:'routine-evening' };
                                   else if (val.startsWith('step:')) newAction = { type:'step', ref: val.slice(5) };
                                   else if (val.startsWith('chore:')) newAction = { type:'chore', ref: val.slice(6) };
+                                  else if (val.startsWith('praise:')) newAction = { type:'praise', ref: val.slice(7) };
                                   else newAction = { type:'none' };
                                   setHueButtons(arr => arr.map((x, i) => i === idx ? {...x, action: newAction} : x));
                                 }} style={{ flex:1, fontSize:12, border:'1px solid #c4b5fd', borderRadius:6, padding:'6px 8px', background:'#fafafd' }}>
                                   <option value="none">— nepřiřazeno —</option>
+                                  <optgroup label="🎉 Mimo rutinu (pochvala + body)">
+                                    <option value="praise:1">🎉 Malá pochvala (+1 bod)</option>
+                                    <option value="praise:3">🎉 Pochvala (+3 body)</option>
+                                    <option value="praise:5">🎉 Velká pochvala (+5 bodů)</option>
+                                    <option value="praise:10">🎉 Super pochvala (+10 bodů)</option>
+                                  </optgroup>
                                   <option value="routine-morning">▶ Otevřít ranní rutinu</option>
                                   <option value="routine-evening">▶ Otevřít večerní rutinu</option>
                                   <optgroup label="Odškrtni krok ranní rutiny">
@@ -5009,8 +5026,8 @@ function App() {
                   </div>
 
                   <div style={{ background:'#fff', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
-                    <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'#1a1530' }}>Verze: Domácí pomocník v32</div>
-                    <div style={{ fontSize:12, color:'#9a96ac', marginTop:4 }}>Build 2026-06-21 · 13:03</div>
+                    <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'#1a1530' }}>Verze: Domácí pomocník v33</div>
+                    <div style={{ fontSize:12, color:'#9a96ac', marginTop:4 }}>Build 2026-06-21 · 13:30</div>
                   </div>
                 </div>
                 )}
