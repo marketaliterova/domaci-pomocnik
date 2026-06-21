@@ -23,7 +23,12 @@
   ::-webkit-scrollbar-thumb { background: rgba(120,120,140,.35); border-radius: 20px; }
   ::-webkit-scrollbar-track { background: transparent; }
   input, button { font-family: inherit; }
-  input { -webkit-appearance:none; }
+  input[type="text"], input[type="search"], input[type="tel"], input[type="email"], input[type="password"], input[type="number"], input[type="url"], textarea { -webkit-appearance:none; }
+  /* type="time", "date" NEMAJÍ override - musíme nechat iOS native picker fungovat */
+  input[type="time"], input[type="date"], input[type="datetime-local"] {
+    min-height: 44px;
+    font-size: 16px;
+  }
   @keyframes floatY { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-10px); } }
   @keyframes softPulse { 0%,100% { transform: scale(1); } 50% { transform: scale(1.06); } }
   @keyframes ringGlow { 0%,100% { box-shadow: 0 0 0 0 var(--glow); } 50% { box-shadow: 0 0 36px 6px var(--glow); } }
@@ -3851,11 +3856,17 @@ function App() {
 
                   <div style={{ background:'#fff', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
                     <div style={{ fontFamily:'var(--display)', fontSize:18, fontWeight:600, color:'#1a1530', marginBottom:10 }}>Noční režim 🌙</div>
-                    <div style={{ fontSize:13, fontWeight:700, color:'#5a566e', marginBottom:8 }}>Od kdy spát (večerka)</div>
-                    <input type="time" value={bedtime} onChange={(e) => setBedtime(e.target.value)} style={{ width:'100%', border:'1px solid #e6e6ec', borderRadius:12, padding:'10px 12px', fontSize:14, marginBottom:10 }} />
-                    <div style={{ fontSize:13, fontWeight:700, color:'#5a566e', marginBottom:8 }}>Do kdy spát (probuzení)</div>
-                    <input type="time" value={wakeTime} onChange={(e) => setWakeTime(e.target.value)} style={{ width:'100%', border:'1px solid #e6e6ec', borderRadius:12, padding:'10px 12px', fontSize:14 }} />
-                    <div style={{ fontSize:12, color:'#9a96ac', marginTop:8, lineHeight:1.4 }}>V tomto okně se obrazovka ztmaví a {mascotName} spí.</div>
+                    <div style={{ fontSize:13, fontWeight:700, color:'#5a566e', marginBottom:6 }}>Od kdy spát (večerka) — klepni a vyber čas</div>
+                    <label style={{ display:'block', background:'#eef4ff', border:'2px solid var(--accent)', borderRadius:14, padding:'14px 16px', marginBottom:12, cursor:'pointer' }}>
+                      <div style={{ fontSize:11, fontWeight:800, color:'var(--accent)', textTransform:'uppercase', letterSpacing:'.05em', marginBottom:4 }}>🌙 Večerka</div>
+                      <input type="time" value={bedtime} onChange={(e) => setBedtime(e.target.value)} style={{ width:'100%', border:'none', background:'transparent', fontSize:22, fontWeight:700, color:'var(--accent)', fontFamily:'var(--display)', outline:'none', padding:0, cursor:'pointer' }} />
+                    </label>
+                    <div style={{ fontSize:13, fontWeight:700, color:'#5a566e', marginBottom:6 }}>Do kdy spát (probuzení) — klepni a vyber čas</div>
+                    <label style={{ display:'block', background:'#fef3c7', border:'2px solid #f59e0b', borderRadius:14, padding:'14px 16px', cursor:'pointer' }}>
+                      <div style={{ fontSize:11, fontWeight:800, color:'#92400e', textTransform:'uppercase', letterSpacing:'.05em', marginBottom:4 }}>☀️ Probuzení</div>
+                      <input type="time" value={wakeTime} onChange={(e) => setWakeTime(e.target.value)} style={{ width:'100%', border:'none', background:'transparent', fontSize:22, fontWeight:700, color:'#92400e', fontFamily:'var(--display)', outline:'none', padding:0, cursor:'pointer' }} />
+                    </label>
+                    <div style={{ fontSize:12, color:'#9a96ac', marginTop:10, lineHeight:1.4 }}>V tomto okně se obrazovka ztmaví a {mascotName} spí.</div>
                   </div>
 
                   {/* v7: Synchronizace */}
@@ -3960,8 +3971,8 @@ function App() {
                   </div>
 
                   <div style={{ background:'#fff', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
-                    <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'#1a1530' }}>Verze: Domácí pomocník v15</div>
-                    <div style={{ fontSize:12, color:'#9a96ac', marginTop:4 }}>Build 2026-06-21 · 06:30</div>
+                    <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'#1a1530' }}>Verze: Domácí pomocník v16</div>
+                    <div style={{ fontSize:12, color:'#9a96ac', marginTop:4 }}>Build 2026-06-21 · 06:38</div>
                   </div>
                 </div>
                 )}
