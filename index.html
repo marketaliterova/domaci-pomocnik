@@ -32,9 +32,11 @@
   @keyframes shimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
   @keyframes blink { 0%,92%,100% { transform: scaleY(1); } 96% { transform: scaleY(.1); } }
   @keyframes shake { 0%,100% { transform: translateX(0); } 25% { transform: translateX(-3px); } 75% { transform: translateX(3px); } }
-  @keyframes softPulse { 0%,100% { transform: scale(1); } 50% { transform: scale(1.06); } }
   @keyframes toastIn { 0% { opacity: 0; transform: translateY(-16px) scale(.96); } 100% { opacity: 1; transform: translateY(0) scale(1); } }
   @keyframes spinSlow { 0% { transform: rotate(0); } 100% { transform: rotate(360deg); } }
+  @keyframes floatUp { 0% { transform: translate(-50%, 0) scale(1); opacity: 1; } 70% { opacity: 1; } 100% { transform: translate(-50%, -100px) scale(1.5); opacity: 0; } }
+  @keyframes rarityPulse { 0%,100% { box-shadow: 0 0 0 0 currentColor; } 50% { box-shadow: 0 0 28px 6px currentColor; } }
+  @keyframes bossShake { 0%,100% { transform: translateX(0); } 25% { transform: translateX(-6px) rotate(-1deg); } 75% { transform: translateX(6px) rotate(1deg); } }
 </style>
 </head>
 <body>
@@ -182,8 +184,102 @@ const RIKI_PHRASES = {
   streak: ['Sedmidenní série! Ty jsi fakt borec.', 'Už druhý týden v řadě, paráda!']
 };
 
+// ====================================================================
+// v14: HERO QUEST GAMIFIKACE
+// ====================================================================
+
+// Tier systém podle celkového XP
+const HERO_TIERS = [
+  { min: 0,    name: 'Začátečník',  emoji: '🐣', color: '#9ca3af', glow: 'rgba(156,163,175,.4)' },
+  { min: 50,   name: 'Učeň',        emoji: '⚔️', color: '#16a34a', glow: 'rgba(22,163,74,.4)'   },
+  { min: 200,  name: 'Bojovník',    emoji: '🛡️', color: '#0ea5e9', glow: 'rgba(14,165,233,.5)'  },
+  { min: 500,  name: 'Rytíř',       emoji: '🏰', color: '#7c3aed', glow: 'rgba(124,58,237,.5)'  },
+  { min: 1000, name: 'Hrdina',      emoji: '🐉', color: '#dc2626', glow: 'rgba(220,38,38,.55)'  },
+  { min: 2000, name: 'Šampión',     emoji: '👑', color: '#f59e0b', glow: 'rgba(245,158,11,.6)'  },
+  { min: 5000, name: 'Legenda',     emoji: '🌟', color: '#fbbf24', glow: 'rgba(251,191,36,.8)'  },
+];
+
+function getTier(xp) {
+  let cur = HERO_TIERS[0];
+  for (var i = 0; i < HERO_TIERS.length; i++) {
+    if (xp >= HERO_TIERS[i].min) cur = HERO_TIERS[i];
+  }
+  return cur;
+}
+function getNextTier(xp) {
+  for (var i = 0; i < HERO_TIERS.length; i++) {
+    if (xp < HERO_TIERS[i].min) return HERO_TIERS[i];
+  }
+  return null;
+}
+
+// LOOT TABLE - co může padnout
+const LOOT_TABLE = [
+  // COMMON (60%) — šedá
+  { id:'gem-blue',     name:'Modrý drahokam',    emoji:'💎', rarity:'common',    weight:18 },
+  { id:'gem-green',    name:'Zelený drahokam',   emoji:'💚', rarity:'common',    weight:18 },
+  { id:'coin-bronze',  name:'Bronzová mince',    emoji:'🪙', rarity:'common',    weight:18 },
+  { id:'feather',      name:'Pírko',             emoji:'🪶', rarity:'common',    weight:12 },
+  // RARE (25%) — modrá
+  { id:'scroll',       name:'Magický svitek',    emoji:'📜', rarity:'rare',      weight:8 },
+  { id:'potion-red',   name:'Lektvar síly',      emoji:'🧪', rarity:'rare',      weight:8 },
+  { id:'key-gold',     name:'Zlatý klíč',        emoji:'🗝️', rarity:'rare',      weight:7 },
+  // EPIC (12%) — fialová
+  { id:'crystal',      name:'Magický krystal',   emoji:'🔮', rarity:'epic',      weight:5 },
+  { id:'shield',       name:'Zlatý štít',        emoji:'🛡️', rarity:'epic',      weight:4 },
+  { id:'gem-purple',   name:'Fialový drahokam',  emoji:'🟣', rarity:'epic',      weight:3 },
+  // LEGENDARY (3%) — zlatá
+  { id:'dragon-egg',   name:'Dračí vejce',       emoji:'🥚', rarity:'legendary', weight:1 },
+  { id:'crown',        name:'Královská koruna',  emoji:'👑', rarity:'legendary', weight:1 },
+  { id:'phoenix',      name:'Pero fénixe',       emoji:'🔥', rarity:'legendary', weight:1 },
+];
+const RARITY_STYLE = {
+  common:    { color:'#6b7280', bg:'#f3f4f6', border:'#d1d5db', label:'Běžné' },
+  rare:      { color:'#1e40af', bg:'#dbeafe', border:'#60a5fa', label:'Vzácné' },
+  epic:      { color:'#7c3aed', bg:'#ede9fe', border:'#a78bfa', label:'Epické' },
+  legendary: { color:'#b45309', bg:'#fef3c7', border:'#f59e0b', label:'LEGENDÁRNÍ' },
+};
+
+function rollLoot(forceRarity) {
+  let pool = LOOT_TABLE;
+  if (forceRarity) pool = LOOT_TABLE.filter(l => l.rarity === forceRarity);
+  if (pool.length === 0) pool = LOOT_TABLE;
+  const total = pool.reduce((s, l) => s + l.weight, 0);
+  let r = Math.random() * total;
+  for (var i = 0; i < pool.length; i++) {
+    r -= pool[i].weight;
+    if (r <= 0) return pool[i];
+  }
+  return pool[0];
+}
+
+// TÝDENNÍ BOSS roster
+const BOSS_ROSTER = [
+  { id:'dragon',   name:'Ohnivý drak',       emoji:'🐲', color:'#dc2626' },
+  { id:'lich',     name:'Temný čaroděj',     emoji:'🧙', color:'#7c3aed' },
+  { id:'cyclops',  name:'Obří kyklop',       emoji:'👹', color:'#ea580c' },
+  { id:'demon',    name:'Démon temnoty',     emoji:'😈', color:'#991b1b' },
+  { id:'kraken',   name:'Kraken hlubin',     emoji:'🐙', color:'#1e40af' },
+  { id:'wolf',     name:'Stínový vlk',       emoji:'🐺', color:'#374151' },
+  { id:'spider',   name:'Královna pavouků',  emoji:'🕷️', color:'#581c87' },
+  { id:'skeleton', name:'Kostlivý král',     emoji:'💀', color:'#6b7280' },
+];
+
+// Vrátí ISO datum pondělí toho týdne (pro identifikaci týdne)
+function getWeekId() {
+  const d = new Date();
+  const day = (d.getDay() + 6) % 7; // pondělí=0
+  d.setDate(d.getDate() - day);
+  return d.getFullYear() + '-' + pad2(d.getMonth()+1) + '-' + pad2(d.getDate());
+}
+function getBossForWeek(weekId) {
+  // Deterministicky vyber bosse pro týden (hash z weekId)
+  let hash = 0;
+  for (let i = 0; i < weekId.length; i++) hash = (hash * 31 + weekId.charCodeAt(i)) | 0;
+  return BOSS_ROSTER[Math.abs(hash) % BOSS_ROSTER.length];
+}
+
 // Návrh oblečení podle teploty
-// tempC = relevantní teplota (typicky max za den)
 // rainProb = 0-1 (jen pokud opravdu prší — práh 60%)
 // wind = km/h
 function suggestOutfit(tempC, rainProb, wind) {
@@ -275,6 +371,8 @@ const saveState = (s) => {
       lastSyncTime: s.lastSyncTime,
       // v8 tamagotchi
       petMood: s.petMood, petEnergy: s.petEnergy, petSleeping: s.petSleeping, petLastDecay: s.petLastDecay,
+      // v14 hero quest
+      inventory: s.inventory, bossState: s.bossState,
     };
     localStorage.setItem(LS_KEY, JSON.stringify(persistable));
   } catch(e) {}
@@ -659,6 +757,10 @@ function App() {
   const [petEnergy, setPetEnergy] = useState(persisted && persisted.petEnergy != null ? persisted.petEnergy : 70); // 0-100 energie
   const [petSleeping, setPetSleeping] = useState(persisted && persisted.petSleeping || false);
   const [petLastDecay, setPetLastDecay] = useState(persisted && persisted.petLastDecay || Date.now());
+  // v14 HERO QUEST
+  const [inventory, setInventory] = useState((persisted && Array.isArray(persisted.inventory)) ? persisted.inventory : []);
+  const [bossState, setBossState] = useState((persisted && persisted.bossState && typeof persisted.bossState === 'object') ? persisted.bossState : { weekId: getWeekId(), hp: 7, defeated: false });
+  const [floatingXp, setFloatingXp] = useState([]); // efemerní {id, x, y, value, critical}
   // v8 step timer (časovač pro děti s časovou slepotou)
   const [currentStepStart, setCurrentStepStart] = useState(null); // timestamp začátku aktuálního kroku
   const [nowTick, setNowTick] = useState(Date.now()); // pro re-render každou vteřinu
@@ -711,6 +813,7 @@ function App() {
       weekEvents, worryMessages, readingList, stickers, childPhoto, choresList, weeklyChores,
       syncUrl, lastSyncTime,
       petMood, petEnergy, petSleeping, petLastDecay,
+      inventory, bossState,
     });
   }, [theme, points, totalXp, streak, morning, evening, doneM, doneE, whoHome, departMin,
       shopItems, shopState, choreState, pendingApprovals, packState, packAwarded,
@@ -720,7 +823,8 @@ function App() {
       moodLog, lastMoodDate, parentPin, childName,
       weekEvents, worryMessages, readingList, stickers, childPhoto, choresList, weeklyChores,
       syncUrl, lastSyncTime,
-      petMood, petEnergy, petSleeping, petLastDecay]);
+      petMood, petEnergy, petSleeping, petLastDecay,
+      inventory, bossState]);
 
   // --- helpers
   const tv = useMemo(() => THEMES[theme] || THEMES.cisto, [theme]);
@@ -800,6 +904,49 @@ function App() {
     });
   }, [mascotName, showToast, audio, ttsOn, tts]);
 
+  // ---------------------- v14 HERO QUEST helpers ----------------------
+  const dropLoot = useCallback((forceRarity) => {
+    const loot = rollLoot(forceRarity);
+    const item = { ...loot, uid: 'lt-' + Date.now() + '-' + Math.floor(Math.random()*9999), date: new Date().toISOString() };
+    setInventory(inv => [...inv, item]);
+    const style = RARITY_STYLE[loot.rarity];
+    showToast(`${loot.emoji} ${loot.name}!`, style.label === 'LEGENDÁRNÍ' ? '🌟' : '🎁');
+    return item;
+  }, [showToast]);
+
+  // Týdenní boss: 1 damage; vrátí true pokud byl právě poražen
+  const damageBoss = useCallback((amount) => {
+    let defeatedNow = false;
+    setBossState(b => {
+      if (!b || b.defeated) return b;
+      const newHp = Math.max(0, b.hp - (amount || 1));
+      if (newHp === 0) defeatedNow = true;
+      return { ...b, hp: newHp, defeated: newHp === 0 };
+    });
+    return defeatedNow;
+  }, []);
+
+  // Reset boss na začátku každého nového týdne
+  useEffect(() => {
+    const currentWeek = getWeekId();
+    if (bossState.weekId !== currentWeek) {
+      setBossState({ weekId: currentWeek, hp: 7, defeated: false });
+    }
+    // jednou za den ověř
+    const id = setInterval(() => {
+      const wk = getWeekId();
+      setBossState(b => (b.weekId !== wk ? { weekId: wk, hp: 7, defeated: false } : b));
+    }, 3600 * 1000);
+    return () => clearInterval(id);
+    // eslint-disable-next-line
+  }, []);
+
+  const spawnFloatingXp = useCallback((x, y, value, critical) => {
+    const id = 'fx-' + Date.now() + '-' + Math.floor(Math.random()*9999);
+    setFloatingXp(arr => [...arr, { id, x: x || window.innerWidth/2, y: y || window.innerHeight/2, value, critical }]);
+    setTimeout(() => setFloatingXp(arr => arr.filter(f => f.id !== id)), 1500);
+  }, []);
+
   // Tamagotchi decay: 2 body za hodinu (pomalu), když spí tak nic
   useEffect(() => {
     const tick = () => {
@@ -838,29 +985,51 @@ function App() {
     const cur = doneMap(kind);
     const map = { ...cur, [id]: true };
     setDone(kind, map);
-    // Reset step timer pro další krok
     setCurrentStepStart(Date.now());
     const allDone = list.every(s => map[s.id]);
+    // v14: floating XP - spawn ze středu obrazovky
+    const cx = window.innerWidth / 2;
+    const cy = window.innerHeight / 2;
     if (allDone) {
       audio.success(); confetti.fire({ n: 110 });
       setPoints(p => p + 10); setTotalXp(x => x + 10);
       bumpStreak(kind);
-      // Tamagotchi: dokončená rutina hodně nabíjí
       feedPet(15, 20);
-      // riki tančí + mluví + praise
       setRikiDancing(true);
       setTimeout(() => setRikiDancing(false), 3000);
       tts.sayRandom('routineDone', RIKI_PHRASES.routineDone);
       const msg = showPraise();
       if (msg) setTimeout(() => tts.speak('praise-spoken', msg), 1500);
+      // v14: floating QUEST COMPLETE bonus XP
+      spawnFloatingXp(cx, cy - 80, '+30 XP', true);
+      // v14: loot drop podle streaku
+      const sd = streakDays || 0;
+      let forceRarity = null;
+      if (sd >= 14) forceRarity = 'legendary';
+      else if (sd >= 7) forceRarity = 'epic';
+      // bez force = vážený random; rarity rozdělení: 60/25/12/3
+      const lootChance = Math.random();
+      if (forceRarity || lootChance < 1.0) { // vždy padne něco po splněné rutině
+        setTimeout(() => dropLoot(forceRarity), 600);
+      }
+      // v14: damage boss
+      const bossDefeated = damageBoss(1);
+      if (bossDefeated) {
+        setTimeout(() => {
+          setPoints(p => p + 100); setTotalXp(x => x + 100);
+          confetti.fire({ n: 200 });
+          showToast('🐉 BOSS PORAŽEN! +100 XP', '👑');
+          dropLoot('legendary');
+        }, 1000);
+      }
     } else {
       audio.ding(); confetti.fire({ y: 300, n: 26 });
-      // Tamagotchi: každý krok malou dávku
       feedPet(2, 3);
-      // občas Riki řekne hlášku pro povzbuzení (cca každý 3. krok)
+      // v14: floating +10 XP přímo z místa kliknutí (přibližně, používáme pageY z eventu — bez ní centr)
+      spawnFloatingXp(cx, cy, '+10 XP', false);
       if (Math.random() < 0.35) tts.sayRandom('stepDone', RIKI_PHRASES.stepDone);
     }
-  }, [morning, evening, doneM, doneE, audio, confetti, bumpStreak, tts, showPraise, feedPet]);
+  }, [morning, evening, doneM, doneE, audio, confetti, bumpStreak, tts, showPraise, feedPet, dropLoot, damageBoss, spawnFloatingXp, streakDays, showToast]);
 
   const skipStep = useCallback((kind) => {
     const list = steps(kind), map = doneMap(kind);
@@ -1157,7 +1326,7 @@ function App() {
   const tNext = tList.find(x => !tMap[x.id]);
   const todayRoutine = {
     emoji: todayKind === 'morning' ? '☀️' : '🌙',
-    title: todayKind === 'morning' ? 'Ranní rutina' : 'Večerní rutina',
+    title: todayKind === 'morning' ? 'Ranní mise ⚔️' : 'Večerní mise 🌙',
     progressLabel: `${tDone} z ${tList.length} splněno`,
     cta: tDone === 0 ? 'Začít' : (tNext ? 'Pokračovat' : 'Hotovo'),
     dots: tList.map(x => ({ color: tMap[x.id] ? accent : tv['--soft'] })),
@@ -1184,7 +1353,7 @@ function App() {
   const rDoneCount = rList.filter(x => rMap[x.id]).length;
   const rCurrent = rList.find(x => !rMap[x.id]);
   const routine = {
-    title: rKind === 'morning' ? '☀️ Ranní rutina' : '🌙 Večerní rutina',
+    title: rKind === 'morning' ? '⚔️ Ranní mise' : '🌙 Večerní mise',
     progressLabel: `${rDoneCount} z ${rList.length} hotovo`,
     total: rList.length,
     dots: rList.map(x => ({ color: rMap[x.id] ? accent : tv['--soft'] })),
@@ -1588,6 +1757,8 @@ function App() {
     if (isNum(s.petEnergy)) setPetEnergy(s.petEnergy);
     if (isBool(s.petSleeping)) setPetSleeping(s.petSleeping);
     if (isNum(s.petLastDecay)) setPetLastDecay(s.petLastDecay);
+    if (isArr(s.inventory)) setInventory(s.inventory);
+    if (isObj(s.bossState)) setBossState(s.bossState);
   }, []);
 
   // PULL ze serveru (manuální nebo periodicky)
@@ -1808,6 +1979,29 @@ function App() {
     <div style={rootStyle}>
       <div ref={confetti.ref} style={{ position:'absolute', inset:0, pointerEvents:'none', zIndex:90, overflow:'hidden' }}/>
 
+      {/* v14: Floating XP čísla */}
+      <div style={{ position:'fixed', inset:0, pointerEvents:'none', zIndex:95, overflow:'hidden' }}>
+        {floatingXp.map(f => (
+          <div key={f.id} style={{
+            position:'absolute',
+            left: f.x,
+            top: f.y,
+            transform:'translate(-50%, 0)',
+            fontFamily:'var(--display)',
+            fontSize: f.critical ? 42 : 32,
+            fontWeight: 800,
+            color: f.critical ? '#f59e0b' : '#16a34a',
+            textShadow: f.critical
+              ? '0 0 12px rgba(245,158,11,.8), 0 3px 0 #fff, 0 3px 18px rgba(0,0,0,.4)'
+              : '0 0 8px rgba(22,163,74,.6), 0 2px 0 #fff, 0 2px 12px rgba(0,0,0,.3)',
+            animation:'floatUp 1.4s ease-out forwards',
+            whiteSpace:'nowrap'
+          }}>
+            {f.critical && '⭐ '}{f.value}{f.critical && ' ⭐'}
+          </div>
+        ))}
+      </div>
+
       {/* Na mobilu zobrazujeme jen rodičovský overlay; kid screeny jsou pro tablet. */}
       {!isMobile && (
       <React.Fragment>
@@ -1908,7 +2102,25 @@ function App() {
                   )}
                 </div>
                 <div style={{ flex:1, minWidth:0 }}>
-                  <div style={{ fontFamily:'var(--display)', fontSize:23, fontWeight:600, color:'var(--ink)' }}>{mascotName} · {petStatus.label}</div>
+                  {(() => {
+                    const tier = getTier(totalXp);
+                    const next = getNextTier(totalXp);
+                    const progressToNext = next ? Math.min(1, (totalXp - tier.min) / (next.min - tier.min)) : 1;
+                    return (
+                      <React.Fragment>
+                        <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:4 }}>
+                          <div style={{ display:'flex', alignItems:'center', gap:6, background: tier.color, color:'#fff', padding:'3px 11px', borderRadius:999, fontSize:12, fontWeight:900, boxShadow:'0 4px 14px '+tier.glow, animation: tier.name === 'Legenda' ? 'rarityPulse 2s infinite' : 'none' }}>
+                            <span style={{ fontSize:14 }}>{tier.emoji}</span>
+                            <span style={{ textTransform:'uppercase', letterSpacing:'.06em' }}>{tier.name}</span>
+                          </div>
+                          {next && (
+                            <div style={{ fontSize:11, fontWeight:800, color:'var(--muted)' }}>→ {next.emoji} {next.name} za {next.min - totalXp} XP</div>
+                          )}
+                        </div>
+                        <div style={{ fontFamily:'var(--display)', fontSize:21, fontWeight:600, color:'var(--ink)' }}>{mascotName} · {petStatus.label}</div>
+                      </React.Fragment>
+                    );
+                  })()}
                   <div style={{ display:'flex', alignItems:'center', gap:14, margin:'9px 0' }}>
                     <div style={{ display:'flex', alignItems:'baseline', gap:5 }}>
                       <span style={{ fontFamily:'var(--display)', fontSize:34, fontWeight:600, color:'var(--accent)' }}>{child.points}</span>
@@ -2194,6 +2406,82 @@ function App() {
         <div style={{ display:'flex', alignItems:'center', gap:16 }}>
           <div onClick={() => go('home')} style={{ cursor:'pointer', width:52, height:52, borderRadius:17, background:'var(--surface)', border:'var(--hair)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:23, boxShadow:'var(--shadow)' }}>←</div>
           <div style={{ fontFamily:'var(--display)', fontSize:32, fontWeight:600, color:'var(--ink)', flex:1 }}>Body a odměny</div>
+        </div>
+
+        {/* v14: BOSS karta */}
+        {(() => {
+          const boss = getBossForWeek(bossState.weekId || getWeekId());
+          const maxHp = 7;
+          const hp = bossState.hp != null ? bossState.hp : maxHp;
+          const defeated = bossState.defeated;
+          const hpPct = (hp / maxHp) * 100;
+          return (
+            <div style={{
+              background: defeated ? 'linear-gradient(135deg, #16a34a, #15803d)' : 'linear-gradient(135deg, #1f2937, #0f172a)',
+              color:'#fff', borderRadius:24, padding:'20px 22px',
+              boxShadow:'0 10px 30px rgba(0,0,0,.25)', display:'flex', alignItems:'center', gap:18, position:'relative', overflow:'hidden'
+            }}>
+              <div style={{ fontSize:84, lineHeight:1, animation: defeated ? 'none' : 'bossShake 3s infinite', filter: defeated ? 'grayscale(0.4) opacity(0.4)' : 'none' }}>{boss.emoji}</div>
+              <div style={{ flex:1, minWidth:0 }}>
+                <div style={{ fontSize:11, fontWeight:900, opacity:.8, textTransform:'uppercase', letterSpacing:'.1em' }}>Týdenní boss</div>
+                <div style={{ fontFamily:'var(--display)', fontSize:24, fontWeight:600, marginBottom:6 }}>{boss.name}</div>
+                {defeated ? (
+                  <div style={{ fontSize:14, fontWeight:800, color:'#86efac' }}>🏆 PORAŽEN! Další přijde v pondělí.</div>
+                ) : (
+                  <React.Fragment>
+                    <div style={{ height:14, background:'rgba(255,255,255,.15)', borderRadius:8, overflow:'hidden', marginBottom:5 }}>
+                      <div style={{ height:'100%', width: hpPct+'%', background:'linear-gradient(90deg, #ef4444, #b91c1c)', borderRadius:8, transition:'width .6s' }}/>
+                    </div>
+                    <div style={{ fontSize:13, fontWeight:800, opacity:.9 }}>HP {hp} / {maxHp} · 1× rutina = 1 damage · poražení = +100 XP + legendární loot</div>
+                  </React.Fragment>
+                )}
+              </div>
+            </div>
+          );
+        })()}
+
+        {/* v14: TRUHLA POKLADŮ */}
+        <div style={{ background:'linear-gradient(135deg, #fef3c7, #fde68a)', borderRadius:24, padding:'20px 22px', boxShadow:'var(--shadow)', border:'2px solid #f59e0b' }}>
+          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:14 }}>
+            <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+              <div style={{ fontSize:32 }}>🗝️</div>
+              <div>
+                <div style={{ fontFamily:'var(--display)', fontSize:22, fontWeight:600, color:'#7c2d12' }}>Truhla pokladů</div>
+                <div style={{ fontSize:12, fontWeight:800, color:'#92400e' }}>{inventory.length} {inventory.length === 1 ? 'předmět' : inventory.length < 5 ? 'předměty' : 'předmětů'}</div>
+              </div>
+            </div>
+            <div style={{ fontSize:11, fontWeight:800, color:'#92400e', textAlign:'right', lineHeight:1.3 }}>Padá při<br/>dokončení rutiny</div>
+          </div>
+          {inventory.length === 0 ? (
+            <div style={{ background:'#fff', borderRadius:14, padding:'18px 14px', textAlign:'center', color:'#92400e', fontSize:13, fontWeight:700 }}>
+              Truhla je prázdná. Splň rutinu a něco padne! ✨
+            </div>
+          ) : (
+            <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(74px, 1fr))', gap:8 }}>
+              {[...inventory].reverse().slice(0, 36).map((item) => {
+                const style = RARITY_STYLE[item.rarity] || RARITY_STYLE.common;
+                return (
+                  <div key={item.uid} title={item.name + ' (' + style.label + ')'} style={{
+                    background: style.bg,
+                    border: '2px solid ' + style.border,
+                    borderRadius: 12,
+                    padding: '10px 6px',
+                    textAlign: 'center',
+                    boxShadow: item.rarity === 'legendary' ? '0 4px 14px rgba(245,158,11,.5)' : '0 2px 6px rgba(0,0,0,.06)',
+                    color: style.color,
+                    animation: item.rarity === 'legendary' ? 'rarityPulse 2.5s infinite' : 'none',
+                    cursor:'help'
+                  }}>
+                    <div style={{ fontSize:30, lineHeight:1 }}>{item.emoji}</div>
+                    <div style={{ fontSize:9, fontWeight:900, marginTop:4, textTransform:'uppercase', letterSpacing:'.03em' }}>{style.label}</div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          {inventory.length > 36 && (
+            <div style={{ fontSize:11, fontWeight:800, color:'#92400e', textAlign:'center', marginTop:8 }}>... a dalších {inventory.length - 36}</div>
+          )}
         </div>
 
         <div style={{ display:'grid', gridTemplateColumns:'1fr 1.4fr', gap:18 }}>
@@ -3342,8 +3630,8 @@ function App() {
                   </div>
 
                   <div style={{ background:'#fff', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
-                    <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'#1a1530' }}>Verze: Domácí pomocník v13</div>
-                    <div style={{ fontSize:12, color:'#9a96ac', marginTop:4 }}>Build 2026-06-20 · 22:58</div>
+                    <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'#1a1530' }}>Verze: Domácí pomocník v14</div>
+                    <div style={{ fontSize:12, color:'#9a96ac', marginTop:4 }}>Build 2026-06-21 · 06:30</div>
                   </div>
                 </div>
                 )}
