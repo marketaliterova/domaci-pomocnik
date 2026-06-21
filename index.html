@@ -737,6 +737,24 @@ function useTTS(enabled) {
       if (voiceRef.current) u.voice = voiceRef.current;
       u.lang = (voiceRef.current && voiceRef.current.lang) || 'cs-CZ';
       u.rate = 1.0; u.pitch = 1.05; u.volume = 0.95;
+      // v43: Keepalive - Chrome/iOS zastaví TTS po ~15s pro "úsporu baterie".
+      // Trick: každých 5s pause+resume udržuje engine při životě.
+      let keepaliveId = null;
+      const stopKeepalive = function() {
+        if (keepaliveId) { clearInterval(keepaliveId); keepaliveId = null; }
+      };
+      u.onstart = function() {
+        keepaliveId = setInterval(function() {
+          if (window.speechSynthesis.speaking) {
+            window.speechSynthesis.pause();
+            window.speechSynthesis.resume();
+          } else {
+            stopKeepalive();
+          }
+        }, 5000);
+      };
+      u.onend = stopKeepalive;
+      u.onerror = stopKeepalive;
       window.speechSynthesis.speak(u);
     } catch(e) {}
   }, [enabled]);
@@ -916,6 +934,12 @@ function App() {
   const [lastDayKey, setLastDayKey] = useState((persisted && persisted.lastDayKey) || todayISO());
   // v41: routineHistory = pole snapshotů z minulých dnů { date, morningDone, eveningDone, choreDone, points }
   const [routineHistory, setRoutineHistory] = useState((persisted && Array.isArray(persisted.routineHistory)) ? persisted.routineHistory : []);
+  // v43: Spin Wheel - dostupné jednou denně po dokončení ranní rutiny
+  const [spinWheelLastDate, setSpinWheelLastDate] = useState((persisted && persisted.spinWheelLastDate) || '');
+  const [showSpinWheel, setShowSpinWheel] = useState(false);
+  const [spinning, setSpinning] = useState(false);
+  const [spinRotation, setSpinRotation] = useState(0);
+  const [spinResult, setSpinResult] = useState(null);
   const [gcalUrl, setGcalUrl] = useState((persisted && persisted.gcalUrl) || '');
   const [gcalEvents, setGcalEvents] = useState((persisted && Array.isArray(persisted.gcalEvents)) ? persisted.gcalEvents : []);
   const [gcalLastFetch, setGcalLastFetch] = useState((persisted && persisted.gcalLastFetch) || 0);
@@ -1024,7 +1048,7 @@ function App() {
       lastDayKey, gcalUrl, gcalEvents, gcalLastFetch, whoHomeSchedule,
       voiceMap, voiceBaseUrl, dayBlueprintByDay,
       hueWebhookUrl, hueButtons,
-      routineHistory,
+      routineHistory, spinWheelLastDate,
     });
   }, [theme, points, totalXp, streak, morning, evening, doneM, doneE, whoHome, departMin,
       shopItems, shopState, choreState, pendingApprovals, packState, packAwarded,
@@ -1421,7 +1445,7 @@ function App() {
       audio.success();
       confetti.fire({ y: 300, n: 30 });
       showToast(`${step.icon} ${step.t} hotovo!`, '✓');
-      if (playVoiceRef.current) playVoiceRef.current('stepDone', step.t + ' hotovo');
+      if (playVoiceRef.current) playVoiceRef.current(['step-' + step.id, 'stepDone'], step.t + ' hotovo');
     } else if (action.type === 'chore') {
       const c = choresList.find(x => x.id === action.ref);
       if (!c) return;
@@ -1593,13 +1617,22 @@ function App() {
       window.removeEventListener('touchstart', unlock);
     };
   }, []);
-  const playVoice = useCallback((eventId, fallbackText) => {
+  const playVoice = useCallback((eventIdOrArray, fallbackText) => {
     if (!soundOn) return;
-    // v20: zjistit URL - nejdřív uživatel-nastavený voiceMap, jinak DEFAULT_VOICE_MAP
-    let rawValue = voiceMapRef.current[eventId];
-    if (!rawValue || !String(rawValue).trim()) {
-      const defaults = DEFAULT_VOICE_MAP[eventId];
-      if (defaults && defaults.length) rawValue = defaults.join('\n');
+    // v43: podpora pole klíčů - zkusí postupně, vezme první co má hlásku
+    const candidates = Array.isArray(eventIdOrArray) ? eventIdOrArray : [eventIdOrArray];
+    let rawValue = null;
+    let eventId = candidates[0]; // pro logging
+    for (let i = 0; i < candidates.length; i++) {
+      const c = candidates[i];
+      // 1. uživatel-nastavený voiceMap
+      let v = voiceMapRef.current[c];
+      if (v && String(v).trim()) { rawValue = v; eventId = c; break; }
+      // 2. default fallback (jen pro generic events, ne pro step-X)
+      if (!c.startsWith('step-')) {
+        const defaults = DEFAULT_VOICE_MAP[c];
+        if (defaults && defaults.length) { rawValue = defaults.join('\n'); eventId = c; break; }
+      }
     }
     if (rawValue) {
       const variants = String(rawValue).split(/[\n,]+/).map(s => s.trim()).filter(Boolean);
@@ -1710,7 +1743,11 @@ function App() {
     const cy = window.innerHeight / 2;
     if (allDone) {
       audio.success(); confetti.fire({ n: 110 });
-      setPoints(p => p + 10); setTotalXp(x => x + 10);
+      // v43: Combo multiplier - víc dní v řadě = víc bodů. Cap 2x při 10+ dnech.
+      const cMul = Math.min(2.0, 1 + (streakDays || 0) * 0.1);
+      const baseXP = 10;
+      const xpGain = Math.round(baseXP * cMul);
+      setPoints(p => p + xpGain); setTotalXp(x => x + xpGain);
       bumpStreak(kind);
       feedPet(15, 20);
       setRikiDancing(true);
@@ -1719,7 +1756,20 @@ function App() {
       const msg = showPraise();
       if (msg) setTimeout(() => playVoice('praise', msg), 1500);
       // v14: floating QUEST COMPLETE bonus XP
-      spawnFloatingXp(cx, cy - 80, '+30 XP', true);
+      const bonusXP = Math.round(30 * cMul);
+      spawnFloatingXp(cx, cy - 80, '+' + bonusXP + ' XP', true);
+      if (cMul > 1) {
+        setTimeout(() => showToast('Combo x' + cMul.toFixed(1) + '! 🔥', '⚡'), 600);
+      }
+      // v43: Po RANNÍ rutině - spin wheel jednou denně
+      if (kind === 'morning' && spinWheelLastDate !== todayISO()) {
+        setTimeout(() => {
+          setSpinResult(null);
+          setSpinning(false);
+          setSpinRotation(0);
+          setShowSpinWheel(true);
+        }, 2200);
+      }
       // v14: loot drop podle streaku
       const sd = streakDays || 0;
       let forceRarity = null;
@@ -1746,7 +1796,14 @@ function App() {
       feedPet(2, 3);
       // v14: floating +10 XP přímo z místa kliknutí (přibližně, používáme pageY z eventu — bez ní centr)
       spawnFloatingXp(cx, cy, '+10 XP', false);
-      if (Math.random() < 0.35) sayRikiVoice('stepDone', RIKI_PHRASES.stepDone);
+      if (Math.random() < 0.35) {
+        // v43: Zkusit step-specific hlas, jinak generic stepDone
+        if (playVoiceRef.current) {
+          const stepObj = list.find(s => s.id === id);
+          const fallbackText = stepObj ? (stepObj.t + ' hotovo') : 'Hotovo';
+          playVoiceRef.current(['step-' + id, 'stepDone'], fallbackText);
+        }
+      }
     }
   }, [morning, evening, doneM, doneE, audio, confetti, bumpStreak, tts, showPraise, feedPet, dropLoot, damageBoss, spawnFloatingXp, streakDays, showToast]);
 
@@ -2283,7 +2340,6 @@ function App() {
     { id:'historie', icon:'📊', label:'Historie' },
     { id:'odmeny',   icon:'🎁', label:'Odměny' },
     { id:'kalendar', icon:'📅', label:'Kalendář' },
-    { id:'tlacitka', icon:'🔘', label:'Tlačítka' },
     { id:'nalada',   icon:'💜', label:'Nálada' },
     { id:'vzkazy',   icon:'💌', label:'Vzkazy' },
     { id:'nastav',   icon:'⚙️', label:'Nastavení' },
@@ -2562,6 +2618,7 @@ function App() {
     if (isObj(s.bossState)) setBossState(s.bossState);
     if (isStr(s.lastDayKey)) setLastDayKey(s.lastDayKey);
     if (Array.isArray(s.routineHistory)) setRoutineHistory(s.routineHistory);
+    if (typeof s.spinWheelLastDate === 'string') setSpinWheelLastDate(s.spinWheelLastDate);
     if (isStr(s.gcalUrl)) setGcalUrl(s.gcalUrl);
     if (isArr(s.gcalEvents)) setGcalEvents(s.gcalEvents);
     if (isNum(s.gcalLastFetch)) setGcalLastFetch(s.gcalLastFetch);
@@ -4211,6 +4268,36 @@ function App() {
                               <div onClick={() => toggleEditStep(editKind, s.id)} style={{ cursor:'pointer', width:42, height:24, borderRadius:14, background: s.on ? '#16a34a' : '#cdcdd6', position:'relative', transition:'background .2s' }}>
                                 <div style={{ position:'absolute', top:2, left: s.on ? 20 : 2, width:20, height:20, borderRadius:'50%', background:'#fff', transition:'left .2s', boxShadow:'0 2px 4px rgba(0,0,0,.2)' }}/>
                               </div>
+                              {/* v43: Per-step voice MP3 */}
+                              <div onClick={() => {
+                                const key = 'step-' + s.id;
+                                const cur = (voiceMap && voiceMap[key]) || '';
+                                const v = window.prompt(
+                                  `Vlastní MP3 hláška pro krok „${s.t}":\n\n` +
+                                  `• Napiš jméno souboru (např. mytí.mp3) - hraje se z /voices/\n` +
+                                  `• Nebo plnou URL (https://...)\n` +
+                                  `• Nech prázdné pro výchozí hlas\n` +
+                                  `• Můžeš dát víc variant oddělených čárkou`,
+                                  cur
+                                );
+                                if (v === null) return;
+                                const trimmed = v.trim();
+                                if (trimmed) {
+                                  setVoiceMap(vm => ({...vm, [key]: trimmed}));
+                                  showToast(`Hláska pro „${s.t}" uložena`, '🎙');
+                                  audio.coin();
+                                } else {
+                                  setVoiceMap(vm => { const nv = {...vm}; delete nv[key]; return nv; });
+                                  showToast(`Hláska pro „${s.t}" smazána`, '🎙');
+                                  audio.tap();
+                                }
+                              }} title="Vlastní hláska pro tento krok" style={{
+                                cursor:'pointer', width:28, height:24, borderRadius:6,
+                                background: (voiceMap && voiceMap['step-' + s.id]) ? '#fef3c7' : '#f0f0f7',
+                                border: (voiceMap && voiceMap['step-' + s.id]) ? '1px solid #f59e0b' : '1px solid transparent',
+                                color: (voiceMap && voiceMap['step-' + s.id]) ? '#92400e' : '#9a96ac',
+                                display:'flex', alignItems:'center', justifyContent:'center', fontSize:13
+                              }}>🎙</div>
                               {/* Delete */}
                               <div onClick={() => {
                                 if (!window.confirm(`Smazat krok "${s.t}"?`)) return;
@@ -5693,8 +5780,8 @@ function App() {
 
                   {/* Verze (vždy zobrazeno) */}
                   <div style={{ background:'#fff', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
-                    <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'#1a1530' }}>Verze: Domácí pomocník v42</div>
-                    <div style={{ fontSize:12, color:'#9a96ac', marginTop:4 }}>Build 2026-06-21 · 18:31</div>
+                    <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'#1a1530' }}>Verze: Domácí pomocník v43</div>
+                    <div style={{ fontSize:12, color:'#9a96ac', marginTop:4 }}>Build 2026-06-21 · 18:42</div>
                   </div>
                 </div>
                 )}
@@ -5812,6 +5899,118 @@ function App() {
               );
             })()}
           </div>
+        </div>
+      )}
+
+      {/* v43: SPIN WHEEL - po dokončení ranní rutiny */}
+      {showSpinWheel && (
+        <div style={{ position:'absolute', inset:0, zIndex:75, background:'rgba(20,16,40,.85)', display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', padding:30, animation:'popIn .4s ease' }}>
+          {!spinResult ? (
+            <>
+              <div style={{ fontFamily:'var(--display)', fontSize:38, fontWeight:700, color:'#fff', textAlign:'center', marginBottom:8 }}>🎰 Denní točení!</div>
+              <div style={{ fontSize:16, fontWeight:700, color:'rgba(255,255,255,.85)', textAlign:'center', marginBottom:24 }}>Točíš jednou denně. Co dnes získáš?</div>
+
+              {/* Wheel SVG */}
+              <div style={{ position:'relative', width:300, height:300, marginBottom:20 }}>
+                {/* Pointer */}
+                <div style={{ position:'absolute', top:-12, left:'50%', transform:'translateX(-50%)', width:0, height:0, borderLeft:'14px solid transparent', borderRight:'14px solid transparent', borderTop:'24px solid #fbbf24', zIndex:2, filter:'drop-shadow(0 2px 4px rgba(0,0,0,.4))' }}/>
+                <svg viewBox="-150 -150 300 300" style={{ width:'100%', height:'100%', transform:'rotate(' + spinRotation + 'deg)', transition: spinning ? 'transform 4s cubic-bezier(0.17, 0.67, 0.32, 1.05)' : 'none' }}>
+                  {(() => {
+                    // 8 segmentů s odměnami - vyrovnaná pravděpodobnost ale různé body
+                    // Order: 5, 10, 20, 5, 15, 50, 10, 100
+                    const segments = [
+                      { points: 5,   color:'#94a3b8', label:'+5'   },
+                      { points: 10,  color:'#22c55e', label:'+10'  },
+                      { points: 20,  color:'#3b82f6', label:'+20'  },
+                      { points: 5,   color:'#94a3b8', label:'+5'   },
+                      { points: 15,  color:'#a855f7', label:'+15'  },
+                      { points: 50,  color:'#f59e0b', label:'+50'  },
+                      { points: 10,  color:'#22c55e', label:'+10'  },
+                      { points: 100, color:'#dc2626', label:'+100' },
+                    ];
+                    const segAngle = 360 / segments.length;
+                    return segments.map((seg, i) => {
+                      const startAngle = (i * segAngle - 90) * Math.PI / 180;
+                      const endAngle = ((i + 1) * segAngle - 90) * Math.PI / 180;
+                      const r = 140;
+                      const x1 = r * Math.cos(startAngle);
+                      const y1 = r * Math.sin(startAngle);
+                      const x2 = r * Math.cos(endAngle);
+                      const y2 = r * Math.sin(endAngle);
+                      const labelAngle = (i * segAngle - 90 + segAngle/2) * Math.PI / 180;
+                      const lx = (r * 0.65) * Math.cos(labelAngle);
+                      const ly = (r * 0.65) * Math.sin(labelAngle);
+                      return (
+                        <g key={i}>
+                          <path d={`M 0 0 L ${x1} ${y1} A ${r} ${r} 0 0 1 ${x2} ${y2} Z`} fill={seg.color} stroke="#fff" strokeWidth="3"/>
+                          <text x={lx} y={ly} fill="#fff" fontSize="22" fontWeight="900" textAnchor="middle" dominantBaseline="middle" style={{ pointerEvents:'none', fontFamily:'var(--display)' }}>{seg.label}</text>
+                        </g>
+                      );
+                    });
+                  })()}
+                  <circle cx="0" cy="0" r="22" fill="#fff" stroke="#fbbf24" strokeWidth="3"/>
+                  <text x="0" y="6" fill="#fbbf24" fontSize="22" fontWeight="900" textAnchor="middle">⭐</text>
+                </svg>
+              </div>
+
+              {!spinning && (
+                <div onClick={() => {
+                  // Spin - random reward (waitedrandomwithpondetnosti)
+                  // Spin animation: rotate 5-7 full + random 0-360
+                  const segments = [5, 10, 20, 5, 15, 50, 10, 100];
+                  // Realistic distribution: 40% chance 5, 30% chance 10/15, 20% chance 20, 8% chance 50, 2% chance 100
+                  const r = Math.random();
+                  let idx;
+                  if (r < 0.20) idx = 0; // 5
+                  else if (r < 0.40) idx = 3; // 5 (second 5 slot)
+                  else if (r < 0.60) idx = 1; // 10
+                  else if (r < 0.75) idx = 6; // 10 (second 10)
+                  else if (r < 0.85) idx = 4; // 15
+                  else if (r < 0.93) idx = 2; // 20
+                  else if (r < 0.99) idx = 5; // 50
+                  else idx = 7; // 100 jackpot
+
+                  const segAngle = 360 / 8;
+                  // Cílový úhel = středu segmentu nahoru pod pointer (který je nahoře = 0°)
+                  // Segment i je na angle = i * 45 (poté co odečtu 90 jelikož svg start je vrchol)
+                  // Pro pointer nahoře: chci aby wheel se otočil tak, aby segment končil pod pointerem
+                  const targetAngle = -(idx * segAngle + segAngle/2);
+                  const finalRotation = 360 * 6 + targetAngle + (Math.random() * 6 - 3); // 6 plné otočky + cíl + malá variance
+                  setSpinning(true);
+                  setSpinRotation(finalRotation);
+                  audio.coin();
+                  setTimeout(() => {
+                    const won = segments[idx];
+                    setPoints(p => p + won);
+                    setTotalXp(x => x + won);
+                    setSpinResult(won);
+                    setSpinning(false);
+                    setSpinWheelLastDate(todayISO());
+                    if (won >= 50) {
+                      confetti.fire({ n: 250 });
+                      audio.success();
+                      if (playVoiceRef.current) playVoiceRef.current('jackpot', 'Jackpot, ' + won + ' bodů!');
+                    } else {
+                      confetti.fire({ n: 50 });
+                      audio.success();
+                    }
+                  }, 4200);
+                }} style={{ cursor:'pointer', background:'linear-gradient(135deg, #fbbf24, #f59e0b)', color:'#7c2d12', fontFamily:'var(--display)', fontSize:24, fontWeight:700, padding:'16px 38px', borderRadius:18, boxShadow:'0 8px 24px rgba(245,158,11,.4)', animation:'softPulse 1.5s ease-in-out infinite' }}>🎰 TOČIT!</div>
+              )}
+              {spinning && (
+                <div style={{ fontFamily:'var(--display)', fontSize:20, fontWeight:700, color:'#fff', opacity:.85 }}>Točí se…</div>
+              )}
+            </>
+          ) : (
+            <>
+              <div style={{ fontSize:80, marginBottom:10 }}>{spinResult >= 50 ? '🏆' : spinResult >= 20 ? '🎉' : '⭐'}</div>
+              <div style={{ fontFamily:'var(--display)', fontSize:48, fontWeight:700, color:'#fbbf24', textAlign:'center' }}>+{spinResult} bodů!</div>
+              <div style={{ fontSize:18, fontWeight:700, color:'rgba(255,255,255,.85)', textAlign:'center', marginTop:8, marginBottom:30 }}>
+                {spinResult >= 100 ? 'JACKPOT! Neuvěřitelné štěstí!' : spinResult >= 50 ? 'Skvělý úlovek!' : spinResult >= 20 ? 'Dobrá rána!' : 'Hezky!'}
+              </div>
+              <div onClick={() => { setShowSpinWheel(false); setSpinResult(null); audio.tap(); }} style={{ cursor:'pointer', background:'rgba(255,255,255,.95)', color:'#1a1530', fontFamily:'var(--display)', fontSize:18, fontWeight:700, padding:'14px 36px', borderRadius:16 }}>Pokračovat</div>
+            </>
+          )}
         </div>
       )}
 
