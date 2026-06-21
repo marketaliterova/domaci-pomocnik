@@ -165,6 +165,117 @@ const BUTTON_CONFIG_DEFAULT = [
 const TYPE_COLOR = { skola:'#8893a8', sport:'#22c55e', hudba:'#7c5cff', vylet:'#f59e0b', rodina:'#ff5d8f' };
 
 // ====================================================================
+// v44: CURSUS HEROUM - progresní mapa s odemykáním předmětů a oblastí
+// 10 stages, každá stojí víc XP, odemyká item s narativem
+// ====================================================================
+const CURSUS_STAGES = [
+  {
+    id: 'forest',
+    name: 'Šeptající les',
+    emoji: '🌲',
+    costXp: 50,
+    item: { emoji:'🗡', name:'Dřevěný meč', desc:'Tvá první zbraň. Najdeš ji zaklíněnou v pařezu starého dubu.' },
+    lore: 'Vstupuješ do tmavého lesa. Slyšíš šepot mezi stromy...',
+    color: '#16a34a'
+  },
+  {
+    id: 'mountain',
+    name: 'Mlžné hory',
+    emoji: '🏔',
+    costXp: 150,
+    item: { emoji:'🛡', name:'Kožený štít', desc:'Starý voják ti ho daruje za to, že jsi mu pomohl/a.' },
+    lore: 'Cesta vede vzhůru. Mlha houstne s každým krokem.',
+    color: '#64748b'
+  },
+  {
+    id: 'ruins',
+    name: 'Starobylé ruiny',
+    emoji: '🏛',
+    costXp: 300,
+    item: { emoji:'⛑', name:'Bronzová helma',  desc:'Reliéf na helmě říká: „Pro statečné srdce."' },
+    lore: 'Mezi sloupy najdeš kamennou krabici s něčím leským...',
+    color: '#a16207'
+  },
+  {
+    id: 'bridge',
+    name: 'Most přes Šedou řeku',
+    emoji: '🌉',
+    costXp: 500,
+    item: { emoji:'🗝', name:'Stříbrný klíč', desc:'Strážce mostu ti dá klíč, který odemyká dveře v hradě.' },
+    lore: 'Most vrže pod tvými kroky. Pod tebou hučí studená řeka.',
+    color: '#0ea5e9'
+  },
+  {
+    id: 'castle',
+    name: 'Opuštěný hrad',
+    emoji: '🏰',
+    costXp: 750,
+    item: { emoji:'🧪', name:'Lektvar síly', desc:'Lahvičku jsi našel v alchymistově laboratoři. Voní po bylinkách.' },
+    lore: 'Dveře zavrzaly. V síni jsi sám/sama, jen ozvěna kroků.',
+    color: '#7c3aed'
+  },
+  {
+    id: 'cave',
+    name: 'Lávová jeskyně',
+    emoji: '🌋',
+    costXp: 1100,
+    item: { emoji:'🔮', name:'Věštící koule', desc:'Z koule čteš budoucnost. Pomůže ti najít skrytou stezku.' },
+    lore: 'Vzduch je horký. Z hloubky se ozývají divné zvuky.',
+    color: '#dc2626'
+  },
+  {
+    id: 'sea',
+    name: 'Mořské hlubiny',
+    emoji: '🌊',
+    costXp: 1500,
+    item: { emoji:'📜', name:'Starobylý svitek', desc:'Námořník ti řekl, že svitek odhaluje cestu k Dračí pevnosti.' },
+    lore: 'Vstupuješ do podmořské jeskyně. Voda je studená a tichá.',
+    color: '#0891b2'
+  },
+  {
+    id: 'ice',
+    name: 'Ledová pustina',
+    emoji: '❄️',
+    costXp: 2000,
+    item: { emoji:'🏹', name:'Magický luk', desc:'Luk je tvořený z ledu, ale nikdy se nezlomí.' },
+    lore: 'Vítr fouká. Sníh skřípe. Jsi nejdál na sever, co kdokoli.',
+    color: '#06b6d4'
+  },
+  {
+    id: 'portal',
+    name: 'Hvězdný portál',
+    emoji: '🌌',
+    costXp: 2700,
+    item: { emoji:'💎', name:'Drahokam moudrosti', desc:'Drahokam ti šeptá tajemství, která nikdo jiný neslyší.' },
+    lore: 'Před tebou víří modré světlo. Cítíš, že portál vede někam dál.',
+    color: '#6366f1'
+  },
+  {
+    id: 'dragon',
+    name: 'Dračí pevnost',
+    emoji: '🐉',
+    costXp: 3500,
+    item: { emoji:'👑', name:'Koruna hrdinů', desc:'Porazil/a jsi draka! Koruna je teď tvá. Jsi LEGENDA.', isFinal: true },
+    lore: 'Stojíš před největším drakem. Tvůj meč se třese. Jsi připraven/a.',
+    color: '#fbbf24'
+  },
+];
+
+// Pomocné: vrátí dílem cesty na SVG mapě dle indexu stage
+const CURSUS_PATH = [
+  { x: 12, y: 88 },  // 0 forest
+  { x: 30, y: 78 },  // 1 mountain
+  { x: 18, y: 65 },  // 2 ruins
+  { x: 38, y: 58 },  // 3 bridge
+  { x: 58, y: 65 },  // 4 castle
+  { x: 70, y: 50 },  // 5 cave
+  { x: 50, y: 40 },  // 6 sea
+  { x: 30, y: 30 },  // 7 ice
+  { x: 55, y: 20 },  // 8 portal
+  { x: 80, y: 12 },  // 9 dragon
+];
+
+// ====================================================================
 // V2 CONSTANTS
 // ====================================================================
 
@@ -936,6 +1047,10 @@ function App() {
   const [routineHistory, setRoutineHistory] = useState((persisted && Array.isArray(persisted.routineHistory)) ? persisted.routineHistory : []);
   // v43: Spin Wheel - dostupné jednou denně po dokončení ranní rutiny
   const [spinWheelLastDate, setSpinWheelLastDate] = useState((persisted && persisted.spinWheelLastDate) || '');
+  // v44: CURSUS - pole odemčených stage ID (např. ['forest', 'mountain'])
+  const [cursusUnlocked, setCursusUnlocked] = useState((persisted && Array.isArray(persisted.cursusUnlocked)) ? persisted.cursusUnlocked : []);
+  // Pro animaci právě odemčené - dočasně showovat modal
+  const [cursusJustUnlocked, setCursusJustUnlocked] = useState(null); // stage object or null
   const [showSpinWheel, setShowSpinWheel] = useState(false);
   const [spinning, setSpinning] = useState(false);
   const [spinRotation, setSpinRotation] = useState(0);
@@ -1049,6 +1164,7 @@ function App() {
       voiceMap, voiceBaseUrl, dayBlueprintByDay,
       hueWebhookUrl, hueButtons,
       routineHistory, spinWheelLastDate,
+      cursusUnlocked,
     });
   }, [theme, points, totalXp, streak, morning, evening, doneM, doneE, whoHome, departMin,
       shopItems, shopState, choreState, pendingApprovals, packState, packAwarded,
@@ -1537,23 +1653,44 @@ function App() {
   }, [effectiveHueWebhookUrl]); // VÝHRADNĚ jen URL - nepřipojovat hueButtons ani triggerHueAction
 
 
+  // v44: stav posledního fetche GCal - aby user viděl co se děje
+  const [gcalFetchStatus, setGcalFetchStatus] = useState('idle'); // idle | fetching | ok | error
+  const [gcalFetchError, setGcalFetchError] = useState('');
+
   const fetchGcal = useCallback(async (force) => {
-    if (!gcalUrl || !gcalUrl.startsWith('http')) return;
+    if (!gcalUrl || !gcalUrl.startsWith('http')) {
+      setGcalFetchError('URL kalendáře není nastavena nebo je nevalidní');
+      setGcalFetchStatus('error');
+      return;
+    }
     // Cache 15 minut pokud nepřišlo force
     if (!force && Date.now() - gcalLastFetch < 15 * 60 * 1000) return;
+    setGcalFetchStatus('fetching');
+    setGcalFetchError('');
     try {
       // CORS proxy - allorigins.win je veřejný, kdyby přestal, můžeme změnit
       const proxyUrl = 'https://api.allorigins.win/raw?url=' + encodeURIComponent(gcalUrl);
       const r = await fetch(proxyUrl);
-      if (!r.ok) throw new Error('Calendar fetch failed: ' + r.status);
+      if (!r.ok) throw new Error('Calendar fetch HTTP ' + r.status);
       const text = await r.text();
-      const events = parseICal(text);
+      if (!text || text.length < 50) throw new Error('Prázdná odpověď (proxy možná spadla)');
+      let events = [];
+      try {
+        events = parseICal(text);
+      } catch (parseErr) {
+        throw new Error('Chyba parsování iCal: ' + parseErr.message);
+      }
       setGcalEvents(events);
       setGcalLastFetch(Date.now());
+      setGcalFetchStatus('ok');
+      if (force) showToast('Načteno ' + events.length + ' událostí', '📅');
     } catch (e) {
       console.warn('GCal fetch error:', e);
+      setGcalFetchError(e.message || String(e));
+      setGcalFetchStatus('error');
+      if (force) showToast('Chyba: ' + (e.message || 'fetch selhal'), '⚠');
     }
-  }, [gcalUrl, gcalLastFetch, parseICal]);
+  }, [gcalUrl, gcalLastFetch, parseICal, showToast]);
 
   useEffect(() => {
     if (!gcalUrl) return;
@@ -2178,7 +2315,7 @@ function App() {
       type: 'gcal',
       fromGcal: true
     }));
-    const manualEvents = (weekEvents[i] || []);
+    const manualEvents = []; // v44: ručně přidané události odstraněny
     const allEvents = [...manualEvents, ...gcalForDay];
     const evs = allEvents.map(e => {
       const col = e.fromGcal ? '#1e40af' : (TYPE_COLOR[e.type] || accent);
@@ -2619,6 +2756,7 @@ function App() {
     if (isStr(s.lastDayKey)) setLastDayKey(s.lastDayKey);
     if (Array.isArray(s.routineHistory)) setRoutineHistory(s.routineHistory);
     if (typeof s.spinWheelLastDate === 'string') setSpinWheelLastDate(s.spinWheelLastDate);
+    if (Array.isArray(s.cursusUnlocked)) setCursusUnlocked(s.cursusUnlocked);
     if (isStr(s.gcalUrl)) setGcalUrl(s.gcalUrl);
     if (isArr(s.gcalEvents)) setGcalEvents(s.gcalEvents);
     if (isNum(s.gcalLastFetch)) setGcalLastFetch(s.gcalLastFetch);
@@ -3269,6 +3407,22 @@ function App() {
                   <div style={{ fontSize:11, fontWeight:800, color:'rgba(255,255,255,.85)' }}>Tvá přání</div>
                 </div>
               </div>
+              {/* v44: CURSUS - progresní mapa */}
+              <div onClick={() => go('cursus')} style={{ cursor:'pointer', background:'linear-gradient(135deg, #6366f1, #4338ca)', borderRadius:16, padding:'11px 14px', display:'flex', alignItems:'center', gap:10, boxShadow:'var(--shadow)', position:'relative' }}>
+                <div style={{ fontSize:22 }}>🗺</div>
+                <div style={{ flex:1, minWidth:0 }}>
+                  <div style={{ fontFamily:'var(--display)', fontSize:15, fontWeight:600, color:'#fff', lineHeight:1 }}>Cursus</div>
+                  <div style={{ fontSize:11, fontWeight:800, color:'rgba(255,255,255,.85)' }}>{cursusUnlocked.length}/{CURSUS_STAGES.length} oblastí</div>
+                </div>
+                {(() => {
+                  // Show pulsing dot if next stage is now affordable
+                  const nextIdx = cursusUnlocked.length;
+                  if (nextIdx < CURSUS_STAGES.length && totalXp >= CURSUS_STAGES[nextIdx].costXp) {
+                    return <div style={{ position:'absolute', top:-4, right:-4, width:14, height:14, borderRadius:'50%', background:'#fbbf24', border:'2px solid #fff', animation:'softPulse 1.5s ease-in-out infinite' }}/>;
+                  }
+                  return null;
+                })()}
+              </div>
             </div>
           </div>
         </div>
@@ -3452,6 +3606,158 @@ function App() {
           </div>
         </div>
       </div>
+      )}
+
+
+      {/* ===================== CURSUS HEROUM (v44) ===================== */}
+      {screen === 'cursus' && (
+      <div data-screen-label="Cursus" style={{ position:'absolute', inset:0, background:'linear-gradient(180deg, #1e1b4b 0%, #312e81 100%)', display:'flex', flexDirection:'column' }}>
+        {/* Hvězdy v pozadí */}
+        {[...Array(60)].map((_, i) => (
+          <div key={i} style={{ position:'absolute', top:(Math.random()*100)+'%', left:(Math.random()*100)+'%', width:(Math.random()*2.5+0.8)+'px', height:(Math.random()*2.5+0.8)+'px', background:'#fff', borderRadius:'50%', opacity:0.3+Math.random()*0.7, animation:`blink ${3+Math.random()*4}s infinite`, pointerEvents:'none' }}/>
+        ))}
+
+        {/* Header */}
+        <div style={{ padding:'22px 26px', display:'flex', alignItems:'center', gap:16, position:'relative', zIndex:1 }}>
+          <div onClick={() => go('home')} style={{ cursor:'pointer', width:48, height:48, borderRadius:16, background:'rgba(255,255,255,.12)', border:'1px solid rgba(255,255,255,.22)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:22, color:'#fff' }}>←</div>
+          <div style={{ flex:1 }}>
+            <div style={{ fontFamily:'var(--display)', fontSize:30, fontWeight:700, color:'#fff', lineHeight:1, letterSpacing:'.04em' }}>CURSUS HEROUM</div>
+            <div style={{ fontSize:13, fontWeight:700, color:'rgba(255,255,255,.6)', marginTop:3 }}>Cesta hrdiny · {cursusUnlocked.length} z {CURSUS_STAGES.length} oblastí</div>
+          </div>
+          <div style={{ background:'rgba(251,191,36,.18)', border:'1px solid rgba(251,191,36,.4)', borderRadius:14, padding:'9px 16px', fontFamily:'var(--display)', fontSize:18, fontWeight:700, color:'#fbbf24' }}>⭐ {totalXp}</div>
+        </div>
+
+        {/* Mapa */}
+        <div style={{ flex:1, position:'relative', overflow:'hidden', margin:'8px 20px 20px' }}>
+          <svg viewBox="0 0 100 100" preserveAspectRatio="none" style={{ position:'absolute', inset:0, width:'100%', height:'100%' }}>
+            {/* Spojnice mezi stages */}
+            {CURSUS_PATH.slice(0, -1).map((p, i) => {
+              const next = CURSUS_PATH[i+1];
+              const isPath = i < cursusUnlocked.length; // svítí pokud je další stage taky odemčena
+              return (
+                <line key={i} x1={p.x} y1={p.y} x2={next.x} y2={next.y}
+                  stroke={isPath ? '#fbbf24' : 'rgba(255,255,255,.15)'}
+                  strokeWidth={isPath ? '0.6' : '0.4'}
+                  strokeDasharray={isPath ? '0' : '1.5 1'}
+                  vectorEffect="non-scaling-stroke"
+                />
+              );
+            })}
+          </svg>
+
+          {/* Stages jako klikatelné nody */}
+          {CURSUS_STAGES.map((stage, idx) => {
+            const pos = CURSUS_PATH[idx];
+            const isUnlocked = cursusUnlocked.indexOf(stage.id) >= 0;
+            const isNext = !isUnlocked && idx === cursusUnlocked.length;
+            const isFuture = !isUnlocked && idx > cursusUnlocked.length;
+            const canAfford = isNext && totalXp >= stage.costXp;
+            const nodeSize = isNext ? 64 : 52;
+            return (
+              <div key={stage.id} onClick={() => {
+                if (isFuture) {
+                  showToast('Nejdřív odemkni předchozí oblast', '🔒');
+                  audio.undo();
+                  return;
+                }
+                if (isUnlocked) {
+                  // Ukázat detail stage
+                  setCursusJustUnlocked(stage);
+                  audio.tap();
+                  return;
+                }
+                // isNext - zkusit odemknout
+                if (totalXp < stage.costXp) {
+                  showToast('Potřebuješ ' + (stage.costXp - totalXp) + ' XP víc', '⭐');
+                  audio.undo();
+                  return;
+                }
+                // ODEMKNI!
+                setCursusUnlocked(arr => [...arr, stage.id]);
+                setCursusJustUnlocked(stage);
+                audio.success();
+                confetti.fire({ n: stage.item.isFinal ? 300 : 150 });
+                if (playVoiceRef.current) {
+                  playVoiceRef.current(['cursus-' + stage.id, 'questComplete'], stage.item.isFinal ? 'Cursus dokončen! Jsi legenda.' : 'Nová oblast! ' + stage.item.name + '!');
+                }
+              }} style={{
+                position:'absolute',
+                left:`calc(${pos.x}% - ${nodeSize/2}px)`,
+                top:`calc(${pos.y}% - ${nodeSize/2}px)`,
+                width:nodeSize, height:nodeSize,
+                borderRadius:'50%',
+                background: isUnlocked ? stage.color : (isNext ? (canAfford ? 'linear-gradient(135deg, #fbbf24, #f59e0b)' : 'rgba(255,255,255,.1)') : 'rgba(20,16,40,.6)'),
+                border: isUnlocked ? '3px solid #fff' : (isNext ? '3px solid ' + (canAfford ? '#fff' : 'rgba(251,191,36,.6)') : '2px solid rgba(255,255,255,.2)'),
+                display:'flex', alignItems:'center', justifyContent:'center',
+                cursor: 'pointer',
+                fontSize: isNext ? 30 : 24,
+                boxShadow: isUnlocked ? '0 4px 16px ' + stage.color + '70' : (canAfford ? '0 4px 20px rgba(251,191,36,.6)' : 'none'),
+                animation: canAfford ? 'softPulse 1.5s ease-in-out infinite' : 'none',
+                filter: isFuture ? 'grayscale(.7) opacity(.45)' : 'none',
+                transition:'all .3s',
+                zIndex: isNext ? 3 : 2
+              }}>
+                {isUnlocked ? stage.emoji : (isNext ? (canAfford ? '🔓' : '🔒') : '?')}
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Info box dole */}
+        <div style={{ margin:'0 20px 20px', position:'relative', zIndex:1 }}>
+          {(() => {
+            const nextIdx = cursusUnlocked.length;
+            if (nextIdx >= CURSUS_STAGES.length) {
+              return (
+                <div style={{ background:'linear-gradient(135deg, #fbbf24, #f59e0b)', borderRadius:18, padding:'14px 18px', color:'#7c2d12' }}>
+                  <div style={{ fontFamily:'var(--display)', fontSize:20, fontWeight:700 }}>👑 LEGENDA</div>
+                  <div style={{ fontSize:13, fontWeight:700, marginTop:2 }}>Dokončil/a jsi celou cestu hrdiny! Můžeš se vrátit k jakékoliv oblasti a podívat se na trofeje.</div>
+                </div>
+              );
+            }
+            const next = CURSUS_STAGES[nextIdx];
+            const needed = next.costXp - totalXp;
+            const pct = Math.min(100, Math.max(0, totalXp / next.costXp * 100));
+            return (
+              <div style={{ background:'rgba(255,255,255,.08)', backdropFilter:'blur(8px)', border:'1px solid rgba(255,255,255,.15)', borderRadius:18, padding:'14px 18px', color:'#fff' }}>
+                <div style={{ display:'flex', alignItems:'center', gap:12, marginBottom:8 }}>
+                  <div style={{ fontSize:30 }}>{next.emoji}</div>
+                  <div style={{ flex:1 }}>
+                    <div style={{ fontFamily:'var(--display)', fontSize:17, fontWeight:600 }}>Další: {next.name}</div>
+                    <div style={{ fontSize:12, fontWeight:700, color:'rgba(255,255,255,.7)', marginTop:2 }}>{needed > 0 ? `Potřebuješ ještě ${needed} XP` : 'Klikni na zámek 🔓 a odemkni!'}</div>
+                  </div>
+                  <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:700, color:'#fbbf24' }}>{totalXp} / {next.costXp}</div>
+                </div>
+                {/* Progress bar */}
+                <div style={{ background:'rgba(255,255,255,.1)', borderRadius:8, height:8, overflow:'hidden' }}>
+                  <div style={{ background: needed <= 0 ? 'linear-gradient(90deg, #fbbf24, #f59e0b)' : 'linear-gradient(90deg, #6366f1, #8b5cf6)', height:'100%', width:pct + '%', transition:'width .5s ease' }}/>
+                </div>
+              </div>
+            );
+          })()}
+        </div>
+      </div>
+      )}
+
+      {/* CURSUS detail/unlock modal */}
+      {cursusJustUnlocked && (
+        <div onClick={() => setCursusJustUnlocked(null)} style={{ position:'absolute', inset:0, zIndex:80, background:'rgba(15,12,40,.92)', display:'flex', alignItems:'center', justifyContent:'center', padding:30, animation:'popIn .4s ease' }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ background: 'linear-gradient(135deg, ' + cursusJustUnlocked.color + ', #1e1b4b)', borderRadius:24, padding:'30px 26px', maxWidth:440, width:'100%', textAlign:'center', boxShadow:'0 20px 60px rgba(0,0,0,.5)', border:'2px solid rgba(255,255,255,.2)' }}>
+            <div style={{ fontSize:72, marginBottom:8 }}>{cursusJustUnlocked.emoji}</div>
+            <div style={{ fontFamily:'var(--display)', fontSize:28, fontWeight:700, color:'#fff', letterSpacing:'.02em' }}>{cursusJustUnlocked.name}</div>
+            <div style={{ fontSize:14, fontWeight:600, color:'rgba(255,255,255,.75)', fontStyle:'italic', margin:'10px 0 22px', lineHeight:1.5 }}>{cursusJustUnlocked.lore}</div>
+
+            {/* Item */}
+            <div style={{ background:'rgba(255,255,255,.12)', backdropFilter:'blur(8px)', border:'2px solid rgba(251,191,36,.5)', borderRadius:18, padding:'18px 16px', marginBottom:16 }}>
+              <div style={{ fontSize:11, fontWeight:900, color:'#fbbf24', textTransform:'uppercase', letterSpacing:'.1em', marginBottom:6 }}>{cursusJustUnlocked.item.isFinal ? '👑 LEGENDÁRNÍ ODMĚNA' : '🎁 Nový předmět'}</div>
+              <div style={{ fontSize:50, lineHeight:1 }}>{cursusJustUnlocked.item.emoji}</div>
+              <div style={{ fontFamily:'var(--display)', fontSize:20, fontWeight:700, color:'#fff', marginTop:8 }}>{cursusJustUnlocked.item.name}</div>
+              <div style={{ fontSize:13, fontWeight:600, color:'rgba(255,255,255,.85)', marginTop:6, lineHeight:1.5 }}>{cursusJustUnlocked.item.desc}</div>
+            </div>
+
+            <div onClick={() => { setCursusJustUnlocked(null); audio.tap(); }} style={{ cursor:'pointer', background:'rgba(255,255,255,.95)', color:'#1a1530', fontFamily:'var(--display)', fontSize:17, fontWeight:700, padding:'13px 30px', borderRadius:14, display:'inline-block' }}>Pokračovat</div>
+          </div>
+        </div>
       )}
 
 
@@ -4751,11 +5057,18 @@ function App() {
                       style={{ width:'100%', boxSizing:'border-box', border:'1px solid #93c5fd', borderRadius:11, padding:'10px 12px', fontSize:11, fontFamily:'monospace', background:'#fff', outline:'none', marginBottom:10 }}
                     />
                     <div style={{ display:'flex', gap:6 }}>
-                      <div onClick={() => fetchGcal(true)} style={{ cursor:'pointer', flex:1, background:'#1e40af', color:'#fff', borderRadius:10, padding:'9px 12px', textAlign:'center', fontWeight:800, fontSize:13 }}>🔄 Stáhnout teď</div>
+                      <div onClick={() => fetchGcal(true)} style={{ cursor:'pointer', flex:1, background: gcalFetchStatus === 'fetching' ? '#94a3b8' : '#1e40af', color:'#fff', borderRadius:10, padding:'9px 12px', textAlign:'center', fontWeight:800, fontSize:13 }}>
+                        {gcalFetchStatus === 'fetching' ? '⏳ Stahuje...' : '🔄 Stáhnout teď'}
+                      </div>
                       {gcalUrl && (
                         <div onClick={() => { if (window.confirm('Odpojit Google Calendar?')) { setGcalUrl(''); setGcalEvents([]); }}} style={{ cursor:'pointer', background:'#fee2e2', color:'#991b1b', borderRadius:10, padding:'9px 14px', fontWeight:800, fontSize:13 }}>✕</div>
                       )}
                     </div>
+                    {gcalFetchError && (
+                      <div style={{ background:'#fee2e2', borderRadius:8, padding:'8px 10px', fontSize:11, color:'#991b1b', marginTop:8, fontFamily:'monospace', lineHeight:1.4 }}>
+                        <b>Chyba:</b> {gcalFetchError}
+                      </div>
+                    )}
                     {gcalUrl && (
                       <div style={{ fontSize:11, fontWeight:800, color:'#1e40af', marginTop:8, padding:'6px 10px', background:'#fff', borderRadius:8 }}>
                         {gcalEvents.length > 0
@@ -4775,70 +5088,7 @@ function App() {
                     )}
                   </div>
 
-                  <div style={{ background:'#fff', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
-                    <div style={{ fontFamily:'var(--display)', fontSize:18, fontWeight:600, color:'#1a1530' }}>Ručně přidané události 📅</div>
-                    <div style={{ fontSize:13, fontWeight:700, color:'#5a566e', lineHeight:1.5, marginTop:6 }}>Pro věci co nejsou v Google Calendaru. Dítě je uvidí spolu s GCal událostmi.</div>
-                  </div>
-
-                  {/* Přidat událost */}
-                  <div style={{ background:'#fff', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
-                    <div style={{ fontFamily:'var(--display)', fontSize:16, fontWeight:600, color:'#1a1530', marginBottom:10 }}>Přidat novou událost</div>
-                    <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8 }}>
-                      <select value={newEvent.day} onChange={(e) => setNewEvent({...newEvent, day: +e.target.value})} style={{ border:'1px solid #e6e6ec', borderRadius:10, padding:'9px 10px', fontSize:14, background:'#fff' }}>
-                        <option value="0">Pondělí</option><option value="1">Úterý</option><option value="2">Středa</option>
-                        <option value="3">Čtvrtek</option><option value="4">Pátek</option><option value="5">Sobota</option><option value="6">Neděle</option>
-                      </select>
-                      <input type="time" value={newEvent.time} onChange={(e) => setNewEvent({...newEvent, time: e.target.value})} style={{ border:'1px solid #e6e6ec', borderRadius:10, padding:'9px 10px', fontSize:14 }} />
-                      <select value={newEvent.type} onChange={(e) => {
-                        const emojiMap = { sport:'⚽', hudba:'🎵', skola:'🏫', vylet:'🚌', rodina:'👨‍👩‍👧' };
-                        setNewEvent({...newEvent, type: e.target.value, emoji: emojiMap[e.target.value] || '📌'});
-                      }} style={{ border:'1px solid #e6e6ec', borderRadius:10, padding:'9px 10px', fontSize:14, background:'#fff' }}>
-                        <option value="sport">⚽ Sport</option><option value="hudba">🎵 Hudba</option>
-                        <option value="skola">🏫 Škola</option><option value="vylet">🚌 Výlet</option>
-                        <option value="rodina">👨‍👩‍👧 Rodina</option>
-                      </select>
-                      <input value={newEvent.emoji} onChange={(e) => setNewEvent({...newEvent, emoji: e.target.value})} placeholder="emoji" maxLength={2} style={{ border:'1px solid #e6e6ec', borderRadius:10, padding:'9px 10px', fontSize:18, textAlign:'center' }} />
-                    </div>
-                    <input value={newEvent.title} onChange={(e) => setNewEvent({...newEvent, title: e.target.value})} placeholder="Název (např. Fotbal, Klavír)" style={{ width:'100%', border:'1px solid #e6e6ec', borderRadius:10, padding:'10px 12px', fontSize:14, marginTop:8 }} />
-                    <div onClick={() => {
-                      if (!newEvent.title.trim()) return;
-                      const ev = { id: 'e'+Date.now(), time: newEvent.time, dur:1, emoji: newEvent.emoji, title: newEvent.title.trim(), type: newEvent.type };
-                      setWeekEvents(arr => arr.map((day, i) => i === newEvent.day ? [...day, ev].sort((a,b) => a.time.localeCompare(b.time)) : day));
-                      setNewEvent({...newEvent, title:''});
-                      audio.coin();
-                      showToast('Událost přidána', '✅');
-                    }} style={{ cursor:'pointer', marginTop:10, background:'var(--accent)', color:'#fff', borderRadius:12, padding:'11px 14px', textAlign:'center', fontWeight:800, fontSize:14 }}>+ Přidat událost</div>
-                  </div>
-
-                  {/* Seznam událostí po dnech */}
-                  {['Pondělí','Úterý','Středa','Čtvrtek','Pátek','Sobota','Neděle'].map((dayName, dIdx) => {
-                    const evs = weekEvents[dIdx] || [];
-                    if (evs.length === 0) return null;
-                    return (
-                      <div key={dIdx} style={{ background:'#fff', borderRadius:20, padding:14, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
-                        <div style={{ fontFamily:'var(--display)', fontSize:15, fontWeight:600, color:'#1a1530', marginBottom:8 }}>{dayName}</div>
-                        <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
-                          {evs.map((e) => (
-                            <div key={e.id} style={{ display:'flex', alignItems:'center', gap:9, background:'#f7f7fb', borderRadius:11, padding:'9px 11px' }}>
-                              <div style={{ fontSize:20 }}>{e.emoji}</div>
-                              <div style={{ fontFamily:'monospace', fontSize:13, fontWeight:700, color:'#9a96ac', minWidth:46 }}>{e.time}</div>
-                              <div style={{ flex:1, minWidth:0, fontSize:14, fontWeight:600, color:'#1a1530' }}>{e.title}</div>
-                              <div onClick={() => {
-                                setWeekEvents(arr => arr.map((day, i) => i === dIdx ? day.filter(x => x.id !== e.id) : day));
-                                audio.undo();
-                              }} style={{ cursor:'pointer', color:'#dc2626', fontSize:18, padding:'0 6px' }}>×</div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    );
-                  })}
-
-                  {weekEvents.every(d => d.length === 0) && (
-                    <div style={{ background:'#fef9c3', borderRadius:16, padding:14, fontSize:13, fontWeight:700, color:'#854d0e', textAlign:'center' }}>
-                      Zatím nemáš žádné události. Přidej první výše.
-                    </div>
-                  )}
+                  {/* v44: Ručně přidané události odstraněny - používá se jen Google Calendar */}
 
                   {/* Střídavá péče info (zachováno) */}
                   <div style={{ background:'#fff', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
@@ -5780,8 +6030,8 @@ function App() {
 
                   {/* Verze (vždy zobrazeno) */}
                   <div style={{ background:'#fff', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
-                    <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'#1a1530' }}>Verze: Domácí pomocník v43</div>
-                    <div style={{ fontSize:12, color:'#9a96ac', marginTop:4 }}>Build 2026-06-21 · 18:42</div>
+                    <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'#1a1530' }}>Verze: Domácí pomocník v44</div>
+                    <div style={{ fontSize:12, color:'#9a96ac', marginTop:4 }}>Build 2026-06-21 · 18:53</div>
                   </div>
                 </div>
                 )}
