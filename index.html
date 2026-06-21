@@ -2771,7 +2771,7 @@ function App() {
               <div style={{
                 display:'grid',
                 gridTemplateColumns: 'repeat(' + Math.max(1, blueprintMins.length) + ', 1fr)',
-                gap:6,
+                gap:4,
                 padding:'2px'
               }}>
                 {blueprintMins.map((b, idx) => {
@@ -2780,21 +2780,21 @@ function App() {
                   return (
                     <div key={b.id} style={{
                       background: isCurrent ? '#fef3c7' : isDone ? '#f3f4f6' : '#fff',
-                      border: isCurrent ? '3px solid #f59e0b' : isDone ? '2px solid #e5e7eb' : '2px solid #cbd5e1',
-                      borderRadius: 14,
-                      padding: '10px 6px',
+                      border: isCurrent ? '2px solid #f59e0b' : isDone ? '1px solid #e5e7eb' : '1px solid #cbd5e1',
+                      borderRadius: 10,
+                      padding: '6px 3px',
                       textAlign:'center',
                       opacity: isDone ? 0.5 : 1,
                       animation: isCurrent ? 'softPulse 1.8s ease-in-out infinite' : 'none',
-                      boxShadow: isCurrent ? '0 8px 22px rgba(245,158,11,.35)' : '0 2px 6px rgba(0,0,0,.05)',
+                      boxShadow: isCurrent ? '0 4px 12px rgba(245,158,11,.35)' : '0 1px 3px rgba(0,0,0,.05)',
                       transition:'all .3s',
                       minWidth: 0
                     }}>
-                      <div style={{ fontSize: isCurrent ? 36 : 28, lineHeight: 1, filter: isDone ? 'grayscale(0.8)' : 'none' }}>{b.emoji}</div>
-                      <div style={{ fontSize: 10, fontWeight: 800, color: isCurrent ? '#92400e' : isDone ? '#9ca3af' : '#1a1530', marginTop: 4, textTransform:'uppercase', letterSpacing:'.02em', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>
+                      <div style={{ fontSize: isCurrent ? 24 : 20, lineHeight: 1, filter: isDone ? 'grayscale(0.8)' : 'none' }}>{b.emoji}</div>
+                      <div style={{ fontSize: 9, fontWeight: 800, color: isCurrent ? '#92400e' : isDone ? '#9ca3af' : '#1a1530', marginTop: 2, textTransform:'uppercase', letterSpacing:'.02em', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>
                         {isDone ? '✓ ' : ''}{b.label}
                       </div>
-                      <div style={{ fontSize: 10, fontWeight: 700, color: isCurrent ? '#b45309' : '#9ca3af', marginTop: 1 }}>{b.time}</div>
+                      <div style={{ fontSize: 9, fontWeight: 700, color: isCurrent ? '#b45309' : '#9ca3af', marginTop: 1 }}>{b.time}</div>
                     </div>
                   );
                 })}
@@ -2810,43 +2810,48 @@ function App() {
           <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
 
             {/* semafor */}
-            <div style={{ background:'var(--hero)', borderRadius:24, padding:'18px 22px', display:'flex', alignItems:'center', gap:20, boxShadow:'var(--shadow)', position:'relative', overflow:'hidden', border:'var(--hair)', animation: ent(1) }}>
-              <div style={{ display:'flex', flexDirection:'column', gap:8, padding:'10px 10px', background:'rgba(20,18,40,.18)', borderRadius:16 }}>
-                <div style={{ width:36, height:36, borderRadius:'50%', background: semafor.redOn, transition:'all .4s' }}/>
-                <div style={{ width:36, height:36, borderRadius:'50%', background: semafor.amberOn, transition:'all .4s' }}/>
-                <div style={{ width:36, height:36, borderRadius:'50%', background: semafor.greenOn, transition:'all .4s' }}/>
+            <div style={{ background:'var(--hero)', borderRadius:22, padding:'14px 18px', display:'flex', alignItems:'center', gap:14, boxShadow:'var(--shadow)', position:'relative', overflow:'hidden', border:'var(--hair)', animation: ent(1) }}>
+              <div style={{ display:'flex', flexDirection:'column', gap:5, padding:'7px 7px', background:'rgba(20,18,40,.18)', borderRadius:12, flex:'none' }}>
+                <div style={{ width:24, height:24, borderRadius:'50%', background: semafor.redOn, transition:'all .4s' }}/>
+                <div style={{ width:24, height:24, borderRadius:'50%', background: semafor.amberOn, transition:'all .4s' }}/>
+                <div style={{ width:24, height:24, borderRadius:'50%', background: semafor.greenOn, transition:'all .4s' }}/>
               </div>
-              <div style={{ flex:1, minWidth:0 }}>
-                <div style={{ fontSize:13, fontWeight:800, letterSpacing:'.1em', textTransform:'uppercase', color:'var(--onhero-mut)' }}>{semafor.caption}</div>
-                <div style={{ fontFamily:'var(--display)', fontSize:56, fontWeight:600, lineHeight:.98, color:'var(--onhero)', letterSpacing:'.01em', margin:'2px 0 2px' }}>{semafor.big}</div>
-                <div style={{ display:'inline-flex', alignItems:'center', gap:8, background: semafor.pillBg, color: semafor.pillInk, fontWeight:800, fontSize:15, padding:'6px 12px', borderRadius:12 }}>
-                  <span style={{ fontSize:18 }}>{semafor.face}</span>{semafor.status}
+              {/* obsah ve 2 sloupcich: vlevo nadpis, vpravo pill+sub */}
+              <div style={{ flex:1, minWidth:0, display:'grid', gridTemplateColumns:'1fr 1fr', gap:12, alignItems:'center' }}>
+                <div style={{ minWidth:0 }}>
+                  <div style={{ fontSize:11, fontWeight:800, letterSpacing:'.1em', textTransform:'uppercase', color:'var(--onhero-mut)' }}>{semafor.caption}</div>
+                  <div style={{ fontFamily:'var(--display)', fontSize:38, fontWeight:600, lineHeight:1, color:'var(--onhero)', letterSpacing:'.01em', margin:'2px 0' }}>{semafor.big}</div>
                 </div>
-                <div style={{ fontSize:13, fontWeight:700, color:'var(--onhero-mut)', marginTop:8 }}>{semafor.sub}</div>
+                <div style={{ minWidth:0, display:'flex', flexDirection:'column', gap:6, alignItems:'flex-start' }}>
+                  <div style={{ display:'inline-flex', alignItems:'center', gap:6, background: semafor.pillBg, color: semafor.pillInk, fontWeight:800, fontSize:12, padding:'5px 10px', borderRadius:10 }}>
+                    <span style={{ fontSize:14 }}>{semafor.face}</span>{semafor.status}
+                  </div>
+                  <div style={{ fontSize:12, fontWeight:700, color:'var(--onhero-mut)' }}>{semafor.sub}</div>
+                </div>
               </div>
             </div>
 
             {/* routine card */}
-            <div onClick={() => startRoutine(todayKind)} style={{ cursor:'pointer', background:'var(--surface)', border:'var(--hair)', borderRadius:24, padding:'20px 24px', display:'flex', flexDirection:'column', boxShadow:'var(--shadow)', position:'relative', overflow:'hidden', animation: ent(3) }}>
-              <div style={{ display:'flex', alignItems:'flex-start', gap:16 }}>
-                <div style={{ fontSize:46, lineHeight:1 }}>{todayRoutine.emoji}</div>
-                <div style={{ flex:1 }}>
-                  <div style={{ fontFamily:'var(--display)', fontSize:30, fontWeight:600, color:'var(--ink)', lineHeight:1.05 }}>{todayRoutine.title}</div>
-                  <div style={{ fontSize:17, fontWeight:700, color:'var(--muted)', marginTop:3 }}>{todayRoutine.progressLabel}</div>
+            <div onClick={() => startRoutine(todayKind)} style={{ cursor:'pointer', background:'var(--surface)', border:'var(--hair)', borderRadius:20, padding:'14px 18px', display:'flex', flexDirection:'column', boxShadow:'var(--shadow)', position:'relative', overflow:'hidden', animation: ent(3) }}>
+              <div style={{ display:'flex', alignItems:'center', gap:12 }}>
+                <div style={{ fontSize:32, lineHeight:1 }}>{todayRoutine.emoji}</div>
+                <div style={{ flex:1, minWidth:0 }}>
+                  <div style={{ fontFamily:'var(--display)', fontSize:20, fontWeight:600, color:'var(--ink)', lineHeight:1.05 }}>{todayRoutine.title}</div>
+                  <div style={{ fontSize:13, fontWeight:700, color:'var(--muted)', marginTop:2 }}>{todayRoutine.progressLabel}</div>
                 </div>
-                <div style={{ display:'flex', alignItems:'center', gap:9, background:'var(--accent)', color:'#fff', fontFamily:'var(--display)', fontWeight:600, fontSize:19, padding:'13px 22px', borderRadius:16, boxShadow:'0 8px 20px -6px var(--accentShadow)' }}>{todayRoutine.cta} →</div>
+                <div style={{ display:'flex', alignItems:'center', gap:7, background:'var(--accent)', color:'#fff', fontFamily:'var(--display)', fontWeight:600, fontSize:14, padding:'9px 16px', borderRadius:12, boxShadow:'0 6px 14px -5px var(--accentShadow)', whiteSpace:'nowrap' }}>{todayRoutine.cta} →</div>
               </div>
-              <div style={{ marginTop:22, display:'flex', gap:10, alignItems:'stretch' }}>
+              <div style={{ marginTop:12, display:'flex', gap:6, alignItems:'stretch' }}>
                 {todayRoutine.dots.map((d, i) => (
-                  <div key={i} style={{ flex:1, height:13, borderRadius:8, background: d.color, transition:'background .3s' }}/>
+                  <div key={i} style={{ flex:1, height:8, borderRadius:5, background: d.color, transition:'background .3s' }}/>
                 ))}
               </div>
-              <div style={{ marginTop:14, display:'flex', flexDirection:'column', gap:7 }}>
+              <div style={{ marginTop:10, display:'flex', flexDirection:'column', gap:5 }}>
                 {todayRoutine.steps.map((st, i) => (
-                  <div key={i} style={{ display:'flex', alignItems:'center', gap:12, padding:'9px 12px', background:'var(--soft)', borderRadius:13, opacity: st.op }}>
-                    <div style={{ width:26, height:26, flex:'none', borderRadius:8, background: st.tickBg, border: `2px solid ${st.tickBorder}`, display:'flex', alignItems:'center', justifyContent:'center', color:'#fff', fontSize:16 }}>{st.check}</div>
-                    <div style={{ fontSize:22 }}>{st.icon}</div>
-                    <div style={{ flex:1, fontFamily:'var(--display)', fontSize:17, fontWeight:500, color:'var(--ink)', textDecoration: st.strike }}>{st.t}</div>
+                  <div key={i} style={{ display:'flex', alignItems:'center', gap:9, padding:'6px 10px', background:'var(--soft)', borderRadius:10, opacity: st.op }}>
+                    <div style={{ width:20, height:20, flex:'none', borderRadius:6, background: st.tickBg, border: `2px solid ${st.tickBorder}`, display:'flex', alignItems:'center', justifyContent:'center', color:'#fff', fontSize:12 }}>{st.check}</div>
+                    <div style={{ fontSize:17 }}>{st.icon}</div>
+                    <div style={{ flex:1, fontFamily:'var(--display)', fontSize:14, fontWeight:500, color:'var(--ink)', textDecoration: st.strike }}>{st.t}</div>
                   </div>
                 ))}
               </div>
@@ -5026,8 +5031,8 @@ function App() {
                   </div>
 
                   <div style={{ background:'#fff', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
-                    <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'#1a1530' }}>Verze: Domácí pomocník v36</div>
-                    <div style={{ fontSize:12, color:'#9a96ac', marginTop:4 }}>Build 2026-06-21 · 16:48</div>
+                    <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'#1a1530' }}>Verze: Domácí pomocník v37</div>
+                    <div style={{ fontSize:12, color:'#9a96ac', marginTop:4 }}>Build 2026-06-21 · 16:54</div>
                   </div>
                 </div>
                 )}
