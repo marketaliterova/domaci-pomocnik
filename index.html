@@ -882,28 +882,65 @@ function App() {
     if (choreState[c.id]) return;
     audio.coin();
     setChoreState(s => ({ ...s, [c.id]: 'pending' }));
-    setPendingApprovals(p => [...p, { id:c.id, emoji:c.emoji, t:c.t, points:c.points }]);
+    setPendingApprovals(p => [...p, { id: 'chore-' + c.id, type: 'chore', refId: c.id, emoji:c.emoji, t:c.t, points:c.points, date: new Date().toISOString() }]);
     showToast('Posláno rodiči ke schválení', '📨');
   };
-  const approveChore = (id) => {
+
+  // Univerzální schválení (chore i shop)
+  const approvePending = (id) => {
     const item = pendingApprovals.find(p => p.id === id); if (!item) return;
     audio.success(); confetti.fire({n:80});
-    setPoints(p => p + item.points); setTotalXp(x => x + item.points);
-    setChoreState(s => ({ ...s, [id]: 'done' }));
+    const type = item.type || 'chore'; // legacy default
+    const refId = item.refId || item.id; // legacy default
+    if (type === 'chore') {
+      setPoints(p => p + item.points); setTotalXp(x => x + item.points);
+      setChoreState(s => ({ ...s, [refId]: 'done' }));
+      feedPet(5, 5);
+      showToast(`+${item.points} bodů · ${item.t}`, '✅');
+    } else if (type === 'shop') {
+      setShopState(s => ({ ...s, [refId]: 'unlocked' }));
+      feedPet(10, 5);
+      showToast(`Odměna schválena: ${item.t}`, '🎉');
+    }
     setPendingApprovals(p => p.filter(x => x.id !== id));
-    showToast(`+${item.points} bodů · ${item.t}`, '✅');
   };
-  const rejectChore = (id) => {
+
+  const rejectPending = (id) => {
+    const item = pendingApprovals.find(p => p.id === id); if (!item) return;
     audio.undo();
-    setChoreState(s => { const ns = {...s}; delete ns[id]; return ns; });
+    const type = item.type || 'chore';
+    const refId = item.refId || item.id;
+    if (type === 'chore') {
+      setChoreState(s => { const ns = {...s}; delete ns[refId]; return ns; });
+    } else if (type === 'shop') {
+      // Vrať body!
+      setPoints(p => p + item.points); setTotalXp(x => x + item.points);
+      setShopState(s => { const ns = {...s}; delete ns[refId]; return ns; });
+      showToast(`Vráceno: ${item.points} bodů zpět`, '↩️');
+    }
     setPendingApprovals(p => p.filter(x => x.id !== id));
   };
+
+  // Backwards compat (kdyby někde zůstaly volání starých názvů)
+  const approveChore = approvePending;
+  const rejectChore = rejectPending;
+
   const redeem = (r) => {
-    if (shopState[r.id]) return;
+    const st = shopState[r.id];
+    if (st === 'requested') { showToast('Už čeká na schválení', '⏳'); return; }
+    if (st === 'unlocked') {
+      // Dítě si "vyzvedne" odměnu - reset stavu, takže si může koupit znovu příště
+      audio.coin(); confetti.fire({n:60});
+      setShopState(s => { const ns = {...s}; delete ns[r.id]; return ns; });
+      showToast(`Užij si: ${r.t} 🎉`, '🎁');
+      return;
+    }
     if (points < r.cost) { audio.undo(); showToast('Ještě nemáš dost bodů', '🔒'); return; }
     audio.coin();
+    // Body odečíst hned (aby kid nemohl zažádat o 10 věcí za stejné body)
     setPoints(p => p - r.cost);
     setShopState(s => ({ ...s, [r.id]: 'requested' }));
+    setPendingApprovals(p => [...p, { id: 'shop-' + r.id + '-' + Date.now(), type: 'shop', refId: r.id, emoji: r.emoji, t: r.t, points: r.cost, date: new Date().toISOString() }]);
     showToast('Požádáno · čeká na rodiče', '🎁');
   };
   const toggleWeekly = (id) => { audio.tap(); setWeeklyDone(s => ({ ...s, [id]: !s[id] })); };
@@ -1026,6 +1063,7 @@ function App() {
     const todayKind = new Date(simNow).getHours() < 14 ? 'morning' : 'evening';
     audio.success(); confetti.fire({n:70});
     addPoints(t.points, t.label, false);
+    feedPet(2, 3);
     if (t.step) {
       const list = steps(todayKind), map = doneMap(todayKind);
       if (list.some(x => x.id === t.step) && !map[t.step]) checkStep(todayKind, t.step);
@@ -2207,23 +2245,25 @@ function App() {
                 const st = shopState[r.id];
                 const afford = points >= r.cost;
                 const pending = st === 'requested';
+                const unlocked = st === 'unlocked';
                 const locked = !afford && !st;
                 return (
                   <div key={r.id} style={{
                     background:'#fff',
-                    border: pending ? '2px solid #f59e0b' : (afford ? '2px solid #16a34a' : '2px solid #e5e7eb'),
+                    border: unlocked ? '3px solid #16a34a' : pending ? '2px solid #f59e0b' : (afford ? '2px solid #16a34a' : '2px solid #e5e7eb'),
                     borderRadius:18,
                     padding:'16px 14px',
                     position:'relative',
-                    boxShadow:'0 6px 18px rgba(0,0,0,.06)',
+                    boxShadow: unlocked ? '0 8px 22px rgba(22,163,74,.25)' : '0 6px 18px rgba(0,0,0,.06)',
                     opacity: locked ? 0.7 : 1,
-                    transition:'transform .15s'
+                    transition:'transform .15s',
+                    animation: unlocked ? 'softPulse 2s ease-in-out infinite' : 'none'
                   }}>
                     {/* Cenovka v rohu */}
                     <div style={{
                       position:'absolute',
                       top:-8, right:12,
-                      background: pending ? '#fbbf24' : (afford ? '#16a34a' : '#9ca3af'),
+                      background: unlocked ? '#16a34a' : pending ? '#fbbf24' : (afford ? '#16a34a' : '#9ca3af'),
                       color:'#fff',
                       borderRadius:10,
                       padding:'4px 11px',
@@ -2233,11 +2273,10 @@ function App() {
                       boxShadow:'0 3px 8px rgba(0,0,0,.18)',
                       display:'flex', alignItems:'center', gap:4
                     }}>
-                      <span style={{ fontSize:13 }}>⭐</span>
-                      <span>{r.cost}</span>
+                      <span style={{ fontSize:13 }}>{unlocked ? '✓' : '⭐'}</span>
+                      <span>{unlocked ? 'TVOJE' : r.cost}</span>
                     </div>
 
-                    {/* "Produkt" - velký emoji */}
                     <div style={{
                       fontSize: 64,
                       textAlign:'center',
@@ -2246,7 +2285,6 @@ function App() {
                       filter: locked ? 'grayscale(0.6)' : 'none'
                     }}>{r.emoji}</div>
 
-                    {/* Název */}
                     <div style={{
                       textAlign:'center',
                       fontFamily:'var(--display)',
@@ -2258,25 +2296,26 @@ function App() {
                       marginBottom:10
                     }}>{r.t}</div>
 
-                    {/* Buy tlačítko */}
                     <div onClick={() => redeem(r)} style={{
                       cursor: (locked || pending) ? 'default' : 'pointer',
                       width:'100%',
-                      background: pending
-                        ? '#fef3c7'
-                        : afford
-                          ? 'linear-gradient(135deg, #16a34a, #15803d)'
-                          : '#f0f0f7',
-                      color: pending ? '#92400e' : afford ? '#fff' : '#9ca3af',
+                      background: unlocked
+                        ? 'linear-gradient(135deg, #f59e0b, #ea580c)'
+                        : pending
+                          ? '#fef3c7'
+                          : afford
+                            ? 'linear-gradient(135deg, #16a34a, #15803d)'
+                            : '#f0f0f7',
+                      color: unlocked ? '#fff' : pending ? '#92400e' : afford ? '#fff' : '#9ca3af',
                       borderRadius:12,
                       padding:'11px 8px',
                       textAlign:'center',
                       fontFamily:'var(--display)',
                       fontWeight:600,
                       fontSize:14,
-                      boxShadow: afford && !pending ? '0 4px 12px rgba(22,163,74,.3)' : 'none'
+                      boxShadow: (afford && !pending) || unlocked ? '0 4px 12px rgba(0,0,0,.18)' : 'none'
                     }}>
-                      {pending ? '⏳ Čeká na rodiče' : afford ? '🛒 Koupit' : `🔒 ještě ${r.cost - points} bodů`}
+                      {unlocked ? '🎁 Vyzvednout!' : pending ? '⏳ Čeká na rodiče' : afford ? '🛒 Koupit' : `🔒 ještě ${r.cost - points} bodů`}
                     </div>
                   </div>
                 );
@@ -2331,6 +2370,7 @@ function App() {
                               <div key={n} onClick={() => {
                                 setReadingList(arr => arr.map(x => x.id === b.id ? {...x, pagesRead: Math.min(x.pagesTotal, x.pagesRead + n)} : x));
                                 addPoints(n, `Přečetl ${n} stránek`, true);
+                                feedPet(Math.ceil(n/3), 0);
                                 audio.coin();
                               }} style={{ cursor:'pointer', background:'var(--accent)', color:'#fff', fontWeight:800, fontSize:13, padding:'8px 11px', borderRadius:10 }}>+{n}</div>
                             ))}
@@ -2649,21 +2689,30 @@ function App() {
                   </div>
                   <div style={{ background:'#fff', borderRadius:20, padding:18, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
                     <div style={{ fontFamily:'var(--display)', fontSize:18, fontWeight:600, color:'#1a1530', display:'flex', alignItems:'center', justifyContent:'space-between' }}>
-                      Ke schválení <span style={{ fontSize:13, fontWeight:900, color:'var(--accent)' }}>{pendingList.length}</span>
+                      Ke schválení <span style={{ fontSize:13, fontWeight:900, color:'var(--accent)', background:'#eef4ff', padding:'2px 9px', borderRadius:8 }}>{pendingList.length}</span>
                     </div>
+                    <div style={{ fontSize:11, fontWeight:700, color:'#9a96ac', marginTop:2, lineHeight:1.4 }}>Co dítě napsalo / udělalo a čeká na tvoje potvrzení.</div>
                     {pendingList.length > 0 ? (
                       <div style={{ display:'flex', flexDirection:'column', gap:9, marginTop:11 }}>
-                        {pendingList.map((p) => (
-                          <div key={p.id} style={{ display:'flex', alignItems:'center', gap:10, background:'#f4f4fb', borderRadius:14, padding:'11px 12px' }}>
-                            <div style={{ fontSize:24 }}>{p.emoji}</div>
-                            <div style={{ flex:1, minWidth:0 }}>
-                              <div style={{ fontFamily:'var(--display)', fontSize:15, fontWeight:500, color:'#1a1530', lineHeight:1.05 }}>{p.t}</div>
-                              <div style={{ fontSize:12, fontWeight:900, color:'var(--accent)' }}>+{p.points}</div>
+                        {pendingList.map((p) => {
+                          const isShop = p.type === 'shop';
+                          return (
+                            <div key={p.id} style={{ display:'flex', alignItems:'center', gap:10, background: isShop ? '#fef9c3' : '#f4f4fb', borderRadius:14, padding:'11px 12px', borderLeft: isShop ? '3px solid #f59e0b' : '3px solid var(--accent)' }}>
+                              <div style={{ fontSize:24 }}>{p.emoji}</div>
+                              <div style={{ flex:1, minWidth:0 }}>
+                                <div style={{ fontSize:10, fontWeight:900, color: isShop ? '#92400e' : 'var(--accent)', textTransform:'uppercase', letterSpacing:'.05em' }}>
+                                  {isShop ? '🛍 Žádost o odměnu' : '✅ Splněný úkol'}
+                                </div>
+                                <div style={{ fontFamily:'var(--display)', fontSize:15, fontWeight:500, color:'#1a1530', lineHeight:1.15 }}>{p.t}</div>
+                                <div style={{ fontSize:12, fontWeight:900, color: isShop ? '#dc2626' : 'var(--good)' }}>
+                                  {isShop ? `−${p.points} bodů (potvrď že dáš odměnu)` : `+${p.points} bodů`}
+                                </div>
+                              </div>
+                              <div onClick={() => approvePending(p.id)} style={{ cursor:'pointer', background:'#16a34a', color:'#fff', fontWeight:800, fontSize:13, padding:'9px 11px', borderRadius:11 }}>✓</div>
+                              <div onClick={() => rejectPending(p.id)} style={{ cursor:'pointer', background:'#fee2e2', color:'#991b1b', fontWeight:800, fontSize:13, padding:'9px 11px', borderRadius:11 }}>✕</div>
                             </div>
-                            <div onClick={() => approveChore(p.id)} style={{ cursor:'pointer', background:'#16a34a', color:'#fff', fontWeight:800, fontSize:13, padding:'9px 11px', borderRadius:11 }}>Schválit</div>
-                            <div onClick={() => rejectChore(p.id)} style={{ cursor:'pointer', background:'#eee', color:'#888', fontWeight:800, fontSize:13, padding:'9px 11px', borderRadius:11 }}>✕</div>
-                          </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     ) : (
                       <div style={{ fontSize:14, fontWeight:700, color:'#9a96ac', marginTop:10 }}>Nic nečeká. 👌</div>
@@ -3293,8 +3342,8 @@ function App() {
                   </div>
 
                   <div style={{ background:'#fff', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
-                    <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'#1a1530' }}>Verze: Domácí pomocník v12</div>
-                    <div style={{ fontSize:12, color:'#9a96ac', marginTop:4 }}>Build 2026-06-20 · 22:53</div>
+                    <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'#1a1530' }}>Verze: Domácí pomocník v13</div>
+                    <div style={{ fontSize:12, color:'#9a96ac', marginTop:4 }}>Build 2026-06-20 · 22:58</div>
                   </div>
                 </div>
                 )}
