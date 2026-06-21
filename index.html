@@ -1156,22 +1156,25 @@ function App() {
 
   // ---------------------- v15: Půlnoční reset ----------------------
   // Když se změní den, resetuj rutiny a úkoly (jinak by zůstaly "splněné" z předchozího dne)
+  // v39: Auto-heal stuck pending chores (choreState='pending' bez záznamu v pendingApprovals)
+  // Spustí se jednou při startu appky. Buď přidá záznam, nebo smaže pending stav.
   useEffect(() => {
-    const check = () => {
-      const today = todayISO();
-      if (today !== lastDayKey) {
-        setDoneM({});
-        setDoneE({});
-        setChoreState({});
-        setPackState({});
-        setPackAwarded(false);
-        setLastDayKey(today);
-      }
-    };
-    check();
-    const id = setInterval(check, 60 * 1000);
-    return () => clearInterval(id);
-  }, [lastDayKey]);
+    // Sečti všechny pending chores
+    const pendingChoreIds = Object.keys(choreState).filter(id => choreState[id] === 'pending');
+    if (pendingChoreIds.length === 0) return;
+    // Zjisti které z nich nemají odpovídající záznam v pendingApprovals
+    const stuck = pendingChoreIds.filter(cid => !pendingApprovals.some(p => p.refId === cid && p.type === 'chore'));
+    if (stuck.length === 0) return;
+    // Auto-heal: smaž stuck pending z choreState (jako kdyby je rodič odmítl)
+    setChoreState(s => {
+      const ns = {...s};
+      stuck.forEach(id => { delete ns[id]; });
+      return ns;
+    });
+    // Tichý log, žádný toast - user o tom nemusí vědět
+    console.log('[auto-heal] Vyčištěno', stuck.length, 'stuck pending chores:', stuck);
+  }, []); // empty deps = pouze 1× při mountu
+
 
   // ---------------------- v15: Google Calendar fetch ----------------------
   const parseICal = useCallback((text) => {
@@ -4536,6 +4539,107 @@ function App() {
                 {/* TAB: nastav (settings + admin) */}
                 {parentTab === 'nastav' && (
                 <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
+
+                  {/* v39: Administrace dat - reset bodů, rutin, schvalování, vše */}
+                  <div style={{ background:'linear-gradient(135deg, #fef3c7, #fde68a)', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)', border:'2px solid #f59e0b' }}>
+                    <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:10 }}>
+                      <span style={{ fontSize:24 }}>🧹</span>
+                      <div>
+                        <div style={{ fontFamily:'var(--display)', fontSize:18, fontWeight:600, color:'#7c2d12' }}>Administrace dat</div>
+                        <div style={{ fontSize:11, fontWeight:700, color:'#92400e' }}>Reset bodů, rutin nebo všeho. Pozor — nelze vrátit.</div>
+                      </div>
+                    </div>
+                    <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8 }}>
+                      <div onClick={() => {
+                        if (!window.confirm(`Opravdu vyčistit všechny ke schválení? Aktuálně čeká ${pendingApprovals.length} položek.`)) return;
+                        // Smaž všechny pending - jak v pendingApprovals tak v choreState/shopState
+                        const pendingChoreIds = Object.keys(choreState).filter(id => choreState[id] === 'pending');
+                        const pendingShopIds = Object.keys(shopState).filter(id => shopState[id] === 'requested');
+                        setChoreState(s => { const ns = {...s}; pendingChoreIds.forEach(id => delete ns[id]); return ns; });
+                        setShopState(s => { const ns = {...s}; pendingShopIds.forEach(id => delete ns[id]); return ns; });
+                        // Vrať body za shop žádosti
+                        const shopTotal = pendingApprovals.filter(p => p.type === 'shop').reduce((sum, p) => sum + (p.points || 0), 0);
+                        if (shopTotal > 0) {
+                          setPoints(p => p + shopTotal);
+                          setTotalXp(x => x + shopTotal);
+                        }
+                        setPendingApprovals([]);
+                        audio.undo();
+                        showToast('Schvalování vyčištěno', '✓');
+                      }} style={{ cursor:'pointer', background:'#fff', border:'2px solid #f59e0b', borderRadius:12, padding:'12px 11px', textAlign:'center' }}>
+                        <div style={{ fontSize:20, marginBottom:4 }}>📋</div>
+                        <div style={{ fontFamily:'var(--display)', fontSize:13, fontWeight:600, color:'#92400e' }}>Vyčistit schvalování</div>
+                        <div style={{ fontSize:10, color:'#a16207', marginTop:2 }}>{pendingApprovals.length} čeká</div>
+                      </div>
+
+                      <div onClick={() => {
+                        if (!window.confirm('Opravdu vynulovat body a XP? Streaky a hotové úkoly zůstanou.')) return;
+                        setPoints(0); setTotalXp(0);
+                        audio.undo();
+                        showToast('Body vynulovány', '✓');
+                      }} style={{ cursor:'pointer', background:'#fff', border:'2px solid #f59e0b', borderRadius:12, padding:'12px 11px', textAlign:'center' }}>
+                        <div style={{ fontSize:20, marginBottom:4 }}>💰</div>
+                        <div style={{ fontFamily:'var(--display)', fontSize:13, fontWeight:600, color:'#92400e' }}>Vynulovat body</div>
+                        <div style={{ fontSize:10, color:'#a16207', marginTop:2 }}>{points} bodů</div>
+                      </div>
+
+                      <div onClick={() => {
+                        if (!window.confirm('Resetovat dnešní rutiny? Doneuje se ranní + večerní zpět na nesplněno.')) return;
+                        setDoneM({}); setDoneE({});
+                        audio.undo();
+                        showToast('Dnešní rutiny vynulovány', '✓');
+                      }} style={{ cursor:'pointer', background:'#fff', border:'2px solid #f59e0b', borderRadius:12, padding:'12px 11px', textAlign:'center' }}>
+                        <div style={{ fontSize:20, marginBottom:4 }}>🔄</div>
+                        <div style={{ fontFamily:'var(--display)', fontSize:13, fontWeight:600, color:'#92400e' }}>Reset rutin dne</div>
+                        <div style={{ fontSize:10, color:'#a16207', marginTop:2 }}>{Object.keys(doneM).length}+{Object.keys(doneE).length} hotovo</div>
+                      </div>
+
+                      <div onClick={() => {
+                        if (!window.confirm('Reset streaků (řad za sebou)? Toto smaže "kolikátý den po sobě" počítadlo.')) return;
+                        setStreakDays(0); setStreakLastDate(null);
+                        setEveningStreakDays(0); setEveningStreakLast(null);
+                        audio.undo();
+                        showToast('Streaky vynulovány', '✓');
+                      }} style={{ cursor:'pointer', background:'#fff', border:'2px solid #f59e0b', borderRadius:12, padding:'12px 11px', textAlign:'center' }}>
+                        <div style={{ fontSize:20, marginBottom:4 }}>🔥</div>
+                        <div style={{ fontFamily:'var(--display)', fontSize:13, fontWeight:600, color:'#92400e' }}>Reset streaků</div>
+                        <div style={{ fontSize:10, color:'#a16207', marginTop:2 }}>{streakDays || 0} dní</div>
+                      </div>
+
+                      <div onClick={() => {
+                        if (!window.confirm('Reset extra úkolů (dnes splněných)? Týdenní úkoly zůstanou.')) return;
+                        setChoreState({});
+                        audio.undo();
+                        showToast('Extra úkoly vynulovány', '✓');
+                      }} style={{ cursor:'pointer', background:'#fff', border:'2px solid #f59e0b', borderRadius:12, padding:'12px 11px', textAlign:'center' }}>
+                        <div style={{ fontSize:20, marginBottom:4 }}>✨</div>
+                        <div style={{ fontFamily:'var(--display)', fontSize:13, fontWeight:600, color:'#92400e' }}>Reset extra úkolů</div>
+                        <div style={{ fontSize:10, color:'#a16207', marginTop:2 }}>{Object.keys(choreState).length} stavů</div>
+                      </div>
+
+                      <div onClick={() => {
+                        if (!window.confirm('🚨 OPRAVDU vše vynulovat? Smaže body, rutiny, streaky, úkoly, schvalování, mascot, samolepky. Nastavení (tlačítka, hlasy, jméno) zůstanou. Nelze vrátit!')) return;
+                        if (!window.confirm('Posledni varování. Pokračovat?')) return;
+                        setPoints(0); setTotalXp(0);
+                        setDoneM({}); setDoneE({});
+                        setChoreState({}); setPendingApprovals([]);
+                        setShopState({});
+                        setStreakDays(0); setStreakLastDate(null);
+                        setEveningStreakDays(0); setEveningStreakLast(null);
+                        setPetMood(50); setPetEnergy(50); setPetSleeping(false);
+                        setStickers([]); setMoodLog({}); setLastMoodDate(null);
+                        setWeeklyDone({});
+                        setBossState({});
+                        setInventory([]);
+                        audio.undo();
+                        showToast('Vše vynulováno. Začínáme od začátku.', '🧹');
+                      }} style={{ cursor:'pointer', gridColumn:'span 2', background:'#dc2626', color:'#fff', borderRadius:12, padding:'12px 11px', textAlign:'center', boxShadow:'0 4px 12px rgba(220,38,38,.3)' }}>
+                        <div style={{ fontFamily:'var(--display)', fontSize:13, fontWeight:800 }}>🚨 Vynulovat úplně VŠECHNO</div>
+                        <div style={{ fontSize:10, marginTop:2, opacity:.85 }}>Body, rutiny, streaky, úkoly — nastavení zůstanou</div>
+                      </div>
+                    </div>
+                  </div>
+
                   <div style={{ background:'#fff', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
                     <div style={{ fontFamily:'var(--display)', fontSize:18, fontWeight:600, color:'#1a1530', marginBottom:10 }}>Dítě 👧🧒</div>
                     <div style={{ fontSize:13, fontWeight:700, color:'#5a566e', marginBottom:8 }}>Jméno dítěte</div>
@@ -5035,8 +5139,8 @@ function App() {
                   </div>
 
                   <div style={{ background:'#fff', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
-                    <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'#1a1530' }}>Verze: Domácí pomocník v38</div>
-                    <div style={{ fontSize:12, color:'#9a96ac', marginTop:4 }}>Build 2026-06-21 · 16:57</div>
+                    <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'#1a1530' }}>Verze: Domácí pomocník v39</div>
+                    <div style={{ fontSize:12, color:'#9a96ac', marginTop:4 }}>Build 2026-06-21 · 17:51</div>
                   </div>
                 </div>
                 )}
