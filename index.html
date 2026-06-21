@@ -515,8 +515,8 @@ const saveState = (s) => {
       voiceMap: s.voiceMap, voiceBaseUrl: s.voiceBaseUrl,
       // v18+v19
       dayBlueprintByDay: s.dayBlueprintByDay,
-      // v28: Hue
-      hueIp: s.hueIp, hueUser: s.hueUser, hueSwitches: s.hueSwitches, hueActions: s.hueActions,
+      // v28+v29: Hue Webhook
+      hueWebhookUrl: s.hueWebhookUrl, hueButtons: s.hueButtons,
     };
     localStorage.setItem(LS_KEY, JSON.stringify(persistable));
   } catch(e) {}
@@ -948,14 +948,11 @@ function App() {
   const [bpEditDayIdx, setBpEditDayIdx] = useState(() => { const d = new Date(); return (d.getDay() + 6) % 7; });
   // v24: voice panel default sbalený
   const [showVoicePanel, setShowVoicePanel] = useState(false);
-  // v28: Hue Bridge integrace
-  const [hueIp, setHueIp] = useState((persisted && persisted.hueIp) || '192.168.68.63');
-  const [hueUser, setHueUser] = useState((persisted && persisted.hueUser) || '');
-  const [hueSwitches, setHueSwitches] = useState((persisted && persisted.hueSwitches) || []); // [{id, name, type, lastUpdated, lastEvent}]
-  const [hueActions, setHueActions] = useState((persisted && persisted.hueActions) || {}); // {switchId: {buttonEvent: {type, ref}}}
-  const [hueStatus, setHueStatus] = useState('idle'); // 'idle'|'pairing'|'paired'|'error'
+  // v29: Webhook tlačítka (Apple Home → Apps Script → app)
+  const [hueWebhookUrl, setHueWebhookUrl] = useState((persisted && persisted.hueWebhookUrl) || '');
+  const [hueButtons, setHueButtons] = useState((persisted && Array.isArray(persisted.hueButtons)) ? persisted.hueButtons : []); // [{key, label, action: {type, ref}}]
+  const [hueEvents, setHueEvents] = useState([]); // diagnostika - posledních pár eventů
   const [hueLastError, setHueLastError] = useState(null);
-  const [hueLastEvent, setHueLastEvent] = useState(null); // diagnostika - poslední zachycený stisk
   const [showHuePanel, setShowHuePanel] = useState(false);
   // v8 step timer (časovač pro děti s časovou slepotou)
   const [currentStepStart, setCurrentStepStart] = useState(null); // timestamp začátku aktuálního kroku
@@ -1014,7 +1011,7 @@ function App() {
       inventory, bossState,
       lastDayKey, gcalUrl, gcalEvents, gcalLastFetch, whoHomeSchedule,
       voiceMap, voiceBaseUrl, dayBlueprintByDay,
-      hueIp, hueUser, hueSwitches, hueActions,
+      hueWebhookUrl, hueButtons,
     });
   }, [theme, points, totalXp, streak, morning, evening, doneM, doneE, whoHome, departMin,
       shopItems, shopState, choreState, pendingApprovals, packState, packAwarded,
@@ -1028,7 +1025,7 @@ function App() {
       inventory, bossState,
       lastDayKey, gcalUrl, gcalEvents, gcalLastFetch, whoHomeSchedule,
       voiceMap, voiceBaseUrl, dayBlueprintByDay,
-      hueIp, hueUser, hueSwitches, hueActions]);
+      hueWebhookUrl, hueButtons]);
 
   // --- helpers
   const tv = useMemo(() => THEMES[theme] || THEMES.cisto, [theme]);
@@ -1219,97 +1216,21 @@ function App() {
       .sort((a, b) => (a.dateTime || a.iso).localeCompare(b.dateTime || b.iso));
   }, []);
 
-  // v28: Hue Bridge API funkce
-  // Pairing: pošle POST /api s devicetype. Pokud user nestiskl Link button, vrátí error 101.
-  const pairHue = useCallback(async () => {
-    if (!hueIp) { setHueLastError('Chybí IP adresa Bridge'); setHueStatus('error'); return; }
-    setHueStatus('pairing');
-    setHueLastError(null);
-    const tryOnce = async () => {
-      const res = await fetch(`https://${hueIp}/api`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ devicetype: 'domaci_pomocnik#tablet', generateclientkey: true })
-      });
-      const data = await res.json();
-      return data;
-    };
-    // Retry každé 2s po dobu 35s (Link button stiskni teď)
-    const deadline = Date.now() + 35000;
-    while (Date.now() < deadline) {
-      try {
-        const data = await tryOnce();
-        if (data && data[0]) {
-          if (data[0].success && data[0].success.username) {
-            setHueUser(data[0].success.username);
-            setHueStatus('paired');
-            setHueLastError(null);
-            return data[0].success.username;
-          } else if (data[0].error) {
-            // 101 = link button not pressed (retry)
-            if (data[0].error.type === 101) {
-              setHueLastError('Stiskni LINK BUTTON na Bridge (kulatý knoflík nahoře). Čekám...');
-              await new Promise(r => setTimeout(r, 2000));
-              continue;
-            }
-            setHueLastError('Hue error: ' + data[0].error.description);
-            setHueStatus('error');
-            return null;
-          }
-        }
-      } catch (e) {
-        setHueLastError('Chyba spojení: ' + e.message + ' (zkontroluj IP a HTTPS certifikát)');
-        setHueStatus('error');
-        return null;
-      }
-      await new Promise(r => setTimeout(r, 2000));
-    }
-    setHueLastError('Timeout - Link button nebyl stisknut do 35s');
-    setHueStatus('error');
-    return null;
-  }, [hueIp]);
-
-  // Discover: načte všechny ZLLSwitch (Dimmer Switch, Smart Button, Tap atd.)
-  const discoverHueSwitches = useCallback(async () => {
-    if (!hueIp || !hueUser) { setHueLastError('Bridge není spárovaný'); return; }
-    setHueLastError(null);
-    try {
-      const res = await fetch(`https://${hueIp}/api/${hueUser}/sensors`);
-      const data = await res.json();
-      if (data && data[0] && data[0].error) {
-        setHueLastError('Hue error: ' + data[0].error.description);
-        return;
-      }
-      const switches = Object.entries(data)
-        .filter(([id, s]) => /Switch|Button|Tap|RWL|FOH/i.test(s && s.type || ''))
-        .map(([id, s]) => ({
-          id,
-          name: s.name || ('Switch ' + id),
-          type: s.type,
-          modelid: s.modelid,
-          lastUpdated: s.state && s.state.lastupdated,
-          lastEvent: s.state && s.state.buttonevent,
-        }));
-      setHueSwitches(switches);
-      setHueLastError(`Nalezeno ${switches.length} tlačítek`);
-    } catch (e) {
-      setHueLastError('Chyba spojení: ' + e.message);
-    }
-  }, [hueIp, hueUser]);
-
-  // Trigger akce podle config (volá se z polling když detekujeme nový stisk)
-  const triggerHueAction = useCallback((action, switchName, eventCode) => {
+  // v29: Webhook polling - tahá z Apps Script "events" endpoint
+  // Trigger akce podle config
+  const triggerHueAction = useCallback((action, label) => {
     if (!action || !action.type || action.type === 'none') return;
-    setHueLastEvent(`${switchName} → ${eventCode} → ${action.type}:${action.ref || ''}`);
     if (action.type === 'step') {
-      // Najdi krok v ranní/večerní rutině a odškrtni
       const allSteps = [...morning, ...evening];
       const step = allSteps.find(s => s.id === action.ref);
       if (!step) return;
       const isMorning = morning.some(s => s.id === action.ref);
       const setDone = isMorning ? setDoneM : setDoneE;
       const doneMap = isMorning ? doneM : doneE;
-      if (doneMap[step.id]) return; // už splněný
+      if (doneMap[step.id]) {
+        showToast(`${step.icon} už hotovo`, '✓');
+        return;
+      }
       setDone(prev => ({ ...prev, [step.id]: true }));
       setPoints(p => p + 10); setTotalXp(x => x + 10);
       feedPet(3, 2);
@@ -1320,7 +1241,7 @@ function App() {
     } else if (action.type === 'chore') {
       const c = choresList.find(x => x.id === action.ref);
       if (!c) return;
-      if (choreState[c.id]) return;
+      if (choreState[c.id]) { showToast('Už čeká na schválení', '⏳'); return; }
       audio.coin();
       setChoreState(s => ({ ...s, [c.id]: 'pending' }));
       setPendingApprovals(p => [...p, { id: 'chore-' + c.id, type: 'chore', refId: c.id, emoji:c.emoji, t:c.t, points:c.points, date: new Date().toISOString() }]);
@@ -1328,46 +1249,72 @@ function App() {
       if (playVoiceRef.current) playVoiceRef.current('choreSent', 'Posláno rodiči!');
     } else if (action.type === 'mood') {
       setShowMoodPrompt(true);
+    } else if (action.type === 'routine-morning') {
+      // Otevřít ranní rutinu
+      setActiveRoutine('morning'); setScreen('routine');
+    } else if (action.type === 'routine-evening') {
+      setActiveRoutine('evening'); setScreen('routine');
     }
   }, [morning, evening, doneM, doneE, audio, confetti, showToast, feedPet, choresList, choreState]);
 
-  // Polling: každé 2s zkontroluj sensors a najdi nové buttonevent
-  const lastSeenRef = useRef({}); // switchId -> lastupdated timestamp
+  // Polling Apps Script webhook endpoint pro nové eventy
+  const hueLastTsRef = useRef(null); // ISO timestamp posledního zpracovaného eventu
   useEffect(() => {
-    if (!hueIp || !hueUser) return;
-    // Inicializuj lastSeen z aktuálního stavu (aby se nepustil event ze startu)
-    hueSwitches.forEach(s => {
-      if (s.lastUpdated) lastSeenRef.current[s.id] = s.lastUpdated;
-    });
+    if (!hueWebhookUrl || !hueWebhookUrl.trim()) return;
+    const url = hueWebhookUrl.trim();
+    let cancelled = false;
     const tick = async () => {
+      if (cancelled) return;
       try {
-        const res = await fetch(`https://${hueIp}/api/${hueUser}/sensors`);
-        const data = await res.json();
-        if (data && data[0] && data[0].error) return;
-        for (const [sid, sensor] of Object.entries(data)) {
-          if (!sensor || !sensor.state || !sensor.state.lastupdated) continue;
-          if (!/Switch|Button|Tap|RWL|FOH/i.test(sensor.type || '')) continue;
-          const lu = sensor.state.lastupdated;
-          const evt = sensor.state.buttonevent;
-          const prev = lastSeenRef.current[sid];
-          if (prev === undefined) {
-            lastSeenRef.current[sid] = lu;
-            continue;
+        const since = hueLastTsRef.current || '';
+        const sep = url.includes('?') ? '&' : '?';
+        const res = await fetch(url + sep + 'action=events&since=' + encodeURIComponent(since));
+        if (!res.ok) return;
+        const events = await res.json();
+        if (!Array.isArray(events) || events.length === 0) return;
+        // Eventy přicházejí newest-first; obrátíme pro zpracování chronologicky
+        const ordered = [...events].sort((a,b) => (a.ts || '').localeCompare(b.ts || ''));
+        let latestTs = hueLastTsRef.current;
+        for (const ev of ordered) {
+          if (!ev || !ev.key || !ev.ts) continue;
+          if (hueLastTsRef.current && ev.ts <= hueLastTsRef.current) continue;
+          // Najdi konfigurovanou akci pro tento klíč
+          const btn = hueButtons.find(b => b.key === ev.key);
+          if (btn && btn.action) {
+            triggerHueAction(btn.action, btn.label || ev.key);
           }
-          if (lu !== prev && evt != null) {
-            // Nový event!
-            lastSeenRef.current[sid] = lu;
-            const switchActions = hueActions[sid] || {};
-            const action = switchActions[String(evt)] || switchActions[evt];
-            if (action) triggerHueAction(action, sensor.name || sid, evt);
-            else setHueLastEvent(`${sensor.name || sid} → ${evt} (nepřiřazeno)`);
-          }
+          // Přidej do diagnostiky (max 10)
+          setHueEvents(prev => [{ ts: ev.ts, key: ev.key, label: btn ? btn.label : '(nepřiřazeno)' }, ...prev].slice(0, 10));
+          if (!latestTs || ev.ts > latestTs) latestTs = ev.ts;
         }
-      } catch (e) { /* tichá chyba aby se nezahltil log */ }
+        if (latestTs) hueLastTsRef.current = latestTs;
+        setHueLastError(null);
+      } catch (e) {
+        // Tichá chyba aby nezahltit
+      }
     };
-    const id = setInterval(tick, 2000);
-    return () => clearInterval(id);
-  }, [hueIp, hueUser, hueActions, triggerHueAction]);
+    // První tick: zjisti aktuální nejnovější timestamp aby se nepustil event z minulosti
+    const init = async () => {
+      try {
+        const sep = url.includes('?') ? '&' : '?';
+        const res = await fetch(url + sep + 'action=events');
+        const events = await res.json();
+        if (Array.isArray(events) && events.length > 0) {
+          // Nastav lastTs na nejnovější (aby se znova nepouštěly staré eventy)
+          hueLastTsRef.current = events[0].ts;
+        } else {
+          hueLastTsRef.current = new Date().toISOString();
+        }
+        setHueLastError('Připojeno · poslouchám stisky');
+      } catch (e) {
+        setHueLastError('Chyba spojení: ' + e.message);
+      }
+    };
+    init();
+    const id = setInterval(tick, 3000);
+    return () => { cancelled = true; clearInterval(id); };
+  }, [hueWebhookUrl, hueButtons, triggerHueAction]);
+
 
   const fetchGcal = useCallback(async (force) => {
     if (!gcalUrl || !gcalUrl.startsWith('http')) return;
@@ -2404,10 +2351,8 @@ function App() {
     if (isObj(s.voiceMap)) setVoiceMap(s.voiceMap);
     if (isStr(s.voiceBaseUrl)) setVoiceBaseUrl(s.voiceBaseUrl);
     if (isArr(s.dayBlueprintByDay) && s.dayBlueprintByDay.length === 7) setDayBlueprintByDay(s.dayBlueprintByDay);
-    if (isStr(s.hueIp)) setHueIp(s.hueIp);
-    if (isStr(s.hueUser)) setHueUser(s.hueUser);
-    if (isArr(s.hueSwitches)) setHueSwitches(s.hueSwitches);
-    if (isObj(s.hueActions)) setHueActions(s.hueActions);
+    if (isStr(s.hueWebhookUrl)) setHueWebhookUrl(s.hueWebhookUrl);
+    if (isArr(s.hueButtons)) setHueButtons(s.hueButtons);
   }, []);
 
   // PULL ze serveru (manuální nebo periodicky)
@@ -4647,14 +4592,14 @@ function App() {
                     <div onClick={() => tts.speak('test', 'Ahoj, já jsem ' + mascotName + '. Jsem ráda, že jsme spolu.')} style={{ cursor:'pointer', marginTop:10, background:'#eef4ff', color:'var(--accent)', borderRadius:12, padding:'10px 12px', textAlign:'center', fontSize:13, fontWeight:800 }}>🔊 Otestovat hlas</div>
                   </div>
 
-                  {/* v28: Philips Hue tlačítka */}
+                  {/* v28+v29: Webhook tlačítka (Apple Home → Apps Script → app) */}
                   <div style={{ background:'linear-gradient(135deg, #ddd6fe, #c4b5fd)', borderRadius:20, padding:showHuePanel ? 16 : 12, boxShadow:'0 4px 16px rgba(20,16,40,.06)', border:'2px solid #7c3aed' }}>
                     <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom: showHuePanel ? 10 : 0 }}>
                       <span style={{ fontSize:24 }}>💡</span>
                       <div onClick={() => { audio.tap(); setShowHuePanel(v => !v); }} style={{ flex:1, minWidth:0, cursor:'pointer' }}>
-                        <div style={{ fontFamily:'var(--display)', fontSize:18, fontWeight:600, color:'#581c87' }}>Philips Hue tlačítka</div>
+                        <div style={{ fontFamily:'var(--display)', fontSize:18, fontWeight:600, color:'#581c87' }}>Webhook tlačítka (Apple Home)</div>
                         <div style={{ fontSize:11, fontWeight:700, color:'#6b21a8' }}>
-                          {hueUser ? `✓ Spárováno · ${hueSwitches.length} tlačítek` : 'Nespárováno · klepni pro nastavení'}
+                          {hueWebhookUrl ? `✓ ${hueButtons.length} tlačítek mapováno` : 'Nastav webhook URL a tlačítka'}
                         </div>
                       </div>
                       <div onClick={() => { audio.tap(); setShowHuePanel(v => !v); }} style={{ cursor:'pointer', background:'#fff', borderRadius:8, padding:'6px 10px', fontWeight:900, fontSize:13, color:'#6b21a8' }}>
@@ -4664,86 +4609,131 @@ function App() {
 
                     {showHuePanel && (
                       <React.Fragment>
-                        {/* IP adresa */}
-                        <div style={{ background:'#fff', borderRadius:10, padding:'10px 12px', marginBottom:8 }}>
-                          <div style={{ fontSize:11, fontWeight:800, color:'#6b21a8', marginBottom:4, textTransform:'uppercase', letterSpacing:'.05em' }}>IP adresa Hue Bridge</div>
-                          <input value={hueIp} onChange={(e) => setHueIp(e.target.value)} placeholder="192.168.x.x"
-                            style={{ width:'100%', boxSizing:'border-box', border:'1px solid #c4b5fd', borderRadius:8, padding:'8px 10px', fontSize:13, fontFamily:'monospace', outline:'none' }}
+                        {/* Webhook URL */}
+                        <div style={{ background:'#fff', borderRadius:10, padding:'10px 12px', marginBottom:10 }}>
+                          <div style={{ fontSize:11, fontWeight:800, color:'#6b21a8', marginBottom:4, textTransform:'uppercase', letterSpacing:'.05em' }}>Webhook URL (z Apps Script)</div>
+                          <input value={hueWebhookUrl} onChange={(e) => setHueWebhookUrl(e.target.value)} placeholder="https://script.google.com/macros/s/.../exec"
+                            style={{ width:'100%', boxSizing:'border-box', border:'1px solid #c4b5fd', borderRadius:8, padding:'8px 10px', fontSize:11, fontFamily:'monospace', outline:'none' }}
                           />
-                        </div>
-
-                        {/* Pair + discover buttons */}
-                        <div style={{ display:'flex', gap:6, marginBottom:8, flexWrap:'wrap' }}>
-                          <div onClick={() => { audio.tap(); pairHue(); }} style={{ cursor:'pointer', flex:'1 1 0', background:'#7c3aed', color:'#fff', borderRadius:10, padding:'10px 12px', textAlign:'center', fontWeight:800, fontSize:13, boxShadow:'0 4px 12px rgba(124,58,237,.3)' }}>
-                            {hueStatus === 'pairing' ? '⏳ Čekám na Link button…' : hueUser ? '🔄 Spárovat znovu' : '🔗 Spárovat'}
+                          <div style={{ fontSize:10, fontWeight:700, color:'#6b21a8', marginTop:4, lineHeight:1.4 }}>
+                            Vytvoř nový Apps Script projekt (návod níže), deploy jako web app, sem vlož URL.
                           </div>
-                          <div onClick={() => { audio.tap(); discoverHueSwitches(); }} style={{ cursor:'pointer', flex:'1 1 0', background:'#fff', color:'#6b21a8', border:'2px solid #c4b5fd', borderRadius:10, padding:'9px 12px', textAlign:'center', fontWeight:800, fontSize:13, opacity: hueUser ? 1 : 0.4, pointerEvents: hueUser ? 'auto' : 'none' }}>🔍 Najít tlačítka</div>
                         </div>
 
-                        {/* Status / error display */}
-                        {(hueLastError || hueLastEvent) && (
-                          <div style={{ background: hueStatus === 'error' ? '#fef2f2' : '#f0fdf4', border:'1px solid '+(hueStatus === 'error' ? '#fca5a5' : '#86efac'), borderRadius:8, padding:'8px 11px', fontSize:11, fontFamily:'monospace', marginBottom:8, lineHeight:1.4 }}>
-                            {hueLastError && <div style={{ color: hueStatus === 'error' ? '#991b1b' : '#166534', fontWeight:700 }}>{hueStatus === 'error' ? '❌' : '✓'} {hueLastError}</div>}
-                            {hueLastEvent && <div style={{ color:'#1e40af', fontWeight:700, marginTop: hueLastError ? 4 : 0 }}>🔘 Poslední stisk: {hueLastEvent}</div>}
+                        {/* Status */}
+                        {hueLastError && (
+                          <div style={{ background:'#f0fdf4', border:'1px solid #86efac', borderRadius:8, padding:'8px 11px', fontSize:11, fontFamily:'monospace', color:'#166534', marginBottom:8, fontWeight:700 }}>
+                            ✓ {hueLastError}
                           </div>
                         )}
 
-                        {/* Seznam tlačítek + akce */}
-                        {hueSwitches.length > 0 && (
-                          <div style={{ background:'#fff', borderRadius:12, padding:12 }}>
-                            <div style={{ fontSize:12, fontWeight:800, color:'#6b21a8', marginBottom:10, textTransform:'uppercase', letterSpacing:'.05em' }}>Mapování akcí</div>
-                            {hueSwitches.map(sw => (
-                              <div key={sw.id} style={{ marginBottom:14, paddingBottom:10, borderBottom:'1px solid #f0e9fa' }}>
-                                <div style={{ fontFamily:'var(--display)', fontSize:15, fontWeight:600, color:'#1a1530', marginBottom:6 }}>
-                                  💡 {sw.name} <span style={{ fontSize:11, fontWeight:700, color:'#9a96ac' }}>({sw.modelid || sw.type})</span>
+                        {/* Tlačítka */}
+                        <div style={{ background:'#fff', borderRadius:12, padding:12, marginBottom:8 }}>
+                          <div style={{ fontSize:12, fontWeight:800, color:'#6b21a8', marginBottom:10, textTransform:'uppercase', letterSpacing:'.05em' }}>Tlačítka a jejich akce</div>
+                          {hueButtons.length === 0 && (
+                            <div style={{ fontSize:12, color:'#9a96ac', textAlign:'center', padding:'12px', fontStyle:'italic' }}>Zatím žádné. Klepni „+" níže a přidej první.</div>
+                          )}
+                          {hueButtons.map((b, idx) => (
+                            <div key={idx} style={{ padding:'10px 0', borderBottom: idx === hueButtons.length-1 ? 'none' : '1px solid #f0e9fa' }}>
+                              <div style={{ display:'flex', gap:6, marginBottom:6 }}>
+                                <input value={b.label || ''} onChange={(e) => {
+                                  const val = e.target.value;
+                                  setHueButtons(arr => arr.map((x, i) => i === idx ? {...x, label: val} : x));
+                                }} placeholder="Název (např. WC nahoře)" style={{ flex:1, fontSize:13, border:'1px solid #c4b5fd', borderRadius:6, padding:'6px 8px', fontWeight:600, color:'#1a1530' }} />
+                                <input value={b.key || ''} onChange={(e) => {
+                                  // Klíč: bez mezer, ASCII pouze
+                                  const val = e.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, '');
+                                  setHueButtons(arr => arr.map((x, i) => i === idx ? {...x, key: val} : x));
+                                }} placeholder="klíč (např. wc-up)" style={{ width:120, fontSize:12, border:'1px solid #c4b5fd', borderRadius:6, padding:'6px 8px', fontFamily:'monospace' }} />
+                                <div onClick={() => {
+                                  if (!window.confirm(`Smazat tlačítko "${b.label || b.key}"?`)) return;
+                                  setHueButtons(arr => arr.filter((_, i) => i !== idx));
+                                  audio.undo();
+                                }} style={{ cursor:'pointer', width:28, height:28, borderRadius:6, background:'#fdeaea', color:'#e23', display:'flex', alignItems:'center', justifyContent:'center', fontWeight:800, fontSize:13 }}>✕</div>
+                              </div>
+                              <div style={{ display:'flex', gap:6, marginBottom:6 }}>
+                                <div style={{ fontSize:11, fontWeight:800, color:'#6b21a8', width:60, lineHeight:'30px' }}>AKCE:</div>
+                                <select value={b.action ? b.action.type + (b.action.ref ? ':' + b.action.ref : '') : 'none'} onChange={(e) => {
+                                  const val = e.target.value;
+                                  let newAction;
+                                  if (val === 'none') newAction = { type:'none' };
+                                  else if (val === 'mood') newAction = { type:'mood' };
+                                  else if (val === 'routine-morning') newAction = { type:'routine-morning' };
+                                  else if (val === 'routine-evening') newAction = { type:'routine-evening' };
+                                  else if (val.startsWith('step:')) newAction = { type:'step', ref: val.slice(5) };
+                                  else if (val.startsWith('chore:')) newAction = { type:'chore', ref: val.slice(6) };
+                                  else newAction = { type:'none' };
+                                  setHueButtons(arr => arr.map((x, i) => i === idx ? {...x, action: newAction} : x));
+                                }} style={{ flex:1, fontSize:12, border:'1px solid #c4b5fd', borderRadius:6, padding:'6px 8px', background:'#fafafd' }}>
+                                  <option value="none">— nepřiřazeno —</option>
+                                  <option value="routine-morning">▶ Otevřít ranní rutinu</option>
+                                  <option value="routine-evening">▶ Otevřít večerní rutinu</option>
+                                  <optgroup label="Odškrtni krok ranní rutiny">
+                                    {morning.filter(s => s.on).map(s => <option key={'m-'+s.id} value={'step:'+s.id}>{s.icon} {s.t}</option>)}
+                                  </optgroup>
+                                  <optgroup label="Odškrtni krok večerní rutiny">
+                                    {evening.filter(s => s.on).map(s => <option key={'e-'+s.id} value={'step:'+s.id}>{s.icon} {s.t}</option>)}
+                                  </optgroup>
+                                  <optgroup label="Domácí úkol">
+                                    {choresList.map(c => <option key={c.id} value={'chore:'+c.id}>{c.emoji} {c.t}</option>)}
+                                  </optgroup>
+                                  <option value="mood">😊 Otevři otázku na náladu</option>
+                                </select>
+                              </div>
+                              {/* URL pro Apple Home shortcut */}
+                              {b.key && hueWebhookUrl && (
+                                <div style={{ background:'#f9f5ff', borderRadius:8, padding:'8px 10px', fontSize:11, fontFamily:'monospace', color:'#581c87', wordBreak:'break-all', display:'flex', gap:6, alignItems:'center' }}>
+                                  <div style={{ flex:1, minWidth:0, overflow:'hidden' }}>{hueWebhookUrl + (hueWebhookUrl.includes('?') ? '&' : '?') + 'press=' + b.key}</div>
+                                  <div onClick={() => {
+                                    const u = hueWebhookUrl + (hueWebhookUrl.includes('?') ? '&' : '?') + 'press=' + b.key;
+                                    if (navigator.clipboard) navigator.clipboard.writeText(u);
+                                    audio.tap();
+                                    showToast('URL zkopírováno', '📋');
+                                  }} style={{ cursor:'pointer', background:'#7c3aed', color:'#fff', borderRadius:6, padding:'5px 9px', fontWeight:800, fontSize:11, whiteSpace:'nowrap' }}>📋 Kopír</div>
+                                  <div onClick={async () => {
+                                    // Test - simulate webhook
+                                    if (!hueWebhookUrl) return;
+                                    audio.tap();
+                                    try {
+                                      const sep = hueWebhookUrl.includes('?') ? '&' : '?';
+                                      await fetch(hueWebhookUrl + sep + 'press=' + b.key);
+                                      showToast('Webhook poslán - počkej 3s', '🔔');
+                                    } catch(e) { showToast('Chyba: ' + e.message, '⚠'); }
+                                  }} style={{ cursor:'pointer', background:'#16a34a', color:'#fff', borderRadius:6, padding:'5px 9px', fontWeight:800, fontSize:11, whiteSpace:'nowrap' }}>🔊 Test</div>
                                 </div>
-                                {/* Pro Dimmer Switch: 4 tlačítka × short/long = 8 mapování */}
-                                {[
-                                  { code:'1002', label:'ON krátký' },
-                                  { code:'1003', label:'ON dlouhý' },
-                                  { code:'2002', label:'↑ krátký' },
-                                  { code:'2003', label:'↑ dlouhý' },
-                                  { code:'3002', label:'↓ krátký' },
-                                  { code:'3003', label:'↓ dlouhý' },
-                                  { code:'4002', label:'OFF krátký' },
-                                  { code:'4003', label:'OFF dlouhý' },
-                                ].map(b => {
-                                  const cur = (hueActions[sw.id] && hueActions[sw.id][b.code]) || { type:'none' };
-                                  return (
-                                    <div key={b.code} style={{ display:'flex', alignItems:'center', gap:6, marginBottom:4 }}>
-                                      <div style={{ width:90, fontSize:11, fontWeight:800, color:'#6b21a8' }}>{b.label}</div>
-                                      <select value={cur.type + (cur.ref ? ':' + cur.ref : '')} onChange={(e) => {
-                                        const val = e.target.value;
-                                        let newAction;
-                                        if (val === 'none') newAction = { type:'none' };
-                                        else if (val === 'mood') newAction = { type:'mood' };
-                                        else if (val.startsWith('step:')) newAction = { type:'step', ref: val.slice(5) };
-                                        else if (val.startsWith('chore:')) newAction = { type:'chore', ref: val.slice(6) };
-                                        else newAction = { type:'none' };
-                                        setHueActions(a => ({ ...a, [sw.id]: { ...(a[sw.id]||{}), [b.code]: newAction } }));
-                                      }} style={{ flex:1, minWidth:0, fontSize:12, border:'1px solid #c4b5fd', borderRadius:6, padding:'5px 8px', background:'#fafafd' }}>
-                                        <option value="none">— nepřiřazeno —</option>
-                                        <optgroup label="Krok ranní rutiny">
-                                          {morning.filter(s => s.on).map(s => <option key={'m-'+s.id} value={'step:'+s.id}>{s.icon} {s.t}</option>)}
-                                        </optgroup>
-                                        <optgroup label="Krok večerní rutiny">
-                                          {evening.filter(s => s.on).map(s => <option key={'e-'+s.id} value={'step:'+s.id}>{s.icon} {s.t}</option>)}
-                                        </optgroup>
-                                        <optgroup label="Domácí úkol">
-                                          {choresList.map(c => <option key={c.id} value={'chore:'+c.id}>{c.emoji} {c.t}</option>)}
-                                        </optgroup>
-                                        <option value="mood">😊 Otevři otázku na náladu</option>
-                                      </select>
-                                    </div>
-                                  );
-                                })}
+                              )}
+                            </div>
+                          ))}
+                          <div onClick={() => {
+                            const next = hueButtons.length + 1;
+                            setHueButtons(arr => [...arr, { key: 'btn' + next, label: 'Tlačítko ' + next, action: { type: 'none' } }]);
+                            audio.coin();
+                          }} style={{ cursor:'pointer', background:'var(--accent)', color:'#fff', fontWeight:600, fontSize:14, padding:'10px 14px', borderRadius:11, textAlign:'center', marginTop:10 }}>+ Přidat tlačítko</div>
+                        </div>
+
+                        {/* Diagnostika - poslední eventy */}
+                        {hueEvents.length > 0 && (
+                          <div style={{ background:'#fff', borderRadius:10, padding:'10px 12px', marginBottom:8 }}>
+                            <div style={{ fontSize:11, fontWeight:800, color:'#6b21a8', marginBottom:6 }}>Poslední stisky (live):</div>
+                            {hueEvents.map((e, i) => (
+                              <div key={i} style={{ fontSize:11, fontFamily:'monospace', color:'#1e293b', marginBottom:2 }}>
+                                {new Date(e.ts).toLocaleTimeString('cs')} · <b>{e.key}</b> · {e.label}
                               </div>
                             ))}
                           </div>
                         )}
 
-                        <div style={{ background:'#fff', borderRadius:10, padding:'10px 12px', fontSize:11, color:'#6b21a8', lineHeight:1.5, marginTop:8 }}>
-                          <b>Poznámka k iPadu:</b> Bridge má self-signed HTTPS certifikát od Philipsu. Pokud se objeví chyba spojení, musíš na iPad nainstalovat Philips CA certifikát (jednorázově). Pošli mi prosím chybu kterou uvidíš a já dám návod.
+                        {/* Návod */}
+                        <div style={{ background:'#fff', borderRadius:10, padding:'10px 12px', fontSize:11, color:'#581c87', lineHeight:1.5 }}>
+                          <div style={{ fontWeight:900, marginBottom:6 }}>📖 Setup (1× nastavit, pak funguje):</div>
+                          <ol style={{ margin:'0 0 0 18px', padding:0 }}>
+                            <li><b>Vytvoř webhook server:</b> jdi na <code>script.google.com</code> → Nový projekt → vlož kód <a href="https://github.com/marketaliterova/domaci-pomocnik/blob/main/hue-webhook.gs" target="_blank" style={{color:'#7c3aed', fontWeight:800}}>z tohoto souboru</a> → Deploy → Web app → Execute as: Me, Who has access: Anyone → URL zkopíruj sem nahoru</li>
+                            <li><b>Přidej tlačítko:</b> dej mu název („WC nahoře") a klíč („wc-up") a vyber akci</li>
+                            <li><b>Zkopíruj URL</b> (📋 vedle řádku) - to je adresa pro Apple Home</li>
+                            <li><b>iPhone → Domácnost</b> → automatizace → „Tlačítko je stisknuto" → vyber Hue Dimmer → Convert to Shortcut → akce <b>„Načíst obsah URL"</b> → vlož zkopírovanou URL</li>
+                            <li><b>Apple TV jako home hub</b> musí být zapnutý a doma — automatizace běží přes něj</li>
+                            <li>Zmáčkni Dimmer → do 3s se v appce odškrtne krok / přičtou body / přehraje hlas</li>
+                          </ol>
                         </div>
                       </React.Fragment>
                     )}
@@ -5010,8 +5000,8 @@ function App() {
                   </div>
 
                   <div style={{ background:'#fff', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
-                    <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'#1a1530' }}>Verze: Domácí pomocník v28</div>
-                    <div style={{ fontSize:12, color:'#9a96ac', marginTop:4 }}>Build 2026-06-21 · 11:29</div>
+                    <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'#1a1530' }}>Verze: Domácí pomocník v29</div>
+                    <div style={{ fontSize:12, color:'#9a96ac', marginTop:4 }}>Build 2026-06-21 · 11:36</div>
                   </div>
                 </div>
                 )}
