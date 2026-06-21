@@ -290,6 +290,51 @@ function getBossForWeek(weekId) {
 // ====================================================================
 // Seznam eventů kde můžeš vlepit URL na MP3 (např. voices/hello.mp3)
 // Když je URL nastavená, přehraje se místo Web Speech robota.
+// v20: Defaultní mapování - app automaticky najde MP3 ve složce voices/ podle konvence
+// Pokud uživatel nenastaví vlastní URL v admin, použijou se tyhle.
+const DEFAULT_VOICE_MAP = {
+  hello:           ['hello-1.mp3', 'hello-2.mp3'],
+  morning:         ['morning.mp3'],
+  evening:         ['evening.mp3'],
+  routineStart:    ['routine-start-1.mp3', 'routine-start-2.mp3'],
+  stepDone:        ['step-done-1.mp3', 'step-done-2.mp3', 'step-done-3.mp3'],
+  routineDone:     ['routine-done-1.mp3', 'routine-done-2.mp3'],
+  teethTime:       ['teeth-time-1.mp3', 'teeth-time-2.mp3'],
+  streak:          ['streak-1.mp3', 'streak-2.mp3'],
+  goodNight:       ['good-night-1.mp3', 'good-night-2.mp3'],
+  petSleep:        ['pet-sleep.mp3'],
+  petWake:         ['pet-wake.mp3'],
+  questComplete:   ['routine-done-1.mp3'],
+  lootCommon:      ['loot-common.mp3'],
+  lootRare:        ['loot-rare.mp3'],
+  lootEpic:        ['loot-epic.mp3'],
+  lootLegendary:   ['loot-legendary.mp3'],
+  bossDefeated:    ['boss-defeated.mp3'],
+  moodPrompt:      ['mood-thanks.mp3'],
+  shopBuy:         ['shop-requested.mp3'],
+  shopApproved:    ['shop-approved.mp3'],
+  shopClaim:       ['shop-claim.mp3'],
+  choreApproved:   ['chore-approved.mp3'],
+  choreSent:       ['chore-sent.mp3'],
+  worrySent:       ['worry-sent.mp3'],
+  stickerNew:      ['sticker-new.mp3'],
+  noPoints:        ['no-points.mp3'],
+  'hint-vstat':       ['hint-vstat.mp3'],
+  'hint-wc':          ['hint-wc.mp3'],
+  'hint-oblicej':     ['hint-oblicej.mp3'],
+  'hint-zuby':        ['hint-zuby.mp3'],
+  'hint-obleci':      ['hint-obleci.mp3'],
+  'hint-snidane':     ['hint-snidane.mp3'],
+  'hint-aktovka':     ['hint-aktovka.mp3'],
+  'hint-boty':        ['hint-boty.mp3'],
+  'hint-uklid':       ['hint-uklid.mp3'],
+  'hint-priprava':    ['hint-priprava.mp3'],
+  'hint-sprcha':      ['hint-sprcha.mp3'],
+  'hint-zuby-vecer':  ['hint-zuby-vecer.mp3'],
+  'hint-cteni':       ['hint-cteni.mp3'],
+  'hint-spani':       ['hint-spani.mp3'],
+};
+
 const VOICE_EVENTS = [
   // Pozdravy
   { id:'hello',          group:'Pozdravy',  label:'Pozdrav (Riki)',      example:'„Ahoj! Tak co dneska?" / „Čau, kámo!"' },
@@ -1199,7 +1244,8 @@ function App() {
     if (!u) return null;
     if (/^https?:\/\//.test(u)) return u;
     if (u.startsWith('/')) return u;
-    const base = (voiceBaseRef.current || '').trim();
+    // v20: default base = "voices/" pokud uživatel nenastavil jinak
+    const base = (voiceBaseRef.current || 'voices/').trim();
     if (!base) return u;
     return base.endsWith('/') ? base + u : base + '/' + u;
   }, []);
@@ -1207,9 +1253,13 @@ function App() {
   const voiceAudioRef = useRef(null);
   const playVoice = useCallback((eventId, fallbackText) => {
     if (!soundOn) return;
-    const rawValue = voiceMapRef.current[eventId];
+    // v20: zjistit URL - nejdřív uživatel-nastavený voiceMap, jinak DEFAULT_VOICE_MAP
+    let rawValue = voiceMapRef.current[eventId];
+    if (!rawValue || !String(rawValue).trim()) {
+      const defaults = DEFAULT_VOICE_MAP[eventId];
+      if (defaults && defaults.length) rawValue = defaults.join('\n');
+    }
     if (rawValue) {
-      // v19: podpora víc variant - rozdělíme po řádcích/čárkách a vybereme náhodně
       const variants = String(rawValue).split(/[\n,]+/).map(s => s.trim()).filter(Boolean);
       if (variants.length > 0) {
         const pick = variants[Math.floor(Math.random() * variants.length)];
@@ -4504,8 +4554,8 @@ function App() {
                   </div>
 
                   <div style={{ background:'#fff', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
-                    <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'#1a1530' }}>Verze: Domácí pomocník v19</div>
-                    <div style={{ fontSize:12, color:'#9a96ac', marginTop:4 }}>Build 2026-06-21 · 07:42</div>
+                    <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'#1a1530' }}>Verze: Domácí pomocník v20</div>
+                    <div style={{ fontSize:12, color:'#9a96ac', marginTop:4 }}>Build 2026-06-21 · 08:02</div>
                   </div>
                 </div>
                 )}
