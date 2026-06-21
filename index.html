@@ -1261,7 +1261,13 @@ function App() {
   }, [morning, evening, doneM, doneE, audio, confetti, showToast, feedPet, choresList, choreState]);
 
   // Polling Apps Script webhook endpoint pro nové eventy
-  const hueLastTsRef = useRef(null); // ISO timestamp posledního zpracovaného eventu
+  // v32: použijeme refs aby se polling NERESTARTOVAL při každém re-render
+  const hueLastTsRef = useRef(null);
+  const triggerHueActionRef = useRef(triggerHueAction);
+  const hueButtonsRef = useRef(hueButtons);
+  useEffect(() => { triggerHueActionRef.current = triggerHueAction; }, [triggerHueAction]);
+  useEffect(() => { hueButtonsRef.current = hueButtons; }, [hueButtons]);
+
   useEffect(() => {
     if (!effectiveHueWebhookUrl || !effectiveHueWebhookUrl.trim()) return;
     const url = effectiveHueWebhookUrl.trim();
@@ -1275,35 +1281,32 @@ function App() {
         if (!res.ok) return;
         const events = await res.json();
         if (!Array.isArray(events) || events.length === 0) return;
-        // Eventy přicházejí newest-first; obrátíme pro zpracování chronologicky
         const ordered = [...events].sort((a,b) => (a.ts || '').localeCompare(b.ts || ''));
         let latestTs = hueLastTsRef.current;
         for (const ev of ordered) {
           if (!ev || !ev.key || !ev.ts) continue;
           if (hueLastTsRef.current && ev.ts <= hueLastTsRef.current) continue;
-          // Najdi konfigurovanou akci pro tento klíč
-          const btn = hueButtons.find(b => b.key === ev.key);
+          const btn = hueButtonsRef.current.find(b => b.key === ev.key);
           if (btn && btn.action) {
-            triggerHueAction(btn.action, btn.label || ev.key);
+            triggerHueActionRef.current(btn.action, btn.label || ev.key);
           }
-          // Přidej do diagnostiky (max 10)
-          setHueEvents(prev => [{ ts: ev.ts, key: ev.key, label: btn ? btn.label : '(nepřiřazeno)' }, ...prev].slice(0, 10));
+          setHueEvents(prev => [{ ts: ev.ts, key: ev.key, label: btn ? (btn.label || btn.key) : '(nepřiřazeno)' }, ...prev].slice(0, 10));
           if (!latestTs || ev.ts > latestTs) latestTs = ev.ts;
         }
         if (latestTs) hueLastTsRef.current = latestTs;
         setHueLastError(null);
       } catch (e) {
-        // Tichá chyba aby nezahltit
+        // tichá chyba
       }
     };
-    // První tick: zjisti aktuální nejnovější timestamp aby se nepustil event z minulosti
+    // První tick: zjisti aktuální stav. Pouze pokud ref ještě není inicializován (první mount).
     const init = async () => {
+      if (hueLastTsRef.current) return; // už jsme byli inicializováni
       try {
         const sep = url.includes('?') ? '&' : '?';
         const res = await fetch(url + sep + 'action=events');
         const events = await res.json();
         if (Array.isArray(events) && events.length > 0) {
-          // Nastav lastTs na nejnovější (aby se znova nepouštěly staré eventy)
           hueLastTsRef.current = events[0].ts;
         } else {
           hueLastTsRef.current = new Date().toISOString();
@@ -1316,7 +1319,7 @@ function App() {
     init();
     const id = setInterval(tick, 3000);
     return () => { cancelled = true; clearInterval(id); };
-  }, [effectiveHueWebhookUrl, hueButtons, triggerHueAction]);
+  }, [effectiveHueWebhookUrl]); // VÝHRADNĚ jen URL - nepřipojovat hueButtons ani triggerHueAction
 
 
   const fetchGcal = useCallback(async (force) => {
@@ -5006,8 +5009,8 @@ function App() {
                   </div>
 
                   <div style={{ background:'#fff', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
-                    <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'#1a1530' }}>Verze: Domácí pomocník v31</div>
-                    <div style={{ fontSize:12, color:'#9a96ac', marginTop:4 }}>Build 2026-06-21 · 12:50</div>
+                    <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'#1a1530' }}>Verze: Domácí pomocník v32</div>
+                    <div style={{ fontSize:12, color:'#9a96ac', marginTop:4 }}>Build 2026-06-21 · 13:03</div>
                   </div>
                 </div>
                 )}
