@@ -852,6 +852,8 @@ function App() {
   }, [isMobile]);
   const [parentLocked, setParentLocked] = useState(true);
   const [parentTab, setParentTab] = useState('body');
+  // v42: sub-záložky v Nastavení (rozdělené karty pro lepší přehlednost)
+  const [settingsSubTab, setSettingsSubTab] = useState('hlavni');
   const [editRoutine, setEditRoutine] = useState('morning');
   const [pin, setPin] = useState('');
   const [rozvrhDay, setRozvrhDay] = useState(0);
@@ -867,6 +869,9 @@ function App() {
   // form fields
   const [newRewardName, setNewRewardName] = useState('');
   const [newRewardCost, setNewRewardCost] = useState('');
+  // v42: emoji + foto pro novou odměnu
+  const [newRewardEmoji, setNewRewardEmoji] = useState('🎁');
+  const [newRewardPhoto, setNewRewardPhoto] = useState(''); // dataURL nebo prázdné
   const [newChallengeText, setNewChallengeText] = useState('');
   const [newPraiseText, setNewPraiseText] = useState('');
 
@@ -1919,9 +1924,12 @@ function App() {
     const cost = parseInt(newRewardCost, 10);
     if (!name || !cost || cost < 1) { audio.undo(); showToast('Vyplň název i cenu', '✏️'); return; }
     audio.coin();
-    setShopItems(s => [...s, { id:'r'+Date.now(), emoji:'🎁', t:name, cost }]);
+    const newItem = { id:'r'+Date.now(), emoji: newRewardEmoji || '🎁', t:name, cost };
+    if (newRewardPhoto) newItem.photo = newRewardPhoto;
+    setShopItems(s => [...s, newItem]);
     setNewRewardName(''); setNewRewardCost('');
-    showToast('Odměna přidána', '🎁');
+    setNewRewardEmoji('🎁'); setNewRewardPhoto('');
+    showToast('Odměna přidána', newRewardEmoji || '🎁');
   };
   const deleteReward = (id) => { audio.tap(); setShopItems(s => s.filter(x => x.id !== id)); };
   const addChallenge = () => {
@@ -3576,13 +3584,23 @@ function App() {
                       <span>{unlocked ? 'TVOJE' : r.cost}</span>
                     </div>
 
-                    <div style={{
-                      fontSize: 64,
-                      textAlign:'center',
-                      margin:'14px 0 8px',
-                      lineHeight: 1,
-                      filter: locked ? 'grayscale(0.6)' : 'none'
-                    }}>{r.emoji}</div>
+                    {r.photo ? (
+                      <div style={{
+                        width: 96, height: 96, borderRadius: 16,
+                        background: `url(${r.photo}) center/cover`,
+                        margin:'14px auto 8px',
+                        boxShadow: '0 4px 12px rgba(0,0,0,.15)',
+                        filter: locked ? 'grayscale(0.6)' : 'none'
+                      }}/>
+                    ) : (
+                      <div style={{
+                        fontSize: 64,
+                        textAlign:'center',
+                        margin:'14px 0 8px',
+                        lineHeight: 1,
+                        filter: locked ? 'grayscale(0.6)' : 'none'
+                      }}>{r.emoji}</div>
+                    )}
 
                     <div style={{
                       textAlign:'center',
@@ -4521,17 +4539,80 @@ function App() {
                     <div style={{ fontFamily:'var(--display)', fontSize:18, fontWeight:600, color:'#1a1530', marginBottom:8 }}>Odměny v obchůdku</div>
                     {shopAdmin.map((r) => (
                       <div key={r.id} style={{ display:'flex', alignItems:'center', gap:10, padding:'9px 2px', borderBottom:'1px solid #f0f0f5' }}>
-                        <div style={{ fontSize:24 }}>{r.emoji}</div>
+                        {r.photo ? (
+                          <div style={{ width:40, height:40, borderRadius:10, background:`url(${r.photo}) center/cover`, border:'1px solid #e6e6ec', flex:'none' }}/>
+                        ) : (
+                          <div style={{ width:40, height:40, borderRadius:10, background:'#f0f0f7', display:'flex', alignItems:'center', justifyContent:'center', fontSize:24, flex:'none' }}>{r.emoji}</div>
+                        )}
                         <div style={{ flex:1, fontFamily:'var(--display)', fontSize:15, fontWeight:500, color:'#1a1530' }}>{r.t}</div>
                         <div style={{ fontFamily:'var(--display)', fontWeight:600, color:'var(--accent)', fontSize:15 }}>{r.cost} ⭐</div>
                         <div onClick={() => deleteReward(r.id)} style={{ cursor:'pointer', width:28, height:28, borderRadius:8, background:'#fdeaea', color:'#e23', display:'flex', alignItems:'center', justifyContent:'center', fontWeight:800 }}>✕</div>
                       </div>
                     ))}
-                    <div style={{ display:'flex', gap:8, marginTop:12 }}>
-                      <input value={newRewardName} onChange={(e) => setNewRewardName(e.target.value)} placeholder="Název odměny" style={{ flex:1, minWidth:0, border:'1px solid #e3e3ea', borderRadius:11, padding:'11px 12px', fontFamily:'Nunito Sans', fontSize:14, fontWeight:700, color:'#1a1530', outline:'none' }}/>
-                      <input value={newRewardCost} onChange={(e) => setNewRewardCost(e.target.value)} placeholder="Body" inputMode="numeric" style={{ width:68, border:'1px solid #e3e3ea', borderRadius:11, padding:'11px 10px', fontFamily:'Nunito Sans', fontSize:14, fontWeight:700, color:'#1a1530', outline:'none', textAlign:'center' }}/>
+
+                    {/* v42: Form pro novou odměnu - emoji + foto + název + cena */}
+                    <div style={{ marginTop:14, padding:'13px 12px', background:'#fafafe', borderRadius:14, border:'1px dashed #e3e3ea' }}>
+                      <div style={{ fontSize:12, fontWeight:800, color:'#5a566e', marginBottom:9 }}>Přidat novou odměnu</div>
+
+                      {/* Náhled emoji nebo foto */}
+                      <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:10 }}>
+                        {newRewardPhoto ? (
+                          <div style={{ width:56, height:56, borderRadius:12, background:`url(${newRewardPhoto}) center/cover`, border:'2px solid var(--accent)', flex:'none' }}/>
+                        ) : (
+                          <div style={{ width:56, height:56, borderRadius:12, background:'#fff', display:'flex', alignItems:'center', justifyContent:'center', fontSize:32, flex:'none', border:'2px solid #e6e6ec' }}>{newRewardEmoji}</div>
+                        )}
+                        <div style={{ flex:1, display:'flex', flexDirection:'column', gap:6 }}>
+                          <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
+                            {['🎁','🍫','🍬','🎮','🎬','📚','🚗','🧸','⚽','🍕','🍦','🎨','🎵','📱','🛍️','🎯','🏆','🌟'].map(em => (
+                              <div key={em} onClick={() => { setNewRewardEmoji(em); setNewRewardPhoto(''); }} style={{
+                                cursor:'pointer', width:32, height:32, borderRadius:8,
+                                display:'flex', alignItems:'center', justifyContent:'center', fontSize:18,
+                                background: (newRewardEmoji === em && !newRewardPhoto) ? 'var(--accent)' : '#fff',
+                                border: (newRewardEmoji === em && !newRewardPhoto) ? '2px solid var(--accent)' : '1px solid #e6e6ec'
+                              }}>{em}</div>
+                            ))}
+                          </div>
+                          <div style={{ display:'flex', gap:8, alignItems:'center' }}>
+                            <input value={newRewardEmoji} onChange={(e) => { setNewRewardEmoji(e.target.value); setNewRewardPhoto(''); }} placeholder="Vlastní emoji" maxLength={2} style={{ width:90, border:'1px solid #e3e3ea', borderRadius:10, padding:'7px 10px', fontSize:16, textAlign:'center' }} />
+                            <label style={{ cursor:'pointer', flex:1, background:'#eef4ff', color:'var(--accent)', borderRadius:10, padding:'7px 10px', textAlign:'center', fontWeight:800, fontSize:12 }}>
+                              {newRewardPhoto ? '📷 Změnit foto' : '📷 Nahrát foto'}
+                              <input type="file" accept="image/*" style={{ display:'none' }} onChange={(e) => {
+                                const file = e.target.files && e.target.files[0];
+                                if (!file) return;
+                                if (file.size > 2 * 1024 * 1024) { showToast('Foto je moc velké (max 2 MB)', '⚠'); return; }
+                                const reader = new FileReader();
+                                reader.onload = () => {
+                                  // Zmenši obrázek na max 200×200 přes canvas
+                                  const img = new Image();
+                                  img.onload = () => {
+                                    const canvas = document.createElement('canvas');
+                                    const maxSize = 200;
+                                    let w = img.width, h = img.height;
+                                    if (w > h) { if (w > maxSize) { h = h * maxSize / w; w = maxSize; } }
+                                    else { if (h > maxSize) { w = w * maxSize / h; h = maxSize; } }
+                                    canvas.width = w; canvas.height = h;
+                                    canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+                                    setNewRewardPhoto(canvas.toDataURL('image/jpeg', 0.85));
+                                  };
+                                  img.src = reader.result;
+                                };
+                                reader.readAsDataURL(file);
+                                e.target.value = '';
+                              }} />
+                            </label>
+                            {newRewardPhoto && (
+                              <div onClick={() => setNewRewardPhoto('')} style={{ cursor:'pointer', background:'#fdeaea', color:'#e23', borderRadius:8, padding:'7px 9px', fontWeight:800, fontSize:11 }}>✕ Foto</div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div style={{ display:'flex', gap:8 }}>
+                        <input value={newRewardName} onChange={(e) => setNewRewardName(e.target.value)} placeholder="Název odměny" style={{ flex:1, minWidth:0, border:'1px solid #e3e3ea', borderRadius:11, padding:'11px 12px', fontFamily:'Nunito Sans', fontSize:14, fontWeight:700, color:'#1a1530', outline:'none' }}/>
+                        <input value={newRewardCost} onChange={(e) => setNewRewardCost(e.target.value)} placeholder="Body" inputMode="numeric" style={{ width:68, border:'1px solid #e3e3ea', borderRadius:11, padding:'11px 10px', fontFamily:'Nunito Sans', fontSize:14, fontWeight:700, color:'#1a1530', outline:'none', textAlign:'center' }}/>
+                      </div>
+                      <div onClick={addReward} style={{ cursor:'pointer', textAlign:'center', marginTop:9, background:'linear-gradient(135deg,var(--accent),var(--accent2))', color:'#fff', fontFamily:'var(--display)', fontWeight:600, fontSize:15, padding:11, borderRadius:13 }}>+ Přidat odměnu</div>
                     </div>
-                    <div onClick={addReward} style={{ cursor:'pointer', textAlign:'center', marginTop:9, background:'linear-gradient(135deg,var(--accent),var(--accent2))', color:'#fff', fontFamily:'var(--display)', fontWeight:600, fontSize:15, padding:11, borderRadius:13 }}>+ Přidat odměnu</div>
                   </div>
                   <div style={{ background:'#fff', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
                     <div style={{ fontFamily:'var(--display)', fontSize:18, fontWeight:600, color:'#1a1530' }}>Výzvy týdne 🏆</div>
@@ -4913,6 +4994,31 @@ function App() {
                 {parentTab === 'nastav' && (
                 <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
 
+                  {/* v42: Sub-záložky uvnitř Nastavení */}
+                  <div style={{ display:'flex', gap:6, overflowX:'auto', padding:'2px 0', WebkitOverflowScrolling:'touch' }}>
+                    {[
+                      {id:'hlavni', icon:'💾', label:'Záloha & Reset'},
+                      {id:'dite', icon:'👶', label:'Dítě & PIN'},
+                      {id:'vzhled', icon:'🎨', label:'Vzhled'},
+                      {id:'zvuk', icon:'🔊', label:'Zvuk & Hlas'},
+                      {id:'hue', icon:'🔘', label:'Hue tlačítka'},
+                      {id:'sync', icon:'🔄', label:'Synchronizace'},
+                    ].map(t => (
+                      <div key={t.id} onClick={() => { audio.tap(); setSettingsSubTab(t.id); }} style={{
+                        cursor:'pointer',
+                        padding:'9px 14px',
+                        borderRadius:14,
+                        background: settingsSubTab === t.id ? 'var(--accent)' : '#f0f0f7',
+                        color: settingsSubTab === t.id ? '#fff' : '#5a566e',
+                        fontWeight:800,
+                        fontSize:12,
+                        whiteSpace:'nowrap',
+                        flex:'none'
+                      }}>{t.icon} {t.label}</div>
+                    ))}
+                  </div>
+
+                  {settingsSubTab === 'hlavni' && (<>
                   {/* v40: Záloha dat - export do JSON / import zpět */}
                   <div style={{ background:'linear-gradient(135deg, #dbeafe, #bfdbfe)', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)', border:'2px solid #3b82f6' }}>
                     <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:10 }}>
@@ -5069,7 +5175,9 @@ function App() {
                       </div>
                     </div>
                   </div>
+                  </>)}
 
+                  {settingsSubTab === 'dite' && (<>
                   <div style={{ background:'#fff', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
                     <div style={{ fontFamily:'var(--display)', fontSize:18, fontWeight:600, color:'#1a1530', marginBottom:10 }}>Dítě 👧🧒</div>
                     <div style={{ fontSize:13, fontWeight:700, color:'#5a566e', marginBottom:8 }}>Jméno dítěte</div>
@@ -5114,20 +5222,26 @@ function App() {
                       </div>
                     </div>
                   </div>
+                  </>)}
 
+                  {settingsSubTab === 'vzhled' && (<>
                   <div style={{ background:'#fff', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
                     <div style={{ fontFamily:'var(--display)', fontSize:18, fontWeight:600, color:'#1a1530', marginBottom:10 }}>Maskot 🦊</div>
                     <div style={{ fontSize:13, fontWeight:700, color:'#5a566e', marginBottom:8 }}>Jméno maskota</div>
                     <input value={mascotName} onChange={(e) => setMascotName(e.target.value || 'Riki')} style={{ width:'100%', border:'1px solid #e6e6ec', borderRadius:12, padding:'10px 12px', fontSize:14 }} />
                   </div>
+                  </>)}
 
+                  {settingsSubTab === 'dite' && (<>
                   <div style={{ background:'#fff', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
                     <div style={{ fontFamily:'var(--display)', fontSize:18, fontWeight:600, color:'#1a1530', marginBottom:10 }}>PIN rodičovský 🔒</div>
                     <div style={{ fontSize:13, fontWeight:700, color:'#5a566e', marginBottom:8 }}>4 číslice (aktuální: {parentPin})</div>
                     <input value={parentPin} onChange={(e) => { const v = e.target.value.replace(/\D/g,'').slice(0,4); if (v.length === 4) setParentPin(v); else if (v.length < 4) setParentPin(v); }} inputMode="numeric" maxLength={4} placeholder="1234" style={{ width:'100%', border:'1px solid #e6e6ec', borderRadius:12, padding:'10px 12px', fontSize:18, fontFamily:'monospace', letterSpacing:'.4em', textAlign:'center' }} />
                     <div style={{ fontSize:11, color:'#9a96ac', marginTop:6 }}>Pokud zapomeneš, smaž data v prohlížeči (Chrome: F12 → Application → Local Storage → smazat).</div>
                   </div>
+                  </>)}
 
+                  {settingsSubTab === 'zvuk' && (<>
                   <div style={{ background:'#fff', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
                     <div style={{ fontFamily:'var(--display)', fontSize:18, fontWeight:600, color:'#1a1530', marginBottom:10 }}>Zvuk a hlas 🔊</div>
                     <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'8px 0' }}>
@@ -5150,7 +5264,9 @@ function App() {
                     </div>
                     <div onClick={() => tts.speak('test', 'Ahoj, já jsem ' + mascotName + '. Jsem ráda, že jsme spolu.')} style={{ cursor:'pointer', marginTop:10, background:'#eef4ff', color:'var(--accent)', borderRadius:12, padding:'10px 12px', textAlign:'center', fontSize:13, fontWeight:800 }}>🔊 Otestovat hlas</div>
                   </div>
+                  </>)}
 
+                  {settingsSubTab === 'hue' && (<>
                   {/* v28+v29: Webhook tlačítka (Apple Home → Apps Script → app) */}
                   <div style={{ background:'linear-gradient(135deg, #ddd6fe, #c4b5fd)', borderRadius:20, padding:showHuePanel ? 16 : 12, boxShadow:'0 4px 16px rgba(20,16,40,.06)', border:'2px solid #7c3aed' }}>
                     <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom: showHuePanel ? 10 : 0 }}>
@@ -5307,7 +5423,9 @@ function App() {
                       </React.Fragment>
                     )}
                   </div>
+                  </>)}
 
+                  {settingsSubTab === 'zvuk' && (<>
                   {/* v17+v24+v25: Hlasové vzkazy ElevenLabs - rozklikávací s test tlačítkem */}
                   <div style={{ background:'linear-gradient(135deg, #fef3c7, #fde68a)', borderRadius:20, padding:showVoicePanel ? 16 : 12, boxShadow:'0 4px 16px rgba(20,16,40,.06)', border:'2px solid #f59e0b' }}>
                     <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom: showVoicePanel ? 6 : 0 }}>
@@ -5451,7 +5569,9 @@ function App() {
                       </React.Fragment>
                     )}
                   </div>
+                  </>)}
 
+                  {settingsSubTab === 'vzhled' && (<>
                   <div style={{ background:'#fff', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
                     <div style={{ fontFamily:'var(--display)', fontSize:18, fontWeight:600, color:'#1a1530', marginBottom:10 }}>Noční režim 🌙</div>
                     <div style={{ fontSize:13, fontWeight:700, color:'#5a566e', marginBottom:6 }}>Od kdy spát (večerka) — klepni a vyber čas</div>
@@ -5466,7 +5586,9 @@ function App() {
                     </label>
                     <div style={{ fontSize:12, color:'#9a96ac', marginTop:10, lineHeight:1.4 }}>V tomto okně se obrazovka ztmaví a {mascotName} spí.</div>
                   </div>
+                  </>)}
 
+                  {settingsSubTab === 'sync' && (<>
                   {/* v7: Synchronizace */}
                   <div style={{ background:'#fff', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
                     <div style={{ fontFamily:'var(--display)', fontSize:18, fontWeight:600, color:'#1a1530', marginBottom:10, display:'flex', alignItems:'center', gap:8 }}>
@@ -5567,10 +5689,12 @@ function App() {
                       <div onClick={resetAllData} style={{ cursor:'pointer', background:'#fee2e2', color:'#991b1b', borderRadius:12, padding:'12px 14px', fontWeight:800, fontSize:14, textAlign:'center' }}>🗑️ Smazat všechna data</div>
                     </div>
                   </div>
+                  </>)}
 
+                  {/* Verze (vždy zobrazeno) */}
                   <div style={{ background:'#fff', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
-                    <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'#1a1530' }}>Verze: Domácí pomocník v41</div>
-                    <div style={{ fontSize:12, color:'#9a96ac', marginTop:4 }}>Build 2026-06-21 · 18:23</div>
+                    <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'#1a1530' }}>Verze: Domácí pomocník v42</div>
+                    <div style={{ fontSize:12, color:'#9a96ac', marginTop:4 }}>Build 2026-06-21 · 18:31</div>
                   </div>
                 </div>
                 )}
