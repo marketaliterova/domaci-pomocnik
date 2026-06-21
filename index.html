@@ -890,7 +890,7 @@ function App() {
   const [rikiDancing, setRikiDancing] = useState(false);
   const [parentPin, setParentPin] = useState((persisted && persisted.parentPin) || '1234');
   // v7 sync state
-  const [syncUrl, setSyncUrl] = useState((persisted && persisted.syncUrl) || '');
+  const [syncUrl, setSyncUrl] = useState((persisted && persisted.syncUrl) || 'https://script.google.com/macros/s/AKfycbxS4JjTqFljX1ndbzdhIubLKJDhJqr5nZryKkaztZu293jScRzoSdicL_JBbN4w9lWnmg/exec');
   const [syncStatus, setSyncStatus] = useState('idle'); // idle | syncing | ok | error | disabled
   const [lastSyncTime, setLastSyncTime] = useState(persisted && persisted.lastSyncTime || null);
   const [syncError, setSyncError] = useState(null);
@@ -5006,8 +5006,8 @@ function App() {
                   </div>
 
                   <div style={{ background:'#fff', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
-                    <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'#1a1530' }}>Verze: Domácí pomocník v30</div>
-                    <div style={{ fontSize:12, color:'#9a96ac', marginTop:4 }}>Build 2026-06-21 · 12:46</div>
+                    <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'#1a1530' }}>Verze: Domácí pomocník v31</div>
+                    <div style={{ fontSize:12, color:'#9a96ac', marginTop:4 }}>Build 2026-06-21 · 12:50</div>
                   </div>
                 </div>
                 )}
