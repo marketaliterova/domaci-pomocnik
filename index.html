@@ -1253,9 +1253,11 @@ function App() {
   }, []);
 
   const voiceAudioRef = useRef(null);
-  // v25: stav last play error pro diagnostiku
+  // v25+v26: stav last play + playing flag pro detailed diagnostiku
   const [voiceLastError, setVoiceLastError] = useState(null);
   const [voiceLastUrl, setVoiceLastUrl] = useState(null);
+  const [voiceState, setVoiceState] = useState(null); // 'loading'|'playing'|'done'|'error'
+  const [voiceDuration, setVoiceDuration] = useState(null);
   // v25: audio unlocked flag - po prvním user gesture
   const audioUnlockedRef = useRef(false);
 
@@ -1303,25 +1305,33 @@ function App() {
             a.volume = 0.95;
             voiceAudioRef.current = a;
             setVoiceLastUrl(url);
+            setVoiceState('loading');
+            setVoiceLastError(null);
             // v25: error handler na audio element pro 404/dekódování
             a.onerror = (e) => {
               const code = a.error ? a.error.code : '?';
-              const msg = `Audio error (code ${code}): ${url}`;
+              const codeMap = {1:'ABORTED', 2:'NETWORK', 3:'DECODE', 4:'NOT_SUPPORTED/404'};
+              const msg = `Audio error (code ${code} = ${codeMap[code]||'?'}): ${url}`;
               console.warn(msg, e);
               setVoiceLastError(msg);
+              setVoiceState('error');
               if (ttsOn && fallbackText) tts.speak(eventId, fallbackText);
             };
+            a.onloadedmetadata = () => {
+              setVoiceDuration(a.duration);
+            };
+            a.onplaying = () => { setVoiceState('playing'); setVoiceLastError(null); };
+            a.onended = () => { setVoiceState('done'); };
             const playPromise = a.play();
             if (playPromise && playPromise.catch) {
               playPromise.catch((err) => {
                 const msg = `Play blocked: ${err && err.name} - ${err && err.message} (${url})`;
                 console.warn(msg);
                 setVoiceLastError(msg);
+                setVoiceState('error');
                 if (ttsOn && fallbackText) tts.speak(eventId, fallbackText);
               });
             }
-            // Pri úspěchu vyčistíme error
-            a.onplaying = () => setVoiceLastError(null);
             return;
           } catch(e) {
             const msg = `Audio exception: ${e.message} (${url})`;
@@ -4474,13 +4484,56 @@ function App() {
                       </div>
                     </div>
 
-                    {/* v25: Diagnostika - vidíme stav posledního přehrání */}
+                    {/* v26: Detailní diagnostika + alternativní testy */}
                     {(voiceLastUrl || voiceLastError) && (
-                      <div style={{ background: voiceLastError ? '#fef2f2' : '#f0fdf4', border: '1px solid '+(voiceLastError ? '#fca5a5' : '#86efac'), borderRadius:10, padding:'8px 11px', marginTop: showVoicePanel ? 8 : 8, fontSize:11, fontFamily:'monospace', color: voiceLastError ? '#991b1b' : '#166534', wordBreak:'break-all', lineHeight:1.4 }}>
-                        <div style={{ fontWeight:900, marginBottom:2 }}>{voiceLastError ? '❌ Chyba:' : '✓ Naposledy:'}</div>
-                        {voiceLastError || voiceLastUrl}
+                      <div style={{ background: voiceState === 'error' ? '#fef2f2' : voiceState === 'playing' ? '#dbeafe' : '#f0fdf4', border: '1px solid '+(voiceState === 'error' ? '#fca5a5' : voiceState === 'playing' ? '#93c5fd' : '#86efac'), borderRadius:10, padding:'10px 12px', marginTop: 8, fontSize:11, fontFamily:'monospace', color: voiceState === 'error' ? '#991b1b' : '#1e293b', wordBreak:'break-all', lineHeight:1.5 }}>
+                        <div style={{ fontWeight:900, marginBottom:3, fontSize:12 }}>
+                          {voiceState === 'loading' && '⏳ Načítám...'}
+                          {voiceState === 'playing' && '🎵 PRÁVĚ HRAJE'}
+                          {voiceState === 'done' && '✓ Dohráno (slyšela jsi to?)'}
+                          {voiceState === 'error' && '❌ Chyba'}
+                          {!voiceState && '📡 URL nastavena'}
+                        </div>
+                        <div>{voiceLastError || voiceLastUrl}</div>
+                        {voiceDuration && !voiceLastError && (
+                          <div style={{ marginTop:3, color:'#64748b' }}>Délka: {voiceDuration.toFixed(1)}s</div>
+                        )}
                       </div>
                     )}
+
+                    {/* v26: 3 testovací tlačítka - vidíme rozdíl mezi typy zvuku */}
+                    <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:6, marginTop:8 }}>
+                      <div onClick={(e) => {
+                        e.stopPropagation();
+                        audioUnlockedRef.current = true;
+                        audio.tap();
+                      }} style={{ cursor:'pointer', background:'#fff', border:'1px solid #f59e0b', borderRadius:8, padding:'8px 4px', textAlign:'center', fontSize:10, fontWeight:800, color:'#92400e' }}>1. Tap (Web Audio)</div>
+                      <div onClick={(e) => {
+                        e.stopPropagation();
+                        audioUnlockedRef.current = true;
+                        if (window.speechSynthesis) {
+                          const u = new SpeechSynthesisUtterance('Ahoj, toto je robotický hlas, slyšíš mě?');
+                          u.lang = 'cs-CZ';
+                          window.speechSynthesis.speak(u);
+                        }
+                      }} style={{ cursor:'pointer', background:'#fff', border:'1px solid #f59e0b', borderRadius:8, padding:'8px 4px', textAlign:'center', fontSize:10, fontWeight:800, color:'#92400e' }}>2. TTS (robot)</div>
+                      <div onClick={(e) => {
+                        e.stopPropagation();
+                        audioUnlockedRef.current = true;
+                        // přímý Audio() bez všeho navíc, testujeme jen MP3 přehrání
+                        try {
+                          const a = new Audio('voices/morning.mp3');
+                          a.volume = 1.0;
+                          setVoiceLastUrl('voices/morning.mp3 (direct test)');
+                          setVoiceState('loading');
+                          setVoiceLastError(null);
+                          a.onplaying = () => setVoiceState('playing');
+                          a.onended = () => setVoiceState('done');
+                          a.onerror = () => { setVoiceState('error'); setVoiceLastError('Direct test: chyba načtení voices/morning.mp3'); };
+                          a.play().catch(err => { setVoiceState('error'); setVoiceLastError('Direct test blocked: ' + err.message); });
+                        } catch(e) { setVoiceLastError(e.message); }
+                      }} style={{ cursor:'pointer', background:'#16a34a', color:'#fff', border:'1px solid #15803d', borderRadius:8, padding:'8px 4px', textAlign:'center', fontSize:10, fontWeight:900 }}>3. MP3 direct</div>
+                    </div>
 
                     {showVoicePanel && (
                       <React.Fragment>
@@ -4666,8 +4719,8 @@ function App() {
                   </div>
 
                   <div style={{ background:'#fff', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
-                    <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'#1a1530' }}>Verze: Domácí pomocník v25</div>
-                    <div style={{ fontSize:12, color:'#9a96ac', marginTop:4 }}>Build 2026-06-21 · 08:26</div>
+                    <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'#1a1530' }}>Verze: Domácí pomocník v26</div>
+                    <div style={{ fontSize:12, color:'#9a96ac', marginTop:4 }}>Build 2026-06-21 · 08:34</div>
                   </div>
                 </div>
                 )}
