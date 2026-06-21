@@ -284,6 +284,50 @@ function getBossForWeek(weekId) {
   return BOSS_ROSTER[Math.abs(hash) % BOSS_ROSTER.length];
 }
 
+// ====================================================================
+// v17: HLASOVÉ VZKAZY (ElevenLabs MP3)
+// ====================================================================
+// Seznam eventů kde můžeš vlepit URL na MP3 (např. voices/hello.mp3)
+// Když je URL nastavená, přehraje se místo Web Speech robota.
+const VOICE_EVENTS = [
+  { id:'hello',          group:'Pozdravy',  label:'Pozdrav',            example:'"Ahoj! Tak co dneska? Jdeme na to."' },
+  { id:'morning',        group:'Pozdravy',  label:'Dobré ráno',          example:'"Dobré ráno, Tobiku!"' },
+  { id:'evening',        group:'Pozdravy',  label:'Dobrý večer',         example:'"Dobrý večer, Tobiku!"' },
+  { id:'routineStart',   group:'Rutina',    label:'Start rutiny',        example:'"Pojď, dáme to spolu."' },
+  { id:'stepDone',       group:'Rutina',    label:'Splnění kroku',       example:'"Super, jdeme dál."' },
+  { id:'routineDone',    group:'Rutina',    label:'Hotová rutina',       example:'"Hotovo! Tak to byla parádní práce."' },
+  { id:'teethTime',      group:'Rutina',    label:'Připomínka zubů',     example:'"Pojď si vyčistit zoubky."' },
+  { id:'streak',         group:'Rutina',    label:'Série úspěchů',       example:'"Sedmidenní série! Ty jsi fakt borec."' },
+  { id:'goodNight',      group:'Noc',       label:'Dobrou noc',          example:'"Dobrou noc, ať se ti hezky spí."' },
+  { id:'petSleep',       group:'Tamagotchi',label:'Riki jde spát',       example:'"Dobrou noc, vrátím se až přijdeš zpátky."' },
+  { id:'petWake',        group:'Tamagotchi',label:'Riki se probudil',    example:'"Ahoj, už jsi zpátky!"' },
+  { id:'questComplete',  group:'Hero Quest',label:'QUEST COMPLETE',      example:'"Quest hotový, hrdino!"' },
+  { id:'lootCommon',     group:'Hero Quest',label:'Padl běžný předmět',  example:'"Něco ti padlo do truhly."' },
+  { id:'lootRare',       group:'Hero Quest',label:'Padl vzácný předmět', example:'"Vzácný předmět! Páni."' },
+  { id:'lootEpic',       group:'Hero Quest',label:'Padl epický předmět', example:'"Epický loot, ty se máš!"' },
+  { id:'lootLegendary',  group:'Hero Quest',label:'LEGENDÁRNÍ',          example:'"LEGENDA! To se nestává každý den!"' },
+  { id:'bossDefeated',   group:'Hero Quest',label:'Boss poražen',        example:'"Boss padl! Sto bodů pro tebe!"' },
+  { id:'moodPrompt',     group:'Ostatní',   label:'Otázka na náladu',    example:'"Jak ti dneska je? Posuň čudlík."' },
+  { id:'shopBuy',        group:'Ostatní',   label:'Žádost o odměnu',     example:'"Žádost odeslána rodiči!"' },
+  { id:'shopApproved',   group:'Ostatní',   label:'Odměna schválena',    example:'"Máma ti odměnu schválila! Vyzvedni si ji."' },
+  { id:'choreApproved',  group:'Ostatní',   label:'Úkol schválen',       example:'"Skvělé! Body jsou tvoje."' },
+];
+
+// v17: Plánovaný den - milníky pro vizuální timeline (Time Timer + TEACCH)
+const DAY_BLUEPRINT = [
+  { id:'wake',      time:'06:30', emoji:'🛏️', label:'vstávat' },
+  { id:'breakfast', time:'07:00', emoji:'🥣', label:'snídaně' },
+  { id:'school-go', time:'07:50', emoji:'🚌', label:'do školy' },
+  { id:'school',    time:'08:00', emoji:'📚', label:'škola' },
+  { id:'lunch',     time:'12:30', emoji:'🍝', label:'oběd' },
+  { id:'home',      time:'15:30', emoji:'🏠', label:'domů' },
+  { id:'free',      time:'16:00', emoji:'🎮', label:'volno' },
+  { id:'dinner',    time:'18:00', emoji:'🍽️', label:'večeře' },
+  { id:'shower',    time:'19:00', emoji:'🛀', label:'koupel' },
+  { id:'read',      time:'19:45', emoji:'📖', label:'čtení' },
+  { id:'sleep',     time:'20:30', emoji:'😴', label:'spát' },
+];
+
 // Návrh oblečení podle teploty
 // rainProb = 0-1 (jen pokud opravdu prší — práh 60%)
 // wind = km/h
@@ -381,6 +425,8 @@ const saveState = (s) => {
       // v15
       lastDayKey: s.lastDayKey, gcalUrl: s.gcalUrl, gcalEvents: s.gcalEvents, gcalLastFetch: s.gcalLastFetch,
       whoHomeSchedule: s.whoHomeSchedule,
+      // v17
+      voiceMap: s.voiceMap, voiceBaseUrl: s.voiceBaseUrl,
     };
     localStorage.setItem(LS_KEY, JSON.stringify(persistable));
   } catch(e) {}
@@ -776,6 +822,9 @@ function App() {
   const [gcalLastFetch, setGcalLastFetch] = useState((persisted && persisted.gcalLastFetch) || 0);
   // whoHomeSchedule: 7 položek (0=Pondělí ... 6=Neděle), hodnoty 'mama'|'tata'|'oba'|'sam'|'babi'|'deda'
   const [whoHomeSchedule, setWhoHomeSchedule] = useState((persisted && Array.isArray(persisted.whoHomeSchedule) && persisted.whoHomeSchedule.length === 7) ? persisted.whoHomeSchedule : ['mama','mama','mama','mama','mama','mama','mama']);
+  // v17: hlasové vzkazy (mapování event id → URL na MP3)
+  const [voiceMap, setVoiceMap] = useState((persisted && persisted.voiceMap && typeof persisted.voiceMap === 'object') ? persisted.voiceMap : {});
+  const [voiceBaseUrl, setVoiceBaseUrl] = useState((persisted && persisted.voiceBaseUrl) || ''); // např. "voices/" pokud chce relativní cestu
   // v8 step timer (časovač pro děti s časovou slepotou)
   const [currentStepStart, setCurrentStepStart] = useState(null); // timestamp začátku aktuálního kroku
   const [nowTick, setNowTick] = useState(Date.now()); // pro re-render každou vteřinu
@@ -832,6 +881,7 @@ function App() {
       petMood, petEnergy, petSleeping, petLastDecay,
       inventory, bossState,
       lastDayKey, gcalUrl, gcalEvents, gcalLastFetch, whoHomeSchedule,
+      voiceMap, voiceBaseUrl,
     });
   }, [theme, points, totalXp, streak, morning, evening, doneM, doneE, whoHome, departMin,
       shopItems, shopState, choreState, pendingApprovals, packState, packAwarded,
@@ -843,7 +893,8 @@ function App() {
       syncUrl, lastSyncTime,
       petMood, petEnergy, petSleeping, petLastDecay,
       inventory, bossState,
-      lastDayKey, gcalUrl, gcalEvents, gcalLastFetch, whoHomeSchedule]);
+      lastDayKey, gcalUrl, gcalEvents, gcalLastFetch, whoHomeSchedule,
+      voiceMap, voiceBaseUrl]);
 
   // --- helpers
   const tv = useMemo(() => THEMES[theme] || THEMES.cisto, [theme]);
@@ -879,7 +930,7 @@ function App() {
           confetti.fire({ n: 140 });
           audio.success();
           showToast(`${newCount} dní v řadě! 🔥`, '🔥');
-          tts.sayRandom('streak', RIKI_PHRASES.streak);
+          sayRikiVoice('streak', RIKI_PHRASES.streak);
         } else {
           showToast(`${newCount} dní v řadě 🔥`, '🔥');
         }
@@ -912,11 +963,11 @@ function App() {
       if (newSleep) {
         showToast(`${mascotName} jde spát 😴`, '💤');
         audio.undo();
-        if (ttsOn) tts.speak('pet-sleep', `Dobrou noc, vrátím se až přijdeš zpátky.`);
+        playVoice("petSleep", "Dobrou noc, vrátím se až přijdeš zpátky.");
       } else {
         showToast(`${mascotName} se probudil!`, '☀️');
         audio.ding();
-        if (ttsOn) tts.speak('pet-wake', `Ahoj, už jsi zpátky!`);
+        playVoice("petWake", "Ahoj, už jsi zpátky!");
         setPetLastDecay(Date.now());
       }
       return newSleep;
@@ -1061,6 +1112,57 @@ function App() {
   const todayDayIdx = (() => { const d = new Date(); return (d.getDay() + 6) % 7; })(); // 0=Po
   const whoHomeTodayKey = whoHomeSchedule[todayDayIdx] || whoHome || 'mama';
 
+  // ---------------------- v17: Hlasové vzkazy (ElevenLabs MP3) ----------------------
+  // Použijeme ref aby playVoice vždy četl aktuální voiceMap (i z útrob useCallback closures)
+  const voiceMapRef = useRef(voiceMap);
+  const voiceBaseRef = useRef(voiceBaseUrl);
+  useEffect(() => { voiceMapRef.current = voiceMap; }, [voiceMap]);
+  useEffect(() => { voiceBaseRef.current = voiceBaseUrl; }, [voiceBaseUrl]);
+
+  const resolveVoiceUrl = useCallback((rawUrl) => {
+    if (!rawUrl) return null;
+    const u = String(rawUrl).trim();
+    if (!u) return null;
+    if (/^https?:\/\//.test(u)) return u;
+    if (u.startsWith('/')) return u;
+    const base = (voiceBaseRef.current || '').trim();
+    if (!base) return u;
+    return base.endsWith('/') ? base + u : base + '/' + u;
+  }, []);
+
+  const voiceAudioRef = useRef(null);
+  const playVoice = useCallback((eventId, fallbackText) => {
+    if (!soundOn) return;
+    const rawUrl = voiceMapRef.current[eventId];
+    const url = resolveVoiceUrl(rawUrl);
+    if (url) {
+      try {
+        if (voiceAudioRef.current) {
+          try { voiceAudioRef.current.pause(); } catch(e) {}
+        }
+        const a = new Audio(url);
+        a.volume = 0.95;
+        voiceAudioRef.current = a;
+        const playPromise = a.play();
+        if (playPromise && playPromise.catch) {
+          playPromise.catch((err) => {
+            console.warn('Voice MP3 fail, fallback to TTS:', err);
+            if (ttsOn && fallbackText) tts.speak(eventId, fallbackText);
+          });
+        }
+        return;
+      } catch(e) {
+        console.warn('Voice playback error:', e);
+      }
+    }
+    if (ttsOn && fallbackText) tts.speak(eventId, fallbackText);
+  }, [soundOn, ttsOn, resolveVoiceUrl, tts]);
+
+  const sayRikiVoice = useCallback((eventId, phraseArr) => {
+    const pick = phraseArr && phraseArr.length ? phraseArr[Math.floor(Math.random()*phraseArr.length)] : '';
+    playVoice(eventId, pick);
+  }, [playVoice]);
+
   // Tamagotchi decay: 2 body za hodinu (pomalu), když spí tak nic
   useEffect(() => {
     const tick = () => {
@@ -1111,9 +1213,9 @@ function App() {
       feedPet(15, 20);
       setRikiDancing(true);
       setTimeout(() => setRikiDancing(false), 3000);
-      tts.sayRandom('routineDone', RIKI_PHRASES.routineDone);
+      sayRikiVoice('routineDone', RIKI_PHRASES.routineDone);
       const msg = showPraise();
-      if (msg) setTimeout(() => tts.speak('praise-spoken', msg), 1500);
+      if (msg) setTimeout(() => playVoice('praise', msg), 1500);
       // v14: floating QUEST COMPLETE bonus XP
       spawnFloatingXp(cx, cy - 80, '+30 XP', true);
       // v14: loot drop podle streaku
@@ -1141,7 +1243,7 @@ function App() {
       feedPet(2, 3);
       // v14: floating +10 XP přímo z místa kliknutí (přibližně, používáme pageY z eventu — bez ní centr)
       spawnFloatingXp(cx, cy, '+10 XP', false);
-      if (Math.random() < 0.35) tts.sayRandom('stepDone', RIKI_PHRASES.stepDone);
+      if (Math.random() < 0.35) sayRikiVoice('stepDone', RIKI_PHRASES.stepDone);
     }
   }, [morning, evening, doneM, doneE, audio, confetti, bumpStreak, tts, showPraise, feedPet, dropLoot, damageBoss, spawnFloatingXp, streakDays, showToast]);
 
@@ -1825,6 +1927,13 @@ function App() {
     return () => clearInterval(id);
   }, [screen]);
 
+  // v17: Pomalejší tick pro home (hodiny + timeline) - každých 20s stačí
+  useEffect(() => {
+    if (screen !== 'home') return;
+    const id = setInterval(() => setNowTick(Date.now()), 20 * 1000);
+    return () => clearInterval(id);
+  }, [screen]);
+
   // Hesla a funkce které ze stavu sestavují snapshot na server.
   const buildSnapshot = useCallback(() => ({
     points, totalXp,
@@ -1911,6 +2020,8 @@ function App() {
     if (isArr(s.gcalEvents)) setGcalEvents(s.gcalEvents);
     if (isNum(s.gcalLastFetch)) setGcalLastFetch(s.gcalLastFetch);
     if (isArr(s.whoHomeSchedule) && s.whoHomeSchedule.length === 7) setWhoHomeSchedule(s.whoHomeSchedule);
+    if (isObj(s.voiceMap)) setVoiceMap(s.voiceMap);
+    if (isStr(s.voiceBaseUrl)) setVoiceBaseUrl(s.voiceBaseUrl);
   }, []);
 
   // PULL ze serveru (manuální nebo periodicky)
@@ -2060,7 +2171,7 @@ function App() {
   useEffect(() => {
     if (entered && !greetedRef.current && ttsOn) {
       greetedRef.current = true;
-      setTimeout(() => tts.sayRandom('hello', RIKI_PHRASES.hello), 800);
+      setTimeout(() => sayRikiVoice('hello', RIKI_PHRASES.hello), 800);
     }
   }, [entered, ttsOn, tts]);
 
@@ -2189,6 +2300,130 @@ function App() {
             )}
           </div>
         </div>
+
+        {/* v17: A — barevný pruh dne se sluncem, B — TEACCH pictogram timeline */}
+        {(() => {
+          const nowD = new Date();
+          const totalMins = nowD.getHours() * 60 + nowD.getMinutes();
+          const dayProgress = totalMins / (24 * 60);
+          const h = nowD.getHours();
+          let phase, phaseColor, phaseEmoji, phaseTextColor;
+          if (h < 6)       { phase = 'NOC';       phaseColor = '#1e1b4b'; phaseEmoji = '🌙'; phaseTextColor='#312e81'; }
+          else if (h < 9)  { phase = 'RÁNO';      phaseColor = '#fb923c'; phaseEmoji = '🌅'; phaseTextColor='#9a3412'; }
+          else if (h < 12) { phase = 'DOPOLEDNE'; phaseColor = '#facc15'; phaseEmoji = '☀️'; phaseTextColor='#854d0e'; }
+          else if (h < 14) { phase = 'OBĚD';      phaseColor = '#dc2626'; phaseEmoji = '🍽️'; phaseTextColor='#991b1b'; }
+          else if (h < 18) { phase = 'ODPOLEDNE'; phaseColor = '#16a34a'; phaseEmoji = '🌳'; phaseTextColor='#166534'; }
+          else if (h < 21) { phase = 'VEČER';     phaseColor = '#7c3aed'; phaseEmoji = '🌆'; phaseTextColor='#581c87'; }
+          else             { phase = 'NOC';       phaseColor = '#1e3a8a'; phaseEmoji = '🌙'; phaseTextColor='#1e3a8a'; }
+
+          // Najdi co je teď a co dál v blueprintu
+          const blueprintMins = DAY_BLUEPRINT.map(b => ({ ...b, mins: (function(){ const p = b.time.split(':'); return parseInt(p[0])*60+parseInt(p[1]); })() }));
+          let currentIdx = -1;
+          for (let i = blueprintMins.length - 1; i >= 0; i--) {
+            if (blueprintMins[i].mins <= totalMins) { currentIdx = i; break; }
+          }
+          const upcoming = blueprintMins.find(b => b.mins > totalMins);
+          const remainingMins = upcoming ? Math.max(0, upcoming.mins - totalMins) : 0;
+          const remH = Math.floor(remainingMins / 60);
+          const remM = remainingMins % 60;
+          // Pro Time Timer princip: kolik z aktuální fáze už uplynulo
+          const prevMs = currentIdx >= 0 ? blueprintMins[currentIdx].mins : 0;
+          const nextMs = upcoming ? upcoming.mins : 24*60;
+          const phasePct = nextMs > prevMs ? Math.min(1, Math.max(0, (totalMins - prevMs) / (nextMs - prevMs))) : 0;
+
+          return (
+            <div style={{ display:'flex', flexDirection:'column', gap:12, animation: ent(0.5) }}>
+              {/* A — barevný pruh */}
+              <div style={{ position:'relative' }}>
+                <div style={{ position:'relative', height: 38, borderRadius: 19, background: 'linear-gradient(90deg, #1e1b4b 0%, #1e1b4b 25%, #fb923c 25%, #fb923c 37.5%, #facc15 37.5%, #facc15 50%, #dc2626 50%, #dc2626 58.3%, #16a34a 58.3%, #16a34a 75%, #7c3aed 75%, #7c3aed 87.5%, #1e3a8a 87.5%)', overflow:'visible', boxShadow:'0 4px 14px rgba(0,0,0,.18)', border:'2px solid #fff' }}>
+                  {/* Pohyblivá kulička slunce/měsíce */}
+                  <div style={{
+                    position:'absolute',
+                    left: 'calc(' + (dayProgress * 100) + '% - 24px)',
+                    top: '50%',
+                    transform: 'translateY(-50%)',
+                    width: 52, height: 52,
+                    borderRadius: '50%',
+                    background: '#fff',
+                    boxShadow: '0 0 24px rgba(255,200,0,.85), 0 4px 12px rgba(0,0,0,.25)',
+                    display:'flex',
+                    alignItems:'center',
+                    justifyContent:'center',
+                    fontSize: 30,
+                    border: '3px solid '+phaseColor,
+                    zIndex: 2,
+                    transition: 'left 1s linear'
+                  }}>
+                    {phaseEmoji}
+                  </div>
+                </div>
+                {/* Hodinové značky pod pruhem */}
+                <div style={{ position:'relative', height:14, marginTop:4 }}>
+                  {[0,6,12,18,24].map(hh => (
+                    <div key={hh} style={{ position:'absolute', left: ((hh/24)*100) + '%', transform:'translateX(-50%)', fontSize:10, fontWeight:800, color:'var(--muted)' }}>
+                      {hh < 10 ? '0'+hh+':00' : hh+':00'}
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Velký text fáze + countdown */}
+              <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', flexWrap:'wrap', gap:12 }}>
+                <div style={{ background: phaseColor, color: '#fff', borderRadius: 14, padding: '8px 18px', display:'inline-flex', alignItems:'center', gap:10, boxShadow:'0 4px 14px rgba(0,0,0,.15)' }}>
+                  <span style={{ fontSize: 26 }}>{phaseEmoji}</span>
+                  <span style={{ fontFamily:'var(--display)', fontSize: 28, fontWeight: 600, letterSpacing:'.04em' }}>TEĎ JE {phase}</span>
+                </div>
+                {upcoming && (
+                  <div style={{ display:'flex', alignItems:'center', gap:12, background:'#fff', borderRadius:14, padding:'8px 16px', boxShadow:'0 4px 14px rgba(0,0,0,.08)', border:'var(--hair)' }}>
+                    <span style={{ fontSize:32, lineHeight:1 }}>{upcoming.emoji}</span>
+                    <div>
+                      <div style={{ fontSize:11, fontWeight:800, color:'var(--muted)', textTransform:'uppercase', letterSpacing:'.06em' }}>Do "{upcoming.label}"</div>
+                      <div style={{ fontFamily:'var(--display)', fontSize:24, fontWeight:600, color: remainingMins < 30 ? '#dc2626' : remainingMins < 60 ? '#f59e0b' : '#16a34a' }}>
+                        {remH > 0 ? remH + 'h ' : ''}{remM}min
+                      </div>
+                    </div>
+                    {/* Time Timer princip: kruh s ubývajícím výsekem */}
+                    <svg width="44" height="44" style={{ transform:'rotate(-90deg)' }}>
+                      <circle cx="22" cy="22" r="18" fill="none" stroke="#e5e7eb" strokeWidth="4"/>
+                      <circle cx="22" cy="22" r="18" fill="none" stroke={remainingMins < 30 ? '#dc2626' : remainingMins < 60 ? '#f59e0b' : '#16a34a'} strokeWidth="4" strokeDasharray={113} strokeDashoffset={113 * phasePct} strokeLinecap="round" style={{ transition:'stroke-dashoffset 1s' }}/>
+                    </svg>
+                  </div>
+                )}
+              </div>
+
+              {/* C — TEACCH pictogram timeline (co dnes čeká) */}
+              <div style={{ display:'flex', gap:8, overflowX:'auto', padding:'6px 2px 10px', WebkitOverflowScrolling:'touch', scrollSnapType:'x mandatory' }}>
+                {blueprintMins.map((b, idx) => {
+                  const isCurrent = idx === currentIdx;
+                  const isDone = idx < currentIdx;
+                  const isFuture = idx > currentIdx;
+                  return (
+                    <div key={b.id} style={{
+                      flex:'none',
+                      scrollSnapAlign:'start',
+                      background: isCurrent ? '#fef3c7' : isDone ? '#f3f4f6' : '#fff',
+                      border: isCurrent ? '3px solid #f59e0b' : isDone ? '2px solid #e5e7eb' : '2px solid #cbd5e1',
+                      borderRadius: 16,
+                      padding: isCurrent ? '10px 14px' : '9px 12px',
+                      minWidth: isCurrent ? 96 : 78,
+                      textAlign:'center',
+                      opacity: isDone ? 0.5 : 1,
+                      animation: isCurrent ? 'softPulse 1.8s ease-in-out infinite' : 'none',
+                      boxShadow: isCurrent ? '0 8px 22px rgba(245,158,11,.35)' : '0 2px 6px rgba(0,0,0,.05)',
+                      transition:'all .3s'
+                    }}>
+                      <div style={{ fontSize: isCurrent ? 40 : 32, lineHeight: 1, filter: isDone ? 'grayscale(0.8)' : 'none' }}>{b.emoji}</div>
+                      <div style={{ fontSize: 11, fontWeight: 800, color: isCurrent ? '#92400e' : isDone ? '#9ca3af' : '#1a1530', marginTop: 5, textTransform:'uppercase', letterSpacing:'.03em' }}>
+                        {isDone ? '✓ ' : ''}{b.label}
+                      </div>
+                      <div style={{ fontSize: 10, fontWeight: 700, color: isCurrent ? '#b45309' : '#9ca3af', marginTop: 2 }}>{b.time}</div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })()}
 
         {/* main grid */}
         <div style={{ flex:1, minHeight:0, display:'grid', gridTemplateColumns:'1.32fr 1fr', gap:20 }}>
@@ -3854,6 +4089,74 @@ function App() {
                     <div onClick={() => tts.speak('test', 'Ahoj, já jsem ' + mascotName + '. Jsem ráda, že jsme spolu.')} style={{ cursor:'pointer', marginTop:10, background:'#eef4ff', color:'var(--accent)', borderRadius:12, padding:'10px 12px', textAlign:'center', fontSize:13, fontWeight:800 }}>🔊 Otestovat hlas</div>
                   </div>
 
+                  {/* v17: Hlasové vzkazy ElevenLabs */}
+                  <div style={{ background:'linear-gradient(135deg, #fef3c7, #fde68a)', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)', border:'2px solid #f59e0b' }}>
+                    <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:6 }}>
+                      <span style={{ fontSize:24 }}>🎙</span>
+                      <div style={{ fontFamily:'var(--display)', fontSize:18, fontWeight:600, color:'#7c2d12' }}>Hlasové vzkazy (ElevenLabs)</div>
+                    </div>
+                    <div style={{ fontSize:12, fontWeight:700, color:'#92400e', lineHeight:1.5, marginBottom:10 }}>
+                      Když vlepíš URL na MP3, místo robotického hlasu zazní tvoje nahrávka. Pokud necháš prázdné → fallback na Web Speech.
+                    </div>
+                    {/* Base URL */}
+                    <div style={{ background:'#fff', borderRadius:12, padding:'10px 12px', marginBottom:12 }}>
+                      <div style={{ fontSize:11, fontWeight:800, color:'#92400e', marginBottom:4, textTransform:'uppercase', letterSpacing:'.05em' }}>Společný základ URL (volitelné)</div>
+                      <input
+                        value={voiceBaseUrl}
+                        onChange={(e) => setVoiceBaseUrl(e.target.value)}
+                        placeholder="např. voices/  nebo  https://muj-cdn.cz/voices/"
+                        style={{ width:'100%', boxSizing:'border-box', border:'1px solid #fbbf24', borderRadius:8, padding:'8px 10px', fontSize:12, fontFamily:'monospace', outline:'none' }}
+                      />
+                      <div style={{ fontSize:10, fontWeight:700, color:'#92400e', marginTop:4, lineHeight:1.4 }}>Pokud níže napíšeš jen <code>hello.mp3</code>, app si k tomu připojí tenhle základ. Když máš MP3 v repo ve složce <code>voices/</code>, nastav <code>voices/</code>.</div>
+                    </div>
+
+                    {/* Event mapování po skupinách */}
+                    {(() => {
+                      const groups = {};
+                      VOICE_EVENTS.forEach(ev => {
+                        if (!groups[ev.group]) groups[ev.group] = [];
+                        groups[ev.group].push(ev);
+                      });
+                      return Object.keys(groups).map(groupName => (
+                        <div key={groupName} style={{ marginBottom:14 }}>
+                          <div style={{ fontSize:11, fontWeight:900, color:'#92400e', textTransform:'uppercase', letterSpacing:'.08em', marginBottom:6, padding:'0 2px' }}>{groupName}</div>
+                          {groups[groupName].map(ev => {
+                            const cur = voiceMap[ev.id] || '';
+                            const hasVoice = cur.trim().length > 0;
+                            return (
+                              <div key={ev.id} style={{ background:'#fff', borderRadius:10, padding:'10px 12px', marginBottom:6, borderLeft: hasVoice ? '3px solid #16a34a' : '3px solid #e5e7eb' }}>
+                                <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:6, gap:8 }}>
+                                  <div style={{ minWidth:0, flex:1 }}>
+                                    <div style={{ fontSize:13, fontWeight:800, color:'#1a1530' }}>{ev.label}</div>
+                                    <div style={{ fontSize:11, color:'#9a96ac', fontStyle:'italic', lineHeight:1.3 }}>{ev.example}</div>
+                                  </div>
+                                  {hasVoice && (
+                                    <div onClick={() => {
+                                      const url = resolveVoiceUrl(cur);
+                                      if (url) {
+                                        const a = new Audio(url);
+                                        a.play().catch(() => showToast('Chyba přehrávání MP3', '⚠'));
+                                      }
+                                    }} style={{ cursor:'pointer', background:'#16a34a', color:'#fff', borderRadius:8, padding:'7px 12px', fontWeight:800, fontSize:13, whiteSpace:'nowrap' }}>▶ Test</div>
+                                  )}
+                                </div>
+                                <input
+                                  value={cur}
+                                  onChange={(e) => setVoiceMap(m => ({ ...m, [ev.id]: e.target.value }))}
+                                  placeholder={ev.id + '.mp3'}
+                                  style={{ width:'100%', boxSizing:'border-box', border:'1px solid #e3e3ea', borderRadius:8, padding:'8px 10px', fontSize:11, fontFamily:'monospace', outline:'none' }}
+                                />
+                              </div>
+                            );
+                          })}
+                        </div>
+                      ));
+                    })()}
+                    <div style={{ background:'#fff', borderRadius:10, padding:'10px 12px', fontSize:11, color:'#92400e', lineHeight:1.5 }}>
+                      <b>Tip:</b> nahraj MP3 do GitHub repo (např. složka <code>voices/</code>) → commitni → app je hned vidí. Cesta může být relativní (<code>hello.mp3</code>) nebo absolutní (<code>https://…</code>).
+                    </div>
+                  </div>
+
                   <div style={{ background:'#fff', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
                     <div style={{ fontFamily:'var(--display)', fontSize:18, fontWeight:600, color:'#1a1530', marginBottom:10 }}>Noční režim 🌙</div>
                     <div style={{ fontSize:13, fontWeight:700, color:'#5a566e', marginBottom:6 }}>Od kdy spát (večerka) — klepni a vyber čas</div>
@@ -3971,8 +4274,8 @@ function App() {
                   </div>
 
                   <div style={{ background:'#fff', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
-                    <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'#1a1530' }}>Verze: Domácí pomocník v16</div>
-                    <div style={{ fontSize:12, color:'#9a96ac', marginTop:4 }}>Build 2026-06-21 · 06:38</div>
+                    <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'#1a1530' }}>Verze: Domácí pomocník v17</div>
+                    <div style={{ fontSize:12, color:'#9a96ac', marginTop:4 }}>Build 2026-06-21 · 07:25</div>
                   </div>
                 </div>
                 )}
