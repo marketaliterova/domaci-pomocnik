@@ -2803,11 +2803,11 @@ function App() {
           );
         })()}
 
-        {/* main grid */}
-        <div style={{ display:'grid', gridTemplateColumns:'1.32fr 1fr', gap:16 }}>
+        {/* main grid - 3 sloupce */}
+        <div style={{ display:'grid', gridTemplateColumns:'1.15fr 1fr 1fr', gap:14 }}>
 
-          {/* LEFT */}
-          <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
+          {/* COL 1 — Modrý banner + Rutina */}
+          <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
 
             {/* semafor */}
             <div style={{ background:'var(--hero)', borderRadius:22, padding:'14px 18px', display:'flex', alignItems:'center', gap:14, boxShadow:'var(--shadow)', position:'relative', overflow:'hidden', border:'var(--hair)', animation: ent(1) }}>
@@ -2858,8 +2858,57 @@ function App() {
             </div>
           </div>
 
-          {/* RIGHT */}
-          <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
+          {/* COL 2 — Dnes tě čeká, počasí, u koho jsi */}
+          <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
+
+            {/* today */}
+            <div onClick={() => go('calendar')} style={{ cursor:'pointer', background:'var(--surface)', border:'var(--hair)', borderRadius:24, padding:'14px 18px', display:'flex', flexDirection:'column', boxShadow:'var(--shadow)', animation: ent(4), overflow:'hidden' }}>
+              <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
+                <div style={{ display:'flex', alignItems:'center', gap:12, background:'var(--soft)', borderRadius:14, padding:'10px 14px' }}>
+                  <div style={{ fontSize:32, lineHeight:1 }}>{wInfo.emoji}</div>
+                  <div style={{ flex:1, minWidth:0 }}>
+                    <div style={{ fontFamily:'var(--display)', fontSize:20, fontWeight:600, color:'var(--ink)', lineHeight:1 }}>{wInfo.tempNow}° · {wInfo.cond}</div>
+                    <div style={{ fontSize:13, fontWeight:700, color:'var(--muted)', lineHeight:1.25, marginTop:2 }}>{wInfo.advice}</div>
+                  </div>
+                  <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:1, alignSelf:'center' }}>
+                    <div style={{ fontSize:24, letterSpacing:1, whiteSpace:'nowrap' }}>{wInfo.wear}</div>
+                    <div style={{ fontSize:10, fontWeight:800, color:'var(--muted)', textTransform:'uppercase', letterSpacing:'.05em' }}>Vezmi si</div>
+                  </div>
+                </div>
+                <div style={{ display:'flex', alignItems:'center', gap:11, background:'var(--soft)', borderRadius:14, padding:'10px 14px' }}>
+                  <div style={{ width:14, height:14, borderRadius:'50%', background: whoHomeToday.color, boxShadow:`0 0 0 3px ${whoHomeToday.ring}` }}/>
+                  <div style={{ fontSize:11, fontWeight:800, textTransform:'uppercase', letterSpacing:'.06em', color:'var(--muted)' }}>Dnes jsi</div>
+                  <div style={{ fontFamily:'var(--display)', fontSize:20, fontWeight:600, color:'var(--ink)' }}>{whoHomeToday.label}</div>
+                </div>
+              </div>
+              <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginTop:12 }}>
+                <div style={{ fontFamily:'var(--display)', fontSize:17, fontWeight:600, color:'var(--ink)' }}>Dnes tě čeká</div>
+                <div onClick={() => go('kalendar')} style={{ cursor:'pointer', fontSize:13, fontWeight:800, color:'var(--accent)' }}>Kalendář →</div>
+              </div>
+              {todayEvents.length === 0 ? (
+                <div style={{ marginTop:8, background:'var(--soft)', borderRadius:14, padding:'14px 16px', textAlign:'center', fontSize:13, fontWeight:700, color:'var(--muted)', lineHeight:1.4 }}>
+                  Žádné události 🎉<br/>
+                  <span style={{ fontSize:11, fontWeight:600 }}>Užij si volný čas!</span>
+                </div>
+              ) : (
+                <div style={{ marginTop:9, display:'flex', flexDirection:'column', gap:9 }}>
+                  {todayEvents.map((e, i) => (
+                    <div key={i} style={{ display:'flex', alignItems:'center', gap:11, padding:'10px 12px', background:'var(--soft)', borderRadius:14, borderLeft:`4px solid ${e.color}` }}>
+                      <div style={{ fontSize:22 }}>{e.emoji}</div>
+                      <div style={{ flex:1, minWidth:0 }}>
+                        <div style={{ fontFamily:'var(--display)', fontSize:16, fontWeight:500, color:'var(--ink)', lineHeight:1.1 }}>{e.title}</div>
+                        <div style={{ fontSize:13, fontWeight:700, color:'var(--muted)' }}>{e.sub}</div>
+                      </div>
+                      <div style={{ fontFamily:'var(--display)', fontSize:16, fontWeight:600, color:'var(--ink)' }}>{e.time}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* COL 3 — Riki + odměny dlaždice */}
+          <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
 
             {/* maskot - tamagotchi verze */}
             <div style={{ background:'var(--maskotCard)', border:'var(--hair)', borderRadius:24, padding:'16px 20px', boxShadow:'var(--shadow)', position:'relative', overflow:'hidden', animation: ent(2) }}>
@@ -2938,70 +2987,25 @@ function App() {
               )}
             </div>
 
-            {/* today */}
-            <div onClick={() => go('calendar')} style={{ cursor:'pointer', background:'var(--surface)', border:'var(--hair)', borderRadius:24, padding:'14px 18px', display:'flex', flexDirection:'column', boxShadow:'var(--shadow)', animation: ent(4), overflow:'hidden' }}>
-              <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
-                <div style={{ display:'flex', alignItems:'center', gap:12, background:'var(--soft)', borderRadius:14, padding:'10px 14px' }}>
-                  <div style={{ fontSize:32, lineHeight:1 }}>{wInfo.emoji}</div>
-                  <div style={{ flex:1, minWidth:0 }}>
-                    <div style={{ fontFamily:'var(--display)', fontSize:20, fontWeight:600, color:'var(--ink)', lineHeight:1 }}>{wInfo.tempNow}° · {wInfo.cond}</div>
-                    <div style={{ fontSize:13, fontWeight:700, color:'var(--muted)', lineHeight:1.25, marginTop:2 }}>{wInfo.advice}</div>
-                  </div>
-                  <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:1, alignSelf:'center' }}>
-                    <div style={{ fontSize:24, letterSpacing:1, whiteSpace:'nowrap' }}>{wInfo.wear}</div>
-                    <div style={{ fontSize:10, fontWeight:800, color:'var(--muted)', textTransform:'uppercase', letterSpacing:'.05em' }}>Vezmi si</div>
-                  </div>
-                </div>
-                <div style={{ display:'flex', alignItems:'center', gap:11, background:'var(--soft)', borderRadius:14, padding:'10px 14px' }}>
-                  <div style={{ width:14, height:14, borderRadius:'50%', background: whoHomeToday.color, boxShadow:`0 0 0 3px ${whoHomeToday.ring}` }}/>
-                  <div style={{ fontSize:11, fontWeight:800, textTransform:'uppercase', letterSpacing:'.06em', color:'var(--muted)' }}>Dnes jsi</div>
-                  <div style={{ fontFamily:'var(--display)', fontSize:20, fontWeight:600, color:'var(--ink)' }}>{whoHomeToday.label}</div>
-                </div>
-              </div>
-              <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginTop:12 }}>
-                <div style={{ fontFamily:'var(--display)', fontSize:17, fontWeight:600, color:'var(--ink)' }}>Dnes tě čeká</div>
-                <div onClick={() => go('kalendar')} style={{ cursor:'pointer', fontSize:13, fontWeight:800, color:'var(--accent)' }}>Kalendář →</div>
-              </div>
-              {todayEvents.length === 0 ? (
-                <div style={{ marginTop:8, background:'var(--soft)', borderRadius:14, padding:'14px 16px', textAlign:'center', fontSize:13, fontWeight:700, color:'var(--muted)', lineHeight:1.4 }}>
-                  Žádné události 🎉<br/>
-                  <span style={{ fontSize:11, fontWeight:600 }}>Užij si volný čas!</span>
-                </div>
-              ) : (
-                <div style={{ marginTop:9, display:'flex', flexDirection:'column', gap:9 }}>
-                  {todayEvents.map((e, i) => (
-                    <div key={i} style={{ display:'flex', alignItems:'center', gap:11, padding:'10px 12px', background:'var(--soft)', borderRadius:14, borderLeft:`4px solid ${e.color}` }}>
-                      <div style={{ fontSize:22 }}>{e.emoji}</div>
-                      <div style={{ flex:1, minWidth:0 }}>
-                        <div style={{ fontFamily:'var(--display)', fontSize:16, fontWeight:500, color:'var(--ink)', lineHeight:1.1 }}>{e.title}</div>
-                        <div style={{ fontSize:13, fontWeight:700, color:'var(--muted)' }}>{e.sub}</div>
-                      </div>
-                      <div style={{ fontFamily:'var(--display)', fontSize:16, fontWeight:600, color:'var(--ink)' }}>{e.time}</div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
             {/* tiles */}
-            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:10, animation: ent(5), flex:'none' }}>
-              <div onClick={() => go('rozvrh')} style={{ cursor:'pointer', background:'linear-gradient(135deg,var(--accent2),var(--accent))', borderRadius:18, padding:'12px 11px', display:'flex', flexDirection:'column', gap:5, boxShadow:'var(--shadow)' }}>
-                <div style={{ fontSize:23 }}>📚</div>
-                <div>
+            <div style={{ display:'grid', gridTemplateColumns:'1fr', gap:8, animation: ent(5), flex:'none' }}>
+              <div onClick={() => go('rozvrh')} style={{ cursor:'pointer', background:'linear-gradient(135deg,var(--accent2),var(--accent))', borderRadius:16, padding:'11px 14px', display:'flex', alignItems:'center', gap:10, boxShadow:'var(--shadow)' }}>
+                <div style={{ fontSize:22 }}>📚</div>
+                <div style={{ flex:1, minWidth:0 }}>
                   <div style={{ fontFamily:'var(--display)', fontSize:15, fontWeight:600, color:'#fff', lineHeight:1 }}>Rozvrh</div>
                   <div style={{ fontSize:11, fontWeight:800, color:'rgba(255,255,255,.85)' }}>Sbal se na zítřek</div>
                 </div>
               </div>
-              <div onClick={() => go('chores')} style={{ cursor:'pointer', background:'var(--tile1)', borderRadius:18, padding:'12px 11px', display:'flex', flexDirection:'column', gap:5, boxShadow:'var(--shadow)' }}>
-                <div style={{ fontSize:23 }}>✨</div>
-                <div>
+              <div onClick={() => go('chores')} style={{ cursor:'pointer', background:'var(--tile1)', borderRadius:16, padding:'11px 14px', display:'flex', alignItems:'center', gap:10, boxShadow:'var(--shadow)' }}>
+                <div style={{ fontSize:22 }}>✨</div>
+                <div style={{ flex:1, minWidth:0 }}>
                   <div style={{ fontFamily:'var(--display)', fontSize:15, fontWeight:600, color:'#fff', lineHeight:1 }}>Extra úkoly</div>
                   <div style={{ fontSize:11, fontWeight:800, color:'rgba(255,255,255,.85)' }}>Bodíky navíc</div>
                 </div>
               </div>
-              <div onClick={() => go('rewards')} style={{ cursor:'pointer', background:'var(--tile2)', borderRadius:18, padding:'12px 11px', display:'flex', flexDirection:'column', gap:5, boxShadow:'var(--shadow)' }}>
-                <div style={{ fontSize:23 }}>🎁</div>
-                <div>
+              <div onClick={() => go('rewards')} style={{ cursor:'pointer', background:'var(--tile2)', borderRadius:16, padding:'11px 14px', display:'flex', alignItems:'center', gap:10, boxShadow:'var(--shadow)' }}>
+                <div style={{ fontSize:22 }}>🎁</div>
+                <div style={{ flex:1, minWidth:0 }}>
                   <div style={{ fontFamily:'var(--display)', fontSize:15, fontWeight:600, color:'#fff', lineHeight:1 }}>Odměny</div>
                   <div style={{ fontSize:11, fontWeight:800, color:'rgba(255,255,255,.85)' }}>Tvá přání</div>
                 </div>
@@ -5031,8 +5035,8 @@ function App() {
                   </div>
 
                   <div style={{ background:'#fff', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
-                    <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'#1a1530' }}>Verze: Domácí pomocník v37</div>
-                    <div style={{ fontSize:12, color:'#9a96ac', marginTop:4 }}>Build 2026-06-21 · 16:54</div>
+                    <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'#1a1530' }}>Verze: Domácí pomocník v38</div>
+                    <div style={{ fontSize:12, color:'#9a96ac', marginTop:4 }}>Build 2026-06-21 · 16:57</div>
                   </div>
                 </div>
                 )}
