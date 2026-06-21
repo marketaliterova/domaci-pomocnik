@@ -909,6 +909,8 @@ function App() {
   const [floatingXp, setFloatingXp] = useState([]); // efemerní {id, x, y, value, critical}
   // v15: denní reset + kalendář + týdenní whoHome
   const [lastDayKey, setLastDayKey] = useState((persisted && persisted.lastDayKey) || todayISO());
+  // v41: routineHistory = pole snapshotů z minulých dnů { date, morningDone, eveningDone, choreDone, points }
+  const [routineHistory, setRoutineHistory] = useState((persisted && Array.isArray(persisted.routineHistory)) ? persisted.routineHistory : []);
   const [gcalUrl, setGcalUrl] = useState((persisted && persisted.gcalUrl) || '');
   const [gcalEvents, setGcalEvents] = useState((persisted && Array.isArray(persisted.gcalEvents)) ? persisted.gcalEvents : []);
   const [gcalLastFetch, setGcalLastFetch] = useState((persisted && persisted.gcalLastFetch) || 0);
@@ -1017,6 +1019,7 @@ function App() {
       lastDayKey, gcalUrl, gcalEvents, gcalLastFetch, whoHomeSchedule,
       voiceMap, voiceBaseUrl, dayBlueprintByDay,
       hueWebhookUrl, hueButtons,
+      routineHistory,
     });
   }, [theme, points, totalXp, streak, morning, evening, doneM, doneE, whoHome, departMin,
       shopItems, shopState, choreState, pendingApprovals, packState, packAwarded,
@@ -1030,7 +1033,8 @@ function App() {
       inventory, bossState,
       lastDayKey, gcalUrl, gcalEvents, gcalLastFetch, whoHomeSchedule,
       voiceMap, voiceBaseUrl, dayBlueprintByDay,
-      hueWebhookUrl, hueButtons]);
+      hueWebhookUrl, hueButtons,
+      routineHistory]);
 
   // --- helpers
   const tv = useMemo(() => THEMES[theme] || THEMES.cisto, [theme]);
@@ -1177,51 +1181,218 @@ function App() {
     console.log('[auto-heal] Vyčištěno', stuck.length, 'stuck pending chores:', stuck);
   }, []); // empty deps = pouze 1× při mountu
 
+  // v41: Denní snapshot - když se změní den, ulož včerejší rutinu do historie
+  useEffect(() => {
+    const checkDay = () => {
+      const today = todayISO();
+      if (today === lastDayKey) return;
+      // Den se změnil - ulož snapshot starého dne
+      const morningTotal = morning.length;
+      const morningDoneCount = Object.keys(doneM).filter(k => doneM[k]).length;
+      const eveningTotal = evening.length;
+      const eveningDoneCount = Object.keys(doneE).filter(k => doneE[k]).length;
+      const choresDoneCount = Object.keys(choreState).filter(k => choreState[k] === 'done').length;
+      const snapshot = {
+        date: lastDayKey,
+        morningDone: morningDoneCount,
+        morningTotal: morningTotal,
+        eveningDone: eveningDoneCount,
+        eveningTotal: eveningTotal,
+        choresDone: choresDoneCount,
+        // Zaznamenáme i konkrétní názvy které se splnily / vynechaly
+        morningSteps: morning.map(s => ({ id: s.id, t: s.t, icon: s.icon, done: !!doneM[s.id] })),
+        eveningSteps: evening.map(s => ({ id: s.id, t: s.t, icon: s.icon, done: !!doneE[s.id] })),
+      };
+      setRoutineHistory(h => {
+        const newH = [snapshot, ...h.filter(s => s.date !== lastDayKey)];
+        // Max 90 dní
+        return newH.slice(0, 90);
+      });
+      // Standardní reset
+      setDoneM({});
+      setDoneE({});
+      setChoreState({});
+      setPackState({});
+      setPackAwarded(false);
+      setLastDayKey(today);
+    };
+    checkDay();
+    const id = setInterval(checkDay, 60 * 1000);
+    return () => clearInterval(id);
+  }, [lastDayKey, doneM, doneE, morning, evening, choreState]);
+
 
   // ---------------------- v15: Google Calendar fetch ----------------------
   const parseICal = useCallback((text) => {
-    // Jednoduchý iCal parser - bere VEVENT s DTSTART, DTEND, SUMMARY
+    // v41: Robustnější iCal parser
+    // - Filtruje STATUS:CANCELLED
+    // - Podporuje opakující se události (RRULE FREQ=DAILY/WEEKLY)
+    // - DTSTART s TZID i UTC i all-day
+    // - SUMMARY se escapováním + fallback na "(bez názvu)"
+    // - Filtruje EXDATE (vyjímky z opakování)
     if (!text || typeof text !== 'string') return [];
-    const events = [];
-    const blocks = text.split('BEGIN:VEVENT');
-    for (let i = 1; i < blocks.length; i++) {
-      const block = blocks[i].split('END:VEVENT')[0];
-      const ev = {};
-      // unfold řádky (Google iCal používá CRLF + mezera pro continuation)
-      const lines = block.replace(/\r\n[ \t]/g, '').split(/\r?\n/);
+    const rawBlocks = text.split('BEGIN:VEVENT');
+    const parsedEvents = [];
+
+    for (let i = 1; i < rawBlocks.length; i++) {
+      const block = rawBlocks[i].split('END:VEVENT')[0];
+      const ev = { exdates: [] };
+      // Unfold (CRLF + space/tab pokračování)
+      const lines = block.replace(/\r\n[ \t]/g, '').replace(/\n[ \t]/g, '').split(/\r?\n/);
+      let cancelled = false;
+
       for (const line of lines) {
-        if (line.startsWith('SUMMARY:')) ev.summary = line.slice(8).replace(/\\,/g, ',').replace(/\\n/g, ' ').trim();
-        else if (line.startsWith('DTSTART')) {
-          const val = line.split(':')[1];
+        if (line.startsWith('STATUS:')) {
+          if (line.slice(7).trim().toUpperCase() === 'CANCELLED') cancelled = true;
+        } else if (line.startsWith('SUMMARY')) {
+          // SUMMARY:Foo nebo SUMMARY;LANGUAGE=cs:Foo
+          const colonIdx = line.indexOf(':');
+          if (colonIdx >= 0) {
+            ev.summary = line.slice(colonIdx + 1).replace(/\\,/g, ',').replace(/\\;/g, ';').replace(/\\n/gi, ' ').replace(/\\\\/g, '\\').trim();
+          }
+        } else if (line.startsWith('DTSTART')) {
+          const colonIdx = line.indexOf(':');
+          const val = colonIdx >= 0 ? line.slice(colonIdx + 1).trim() : '';
           if (val) {
             const allDay = !val.includes('T');
             ev.start = val;
             ev.allDay = allDay;
-            // Parse YYYYMMDDTHHMMSS or YYYYMMDD
             const y = val.slice(0, 4), m = val.slice(4, 6), d = val.slice(6, 8);
             const hh = allDay ? '00' : val.slice(9, 11);
             const mm = allDay ? '00' : val.slice(11, 13);
             ev.iso = `${y}-${m}-${d}`;
             ev.time = allDay ? '' : `${hh}:${mm}`;
             ev.dateTime = `${y}-${m}-${d}T${hh}:${mm}:00`;
+            ev.startDate = new Date(parseInt(y), parseInt(m)-1, parseInt(d), parseInt(hh), parseInt(mm));
           }
         } else if (line.startsWith('DTEND')) {
-          const val = line.split(':')[1];
+          const colonIdx = line.indexOf(':');
+          const val = colonIdx >= 0 ? line.slice(colonIdx + 1).trim() : '';
           if (val) ev.end = val;
-        } else if (line.startsWith('LOCATION:')) ev.location = line.slice(9).trim();
-        else if (line.startsWith('UID:')) ev.uid = line.slice(4).trim();
+        } else if (line.startsWith('LOCATION:')) {
+          ev.location = line.slice(9).replace(/\\,/g, ',').trim();
+        } else if (line.startsWith('UID:')) {
+          ev.uid = line.slice(4).trim();
+        } else if (line.startsWith('RRULE:')) {
+          // Parse RRULE např: FREQ=WEEKLY;BYDAY=MO,WE,FR;UNTIL=20271231T000000Z
+          const rules = {};
+          line.slice(6).split(';').forEach(part => {
+            const [k, v] = part.split('=');
+            if (k && v) rules[k.toUpperCase()] = v;
+          });
+          ev.rrule = rules;
+        } else if (line.startsWith('EXDATE')) {
+          // EXDATE;TZID=...:YYYYMMDDTHHMMSS  nebo  EXDATE:YYYYMMDD
+          const colonIdx = line.indexOf(':');
+          const val = colonIdx >= 0 ? line.slice(colonIdx + 1).trim() : '';
+          // Multiple dates oddělené čárkou
+          val.split(',').forEach(d => {
+            if (d.length >= 8) ev.exdates.push(d.slice(0, 8)); // YYYYMMDD
+          });
+        }
       }
-      if (ev.summary && ev.iso) events.push(ev);
+
+      if (cancelled) continue;
+      if (!ev.iso) continue;
+      // Default summary pokud chybí
+      if (!ev.summary) ev.summary = '(bez názvu)';
+
+      parsedEvents.push(ev);
     }
-    // Vyfiltruj jen události od dnes do +14 dní
+
+    // Expanduj recurring events do konkrétních výskytů
     const today = new Date(); today.setHours(0, 0, 0, 0);
-    const inTwoWeeks = new Date(today); inTwoWeeks.setDate(today.getDate() + 14);
-    return events
-      .filter(e => {
-        const d = new Date(e.dateTime || e.iso);
-        return d >= today && d <= inTwoWeeks;
-      })
-      .sort((a, b) => (a.dateTime || a.iso).localeCompare(b.dateTime || b.iso));
+    const horizon = new Date(today); horizon.setDate(today.getDate() + 90); // 3 měsíce dopředu pro nav po týdnech
+    const result = [];
+
+    for (const ev of parsedEvents) {
+      if (!ev.rrule) {
+        // Single event
+        if (ev.startDate && ev.startDate >= today && ev.startDate <= horizon) {
+          result.push(ev);
+        }
+        continue;
+      }
+
+      // Recurring - rozgeneruj výskyty
+      const freq = ev.rrule.FREQ;
+      if (freq !== 'DAILY' && freq !== 'WEEKLY') {
+        // Pro MONTHLY/YEARLY zatím jen první výskyt
+        if (ev.startDate && ev.startDate >= today && ev.startDate <= horizon) {
+          result.push(ev);
+        }
+        continue;
+      }
+
+      // BYDAY (jen pro WEEKLY): MO,TU,WE,TH,FR,SA,SU
+      const dayMap = { MO:1, TU:2, WE:3, TH:4, FR:5, SA:6, SU:0 };
+      const byday = ev.rrule.BYDAY ? ev.rrule.BYDAY.split(',').map(d => dayMap[d]) : null;
+
+      // UNTIL boundary
+      let until = horizon;
+      if (ev.rrule.UNTIL) {
+        const u = ev.rrule.UNTIL;
+        if (u.length >= 8) {
+          const ud = new Date(parseInt(u.slice(0,4)), parseInt(u.slice(4,6))-1, parseInt(u.slice(6,8)));
+          if (ud < until) until = ud;
+        }
+      }
+
+      const interval = parseInt(ev.rrule.INTERVAL) || 1;
+      const startDate = ev.startDate;
+      if (!startDate) continue;
+
+      // Generuj výskyty od today (nebo startDate, podle toho co je pozdější) do until
+      const generateFrom = startDate < today ? today : startDate;
+      const cursor = new Date(generateFrom);
+      cursor.setHours(startDate.getHours(), startDate.getMinutes(), 0, 0);
+
+      let count = 0;
+      const maxCount = 200; // safety
+
+      while (cursor <= until && count < maxCount) {
+        let include = false;
+
+        if (freq === 'DAILY') {
+          // Zahrň každý den (interval-tý)
+          const daysSinceStart = Math.floor((cursor - startDate) / (1000*60*60*24));
+          if (daysSinceStart >= 0 && daysSinceStart % interval === 0) include = true;
+        } else if (freq === 'WEEKLY') {
+          if (byday) {
+            if (byday.indexOf(cursor.getDay()) >= 0) {
+              const weeksSinceStart = Math.floor((cursor - startDate) / (1000*60*60*24*7));
+              if (weeksSinceStart >= 0 && weeksSinceStart % interval === 0) include = true;
+            }
+          } else {
+            // Bez BYDAY = stejný den v týdnu jako startDate
+            if (cursor.getDay() === startDate.getDay()) {
+              const weeksSinceStart = Math.floor((cursor - startDate) / (1000*60*60*24*7));
+              if (weeksSinceStart >= 0 && weeksSinceStart % interval === 0) include = true;
+            }
+          }
+        }
+
+        if (include) {
+          const y = cursor.getFullYear();
+          const m = pad2(cursor.getMonth()+1);
+          const d = pad2(cursor.getDate());
+          const dateKey = `${y}${m}${d}`;
+          // Skip pokud je tento výskyt v EXDATE
+          if (ev.exdates.indexOf(dateKey) < 0) {
+            result.push({
+              ...ev,
+              iso: `${y}-${m}-${d}`,
+              dateTime: `${y}-${m}-${d}T${ev.time || '00:00'}:00`,
+            });
+            count++;
+          }
+        }
+
+        cursor.setDate(cursor.getDate() + 1);
+      }
+    }
+
+    return result.sort((a, b) => (a.dateTime || a.iso).localeCompare(b.dateTime || b.iso));
   }, []);
 
   // v29: Webhook polling - tahá z Apps Script "events" endpoint
@@ -1935,7 +2106,8 @@ function App() {
     // Spoj ruční události + Google Calendar
     const gcalForDay = gcalEvents.filter(g => g.iso === ddISO).map(g => ({
       id: 'gcal-' + (g.uid || g.iso + g.time),
-      t: g.summary,
+      title: g.summary || '(bez názvu)',
+      emoji: '📅',
       time: g.time || '9:00',
       dur: 1,
       type: 'gcal',
@@ -2100,6 +2272,7 @@ function App() {
     { id:'body',     icon:'⭐', label:'Body' },
     { id:'dnes',     icon:'🏠', label:'Dnes' },
     { id:'rutiny',   icon:'✅', label:'Rutiny' },
+    { id:'historie', icon:'📊', label:'Historie' },
     { id:'odmeny',   icon:'🎁', label:'Odměny' },
     { id:'kalendar', icon:'📅', label:'Kalendář' },
     { id:'tlacitka', icon:'🔘', label:'Tlačítka' },
@@ -2380,6 +2553,7 @@ function App() {
     if (isArr(s.inventory)) setInventory(s.inventory);
     if (isObj(s.bossState)) setBossState(s.bossState);
     if (isStr(s.lastDayKey)) setLastDayKey(s.lastDayKey);
+    if (Array.isArray(s.routineHistory)) setRoutineHistory(s.routineHistory);
     if (isStr(s.gcalUrl)) setGcalUrl(s.gcalUrl);
     if (isArr(s.gcalEvents)) setGcalEvents(s.gcalEvents);
     if (isNum(s.gcalLastFetch)) setGcalLastFetch(s.gcalLastFetch);
@@ -4213,6 +4387,133 @@ function App() {
                 </div>
                 )}
 
+                {/* TAB: historie - dashboard a habit tracker */}
+                {parentTab === 'historie' && (
+                <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
+                  {(() => {
+                    // Vypočítej statistiky
+                    const allDays = routineHistory.slice(0, 30);
+                    const totalMorning = allDays.reduce((s, d) => s + (d.morningDone || 0), 0);
+                    const totalMorningPos = allDays.reduce((s, d) => s + (d.morningTotal || 0), 0);
+                    const totalEvening = allDays.reduce((s, d) => s + (d.eveningDone || 0), 0);
+                    const totalEveningPos = allDays.reduce((s, d) => s + (d.eveningTotal || 0), 0);
+                    const totalChores = allDays.reduce((s, d) => s + (d.choresDone || 0), 0);
+                    const mPct = totalMorningPos > 0 ? Math.round(totalMorning / totalMorningPos * 100) : 0;
+                    const ePct = totalEveningPos > 0 ? Math.round(totalEvening / totalEveningPos * 100) : 0;
+                    const last7 = routineHistory.slice(0, 7);
+                    const last7Score = last7.reduce((s, d) => {
+                      const m = d.morningTotal > 0 ? d.morningDone / d.morningTotal : 0;
+                      const e = d.eveningTotal > 0 ? d.eveningDone / d.eveningTotal : 0;
+                      return s + (m + e) / 2;
+                    }, 0);
+                    const last7Pct = last7.length > 0 ? Math.round(last7Score / last7.length * 100) : 0;
+                    return (
+                      <>
+                        {/* Hlavičky stats */}
+                        <div style={{ background:'#fff', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
+                          <div style={{ fontFamily:'var(--display)', fontSize:18, fontWeight:600, color:'#1a1530', marginBottom:12 }}>Přehled</div>
+                          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
+                            <div style={{ background:'linear-gradient(135deg, #fef3c7, #fde68a)', borderRadius:14, padding:'13px 14px', textAlign:'center' }}>
+                              <div style={{ fontSize:26, fontFamily:'var(--display)', fontWeight:600, color:'#92400e' }}>{streakDays || 0}</div>
+                              <div style={{ fontSize:11, fontWeight:800, color:'#92400e' }}>🔥 ránní streak</div>
+                            </div>
+                            <div style={{ background:'linear-gradient(135deg, #ddd6fe, #c4b5fd)', borderRadius:14, padding:'13px 14px', textAlign:'center' }}>
+                              <div style={{ fontSize:26, fontFamily:'var(--display)', fontWeight:600, color:'#5b21b6' }}>{eveningStreakDays || 0}</div>
+                              <div style={{ fontSize:11, fontWeight:800, color:'#5b21b6' }}>🌙 večerní streak</div>
+                            </div>
+                            <div style={{ background:'linear-gradient(135deg, #dcfce7, #bbf7d0)', borderRadius:14, padding:'13px 14px', textAlign:'center' }}>
+                              <div style={{ fontSize:26, fontFamily:'var(--display)', fontWeight:600, color:'#166534' }}>{totalXp || 0}</div>
+                              <div style={{ fontSize:11, fontWeight:800, color:'#166534' }}>⭐ XP celkem</div>
+                            </div>
+                            <div style={{ background:'linear-gradient(135deg, #dbeafe, #bfdbfe)', borderRadius:14, padding:'13px 14px', textAlign:'center' }}>
+                              <div style={{ fontSize:26, fontFamily:'var(--display)', fontWeight:600, color:'#1e3a8a' }}>{last7Pct}%</div>
+                              <div style={{ fontSize:11, fontWeight:800, color:'#1e3a8a' }}>📊 posledních 7 dní</div>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Heatmapa posledních 30 dní */}
+                        <div style={{ background:'#fff', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
+                          <div style={{ fontFamily:'var(--display)', fontSize:18, fontWeight:600, color:'#1a1530', marginBottom:4 }}>Posledních 30 dní</div>
+                          <div style={{ fontSize:11, fontWeight:700, color:'#9a96ac', marginBottom:12 }}>Zelená = vše hotovo, žlutá = částečně, červená = málo nebo nic</div>
+                          {routineHistory.length === 0 ? (
+                            <div style={{ background:'#f9fafb', borderRadius:12, padding:'20px 16px', textAlign:'center' }}>
+                              <div style={{ fontSize:32, marginBottom:6 }}>📅</div>
+                              <div style={{ fontSize:13, fontWeight:700, color:'#6b7280' }}>Zatím žádná historie</div>
+                              <div style={{ fontSize:11, color:'#9ca3af', marginTop:4 }}>Historie se začne sbírat od zítřka (po prvním restu rutin)</div>
+                            </div>
+                          ) : (
+                            <div style={{ display:'grid', gridTemplateColumns:'repeat(10, 1fr)', gap:5 }}>
+                              {Array.from({length: 30}, (_, idx) => {
+                                const daysAgo = 29 - idx;
+                                const d = new Date(); d.setDate(d.getDate() - daysAgo);
+                                const iso = d.getFullYear() + '-' + pad2(d.getMonth()+1) + '-' + pad2(d.getDate());
+                                const snap = routineHistory.find(s => s.date === iso);
+                                let bg = '#f1f5f9'; // šedá = bez záznamu
+                                let pct = null;
+                                if (snap) {
+                                  const m = snap.morningTotal > 0 ? snap.morningDone / snap.morningTotal : 0;
+                                  const e = snap.eveningTotal > 0 ? snap.eveningDone / snap.eveningTotal : 0;
+                                  pct = Math.round((m + e) / 2 * 100);
+                                  if (pct >= 80) bg = '#16a34a';
+                                  else if (pct >= 50) bg = '#facc15';
+                                  else if (pct >= 20) bg = '#fb923c';
+                                  else bg = '#ef4444';
+                                }
+                                const isToday = daysAgo === 0;
+                                return (
+                                  <div key={idx} title={`${iso}${snap ? ': ' + pct + '%' : ' (bez záznamu)'}`} style={{
+                                    aspectRatio:'1/1', borderRadius:6, background: bg,
+                                    border: isToday ? '2px solid #1e40af' : 'none',
+                                    display:'flex', alignItems:'center', justifyContent:'center',
+                                    fontSize:9, fontWeight:800, color: bg === '#f1f5f9' ? '#94a3b8' : '#fff'
+                                  }}>{d.getDate()}</div>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Detailní seznam posledních dnů */}
+                        {routineHistory.length > 0 && (
+                          <div style={{ background:'#fff', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
+                            <div style={{ fontFamily:'var(--display)', fontSize:18, fontWeight:600, color:'#1a1530', marginBottom:12 }}>Detail posledních dnů</div>
+                            <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
+                              {routineHistory.slice(0, 14).map((d) => {
+                                const morningSkipped = (d.morningSteps || []).filter(s => !s.done);
+                                const eveningSkipped = (d.eveningSteps || []).filter(s => !s.done);
+                                const dateObj = new Date(d.date);
+                                const days = ['neděle','pondělí','úterý','středa','čtvrtek','pátek','sobota'];
+                                const months = ['1.','2.','3.','4.','5.','6.','7.','8.','9.','10.','11.','12.'];
+                                const dateLabel = `${days[dateObj.getDay()]} ${dateObj.getDate()}. ${months[dateObj.getMonth()]}`;
+                                return (
+                                  <div key={d.date} style={{ background:'#f9fafb', borderRadius:14, padding:'12px 14px', borderLeft: morningSkipped.length === 0 && eveningSkipped.length === 0 ? '4px solid #16a34a' : '4px solid #facc15' }}>
+                                    <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:6 }}>
+                                      <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'#1a1530', textTransform:'capitalize' }}>{dateLabel}</div>
+                                      <div style={{ display:'flex', gap:8 }}>
+                                        <span style={{ background:'#fef3c7', color:'#92400e', borderRadius:8, padding:'2px 8px', fontSize:11, fontWeight:800 }}>☀ {d.morningDone}/{d.morningTotal}</span>
+                                        <span style={{ background:'#ddd6fe', color:'#5b21b6', borderRadius:8, padding:'2px 8px', fontSize:11, fontWeight:800 }}>🌙 {d.eveningDone}/{d.eveningTotal}</span>
+                                        {d.choresDone > 0 && <span style={{ background:'#dcfce7', color:'#166534', borderRadius:8, padding:'2px 8px', fontSize:11, fontWeight:800 }}>✨ {d.choresDone}</span>}
+                                      </div>
+                                    </div>
+                                    {(morningSkipped.length > 0 || eveningSkipped.length > 0) && (
+                                      <div style={{ fontSize:11, color:'#6b7280', marginTop:4 }}>
+                                        <span style={{ fontWeight:800 }}>Vynecháno: </span>
+                                        {[...morningSkipped, ...eveningSkipped].map(s => (s.icon || '•') + ' ' + s.t).join(', ')}
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
+                      </>
+                    );
+                  })()}
+                </div>
+                )}
+
                 {/* TAB: odmeny */}
                 {parentTab === 'odmeny' && (
                 <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
@@ -5268,8 +5569,8 @@ function App() {
                   </div>
 
                   <div style={{ background:'#fff', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
-                    <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'#1a1530' }}>Verze: Domácí pomocník v40</div>
-                    <div style={{ fontSize:12, color:'#9a96ac', marginTop:4 }}>Build 2026-06-21 · 17:57</div>
+                    <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'#1a1530' }}>Verze: Domácí pomocník v41</div>
+                    <div style={{ fontSize:12, color:'#9a96ac', marginTop:4 }}>Build 2026-06-21 · 18:23</div>
                   </div>
                 </div>
                 )}
