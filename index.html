@@ -1102,6 +1102,9 @@ function App() {
     setInventory(inv => [...inv, item]);
     const style = RARITY_STYLE[loot.rarity];
     showToast(`${loot.emoji} ${loot.name}!`, style.label === 'LEGENDÁRNÍ' ? '🌟' : '🎁');
+    // v27: voice pro každou rarity
+    const eventId = loot.rarity === 'legendary' ? 'lootLegendary' : loot.rarity === 'epic' ? 'lootEpic' : loot.rarity === 'rare' ? 'lootRare' : 'lootCommon';
+    if (playVoiceRef.current) setTimeout(() => playVoiceRef.current(eventId, `${loot.name}!`), 200);
     return item;
   }, [showToast]);
 
@@ -1349,6 +1352,12 @@ function App() {
     playVoice(eventId, pick);
   }, [playVoice]);
 
+  // v27: ref na playVoice/sayRikiVoice aby šly volat z callbacks definovaných DŘÍVE (žádný TDZ)
+  const playVoiceRef = useRef(playVoice);
+  const sayRikiVoiceRef = useRef(sayRikiVoice);
+  useEffect(() => { playVoiceRef.current = playVoice; }, [playVoice]);
+  useEffect(() => { sayRikiVoiceRef.current = sayRikiVoice; }, [sayRikiVoice]);
+
   // Tamagotchi decay: 2 body za hodinu (pomalu), když spí tak nic
   useEffect(() => {
     const tick = () => {
@@ -1421,6 +1430,7 @@ function App() {
           setPoints(p => p + 100); setTotalXp(x => x + 100);
           confetti.fire({ n: 200 });
           showToast('🐉 BOSS PORAŽEN! +100 XP', '👑');
+          if (playVoiceRef.current) playVoiceRef.current('bossDefeated', 'Boss padl, sto bodů!');
           dropLoot('legendary');
         }, 1000);
       }
@@ -1455,6 +1465,7 @@ function App() {
     setChoreState(s => ({ ...s, [c.id]: 'pending' }));
     setPendingApprovals(p => [...p, { id: 'chore-' + c.id, type: 'chore', refId: c.id, emoji:c.emoji, t:c.t, points:c.points, date: new Date().toISOString() }]);
     showToast('Posláno rodiči ke schválení', '📨');
+    if (playVoiceRef.current) playVoiceRef.current('choreSent', 'Posláno rodiči!');
   };
 
   // Univerzální schválení (chore i shop)
@@ -1468,10 +1479,12 @@ function App() {
       setChoreState(s => ({ ...s, [refId]: 'done' }));
       feedPet(5, 5);
       showToast(`+${item.points} bodů · ${item.t}`, '✅');
+      if (playVoiceRef.current) playVoiceRef.current('choreApproved', `Skvělé, body jsou tvoje!`);
     } else if (type === 'shop') {
       setShopState(s => ({ ...s, [refId]: 'unlocked' }));
       feedPet(10, 5);
       showToast(`Odměna schválena: ${item.t}`, '🎉');
+      if (playVoiceRef.current) playVoiceRef.current('shopApproved', `Odměna ${item.t} schválena!`);
     }
     setPendingApprovals(p => p.filter(x => x.id !== id));
   };
@@ -1504,15 +1517,20 @@ function App() {
       audio.coin(); confetti.fire({n:60});
       setShopState(s => { const ns = {...s}; delete ns[r.id]; return ns; });
       showToast(`Užij si: ${r.t} 🎉`, '🎁');
+      if (playVoiceRef.current) playVoiceRef.current('shopClaim', `Užij si ${r.t}!`);
       return;
     }
-    if (points < r.cost) { audio.undo(); showToast('Ještě nemáš dost bodů', '🔒'); return; }
+    if (points < r.cost) { audio.undo(); showToast('Ještě nemáš dost bodů', '🔒');
+      if (playVoiceRef.current) playVoiceRef.current('noPoints', 'Ještě nemáš dost bodů.');
+      return;
+    }
     audio.coin();
     // Body odečíst hned (aby kid nemohl zažádat o 10 věcí za stejné body)
     setPoints(p => p - r.cost);
     setShopState(s => ({ ...s, [r.id]: 'requested' }));
     setPendingApprovals(p => [...p, { id: 'shop-' + r.id + '-' + Date.now(), type: 'shop', refId: r.id, emoji: r.emoji, t: r.t, points: r.cost, date: new Date().toISOString() }]);
     showToast('Požádáno · čeká na rodiče', '🎁');
+    if (playVoiceRef.current) playVoiceRef.current('shopBuy', 'Požádáno, čeká na rodiče.');
   };
   const toggleWeekly = (id) => { audio.tap(); setWeeklyDone(s => ({ ...s, [id]: !s[id] })); };
   const togglePack = (id, allIds) => {
@@ -2043,6 +2061,7 @@ function App() {
     setMoodSliderValue(50);
     audio.coin();
     showToast('Díky, že jsi to napsal/a!', '💜');
+    if (playVoiceRef.current) playVoiceRef.current('moodPrompt', 'Díky, že jsi to napsal!');
   }, [audio, showToast]);
 
   const addPraiseMessage = useCallback((txt) => {
@@ -2362,20 +2381,22 @@ function App() {
       });
       audio.success();
       confetti.fire({ n: 80 });
+      if (playVoiceRef.current) playVoiceRef.current('stickerNew', 'Nová nálepka!');
     }
     // eslint-disable-next-line
   }, [totalXp, streakDays, readingList, choreState]);
 
-  // greeting TTS jednou při vstupu
+  // greeting jednou při vstupu (pokud audio už odemknuté user gestem)
   const greetedRef = useRef(false);
   useEffect(() => {
     if (entered && !greetedRef.current && ttsOn) {
       greetedRef.current = true;
       setTimeout(() => {
-        // v21: time-aware pozdrav - ráno morning.mp3, večer evening.mp3, jinak hello (ahoj.mp3)
+        // v27: skip auto-pozdravu pokud user ještě nic neklepnul (autoplay blokovaný)
+        if (!audioUnlockedRef.current) return;
         const h = new Date().getHours();
         const evt = h < 10 ? 'morning' : (h >= 18 ? 'evening' : 'hello');
-        sayRikiVoice(evt, RIKI_PHRASES.hello);
+        if (sayRikiVoiceRef.current) sayRikiVoiceRef.current(evt, RIKI_PHRASES.hello);
       }, 800);
     }
   }, [entered, ttsOn, tts]);
@@ -3558,6 +3579,7 @@ function App() {
                 setShowWorryBox(false);
                 audio.ding();
                 showToast('Posláno mámě 💜', '✉️');
+                if (playVoiceRef.current) playVoiceRef.current('worrySent', 'Posláno mámě.');
               }} style={{ cursor:'pointer', flex:1, background:'linear-gradient(135deg, #c084fc, #a855f7)', color:'#fff', borderRadius:14, padding:'12px 14px', textAlign:'center', fontWeight:800, fontSize:15 }}>Poslat mámě 💜</div>
             </div>
           </div>
@@ -4719,8 +4741,8 @@ function App() {
                   </div>
 
                   <div style={{ background:'#fff', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
-                    <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'#1a1530' }}>Verze: Domácí pomocník v26</div>
-                    <div style={{ fontSize:12, color:'#9a96ac', marginTop:4 }}>Build 2026-06-21 · 08:34</div>
+                    <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'#1a1530' }}>Verze: Domácí pomocník v27</div>
+                    <div style={{ fontSize:12, color:'#9a96ac', marginTop:4 }}>Build 2026-06-21 · 08:39</div>
                   </div>
                 </div>
                 )}
