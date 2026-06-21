@@ -55,13 +55,14 @@ const { useState, useEffect, useRef, useMemo, useCallback } = React;
 // ====================================================================
 
 const MORNING_STEPS = [
-  { id: 'vstat',    t: 'Vstát a ustlat postel',         icon: '🛏️', hint: 'Hezky narovnej polštář a přikrývku.', on: true, secs: 120 },
-  { id: 'wc',       t: 'Na záchod a umýt ruce',         icon: '🧼', hint: 'Mýdlo a teplá voda, počítej do dvaceti.', on: true, secs: 120 },
-  { id: 'zuby',     t: 'Vyčistit zuby',                 icon: '🪥', hint: 'Nahoře i dole, krouživě, celé 2 minuty.', on: true, secs: 150 },
-  { id: 'obleci',   t: 'Obléknout se podle počasí',     icon: '🧥', hint: 'Dnes je ráno chládno – vezmi si mikinu a bundu.', on: true, secs: 300 },
-  { id: 'snidane',  t: 'Nasnídat se',                   icon: '🥣', hint: 'Ať máš sílu na celé dopoledne.', on: true, secs: 600 },
-  { id: 'aktovka',  t: 'Zkontrolovat aktovku',          icon: '🎒', hint: 'Úkoly, svačina, láhev a věci na trénink.', on: true, secs: 120 },
-  { id: 'boty',     t: 'Boty, bunda a vyrazit',         icon: '👟', hint: 'Sraz u dveří v 7:50. Zvládneš to v pohodě!', on: true, secs: 120 },
+  { id: 'vstat',    t: 'Vstát a ustlat postel',         icon: '🛏️', hint: 'Hezky narovnej polštář a přikrývku.', on: true, secs: 180 },
+  { id: 'wc',       t: 'Na záchod',                     icon: '🚽', hint: 'Pak si umyj ruce.', on: true, secs: 180 },
+  { id: 'oblicej',  t: 'Umýt obličej',                  icon: '💦', hint: 'Studenou vodou. Probudí tě to!', on: true, secs: 120 },
+  { id: 'zuby',     t: 'Vyčistit zuby',                 icon: '🪥', hint: 'Nahoře i dole, krouživě, celé 2 minuty.', on: true, secs: 180 },
+  { id: 'obleci',   t: 'Obléknout se podle počasí',     icon: '🧥', hint: 'Mrkni co je za počasí a oblečení je nachystané včera večer.', on: true, secs: 360 },
+  { id: 'snidane',  t: 'Nasnídat se',                   icon: '🥣', hint: 'V klidu, ať máš sílu na celé dopoledne.', on: true, secs: 900 },
+  { id: 'aktovka',  t: 'Zkontrolovat aktovku',          icon: '🎒', hint: 'Úkoly, svačina, láhev a věci na trénink.', on: true, secs: 180 },
+  { id: 'boty',     t: 'Boty, bunda a vyrazit',         icon: '👟', hint: 'Zvládneš to v pohodě!', on: true, secs: 180 },
 ];
 
 const EVENING_STEPS = [
@@ -427,6 +428,8 @@ const saveState = (s) => {
       whoHomeSchedule: s.whoHomeSchedule,
       // v17
       voiceMap: s.voiceMap, voiceBaseUrl: s.voiceBaseUrl,
+      // v18
+      dayBlueprint: s.dayBlueprint,
     };
     localStorage.setItem(LS_KEY, JSON.stringify(persistable));
   } catch(e) {}
@@ -825,6 +828,8 @@ function App() {
   // v17: hlasové vzkazy (mapování event id → URL na MP3)
   const [voiceMap, setVoiceMap] = useState((persisted && persisted.voiceMap && typeof persisted.voiceMap === 'object') ? persisted.voiceMap : {});
   const [voiceBaseUrl, setVoiceBaseUrl] = useState((persisted && persisted.voiceBaseUrl) || ''); // např. "voices/" pokud chce relativní cestu
+  // v18: editovatelný denní rozvrh (TEACCH timeline)
+  const [dayBlueprint, setDayBlueprint] = useState((persisted && Array.isArray(persisted.dayBlueprint) && persisted.dayBlueprint.length > 0) ? persisted.dayBlueprint : DAY_BLUEPRINT.map(b => ({...b})));
   // v8 step timer (časovač pro děti s časovou slepotou)
   const [currentStepStart, setCurrentStepStart] = useState(null); // timestamp začátku aktuálního kroku
   const [nowTick, setNowTick] = useState(Date.now()); // pro re-render každou vteřinu
@@ -881,7 +886,7 @@ function App() {
       petMood, petEnergy, petSleeping, petLastDecay,
       inventory, bossState,
       lastDayKey, gcalUrl, gcalEvents, gcalLastFetch, whoHomeSchedule,
-      voiceMap, voiceBaseUrl,
+      voiceMap, voiceBaseUrl, dayBlueprint,
     });
   }, [theme, points, totalXp, streak, morning, evening, doneM, doneE, whoHome, departMin,
       shopItems, shopState, choreState, pendingApprovals, packState, packAwarded,
@@ -894,7 +899,7 @@ function App() {
       petMood, petEnergy, petSleeping, petLastDecay,
       inventory, bossState,
       lastDayKey, gcalUrl, gcalEvents, gcalLastFetch, whoHomeSchedule,
-      voiceMap, voiceBaseUrl]);
+      voiceMap, voiceBaseUrl, dayBlueprint]);
 
   // --- helpers
   const tv = useMemo(() => THEMES[theme] || THEMES.cisto, [theme]);
@@ -2022,6 +2027,7 @@ function App() {
     if (isArr(s.whoHomeSchedule) && s.whoHomeSchedule.length === 7) setWhoHomeSchedule(s.whoHomeSchedule);
     if (isObj(s.voiceMap)) setVoiceMap(s.voiceMap);
     if (isStr(s.voiceBaseUrl)) setVoiceBaseUrl(s.voiceBaseUrl);
+    if (isArr(s.dayBlueprint) && s.dayBlueprint.length > 0) setDayBlueprint(s.dayBlueprint);
   }, []);
 
   // PULL ze serveru (manuální nebo periodicky)
@@ -2317,7 +2323,7 @@ function App() {
           else             { phase = 'NOC';       phaseColor = '#1e3a8a'; phaseEmoji = '🌙'; phaseTextColor='#1e3a8a'; }
 
           // Najdi co je teď a co dál v blueprintu
-          const blueprintMins = DAY_BLUEPRINT.map(b => ({ ...b, mins: (function(){ const p = b.time.split(':'); return parseInt(p[0])*60+parseInt(p[1]); })() }));
+          const blueprintMins = dayBlueprint.map(b => ({ ...b, mins: (function(){ const p = String(b.time||'0:0').split(':'); return parseInt(p[0])*60+parseInt(p[1]); })() }));
           let currentIdx = -1;
           for (let i = blueprintMins.length - 1; i >= 0; i--) {
             if (blueprintMins[i].mins <= totalMins) { currentIdx = i; break; }
@@ -2810,17 +2816,38 @@ function App() {
             <div style={{
               background: defeated ? 'linear-gradient(135deg, #16a34a, #15803d)' : 'linear-gradient(135deg, #1f2937, #0f172a)',
               color:'#fff', borderRadius:24, padding:'20px 22px',
-              boxShadow:'0 10px 30px rgba(0,0,0,.25)', display:'flex', alignItems:'center', gap:18, position:'relative', overflow:'hidden'
+              boxShadow:'0 10px 30px rgba(0,0,0,.25)', display:'flex', alignItems:'center', gap:18, position:'relative',
+              minHeight: 130, flex:'none'
             }}>
-              <div style={{ fontSize:84, lineHeight:1, animation: defeated ? 'none' : 'bossShake 3s infinite', filter: defeated ? 'grayscale(0.4) opacity(0.4)' : 'none' }}>{boss.emoji}</div>
+              {/* Emoji v bíléh kruhu (chrání proti color inherit bugu) */}
+              <div style={{
+                flex:'none',
+                width: 100, height: 100,
+                borderRadius: '50%',
+                background: defeated ? 'rgba(255,255,255,.92)' : '#fef3c7',
+                display:'flex',
+                alignItems:'center',
+                justifyContent:'center',
+                border: '3px solid '+(defeated ? '#15803d' : boss.color),
+                boxShadow: '0 6px 18px rgba(0,0,0,.3)',
+                animation: defeated ? 'none' : 'bossShake 3s infinite',
+                filter: defeated ? 'grayscale(0.4) opacity(0.6)' : 'none'
+              }}>
+                <span style={{
+                  fontSize: 60,
+                  lineHeight: 1,
+                  color: 'initial', /* reset! aby emoji nedědil bílou */
+                  display: 'block'
+                }}>{boss.emoji}</span>
+              </div>
               <div style={{ flex:1, minWidth:0 }}>
-                <div style={{ fontSize:11, fontWeight:900, opacity:.8, textTransform:'uppercase', letterSpacing:'.1em' }}>Týdenní boss</div>
-                <div style={{ fontFamily:'var(--display)', fontSize:24, fontWeight:600, marginBottom:6 }}>{boss.name}</div>
+                <div style={{ fontSize:11, fontWeight:900, opacity:.85, textTransform:'uppercase', letterSpacing:'.1em' }}>Týdenní boss</div>
+                <div style={{ fontFamily:'var(--display)', fontSize:24, fontWeight:600, marginBottom:8 }}>{boss.name}</div>
                 {defeated ? (
                   <div style={{ fontSize:14, fontWeight:800, color:'#86efac' }}>🏆 PORAŽEN! Další přijde v pondělí.</div>
                 ) : (
                   <React.Fragment>
-                    <div style={{ height:14, background:'rgba(255,255,255,.15)', borderRadius:8, overflow:'hidden', marginBottom:5 }}>
+                    <div style={{ height:14, background:'rgba(255,255,255,.18)', borderRadius:8, overflow:'hidden', marginBottom:6 }}>
                       <div style={{ height:'100%', width: hpPct+'%', background:'linear-gradient(90deg, #ef4444, #b91c1c)', borderRadius:8, transition:'width .6s' }}/>
                     </div>
                     <div style={{ fontSize:13, fontWeight:800, opacity:.9 }}>HP {hp} / {maxHp} · 1× rutina = 1 damage · poražení = +100 XP + legendární loot</div>
@@ -3553,6 +3580,67 @@ function App() {
                     })()}
                   </div>
 
+                  {/* v18: Rozvrh dne (TEACCH timeline na home) */}
+                  <div style={{ background:'#fff', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
+                    <div style={{ fontFamily:'var(--display)', fontSize:18, fontWeight:600, color:'#1a1530', marginBottom:4 }}>📍 Rozvrh dne (timeline na home)</div>
+                    <div style={{ fontSize:12, fontWeight:700, color:'#9a96ac', marginBottom:12, lineHeight:1.4 }}>
+                      Tohle dítě uvidí na home obrazovce — řadu ikon postupně během dne (TEACCH metoda). Edituj čas / emoji / popisek pro každý milník. Šipkami změníš pořadí.
+                    </div>
+                    {dayBlueprint.map((b, idx) => (
+                      <div key={b.id} style={{ display:'flex', alignItems:'center', gap:8, padding:'8px 2px', borderBottom:'1px solid #f0f0f5' }}>
+                        <div style={{ display:'flex', flexDirection:'column', gap:1 }}>
+                          <div onClick={() => {
+                            if (idx === 0) return; audio.tap();
+                            setDayBlueprint(arr => { const a = [...arr]; [a[idx-1], a[idx]] = [a[idx], a[idx-1]]; return a; });
+                          }} style={{ cursor: idx === 0 ? 'default' : 'pointer', opacity: idx === 0 ? 0.25 : 1, width:24, height:18, borderRadius:5, background:'#f0f0f7', display:'flex', alignItems:'center', justifyContent:'center', fontSize:11, fontWeight:800 }}>▲</div>
+                          <div onClick={() => {
+                            if (idx === dayBlueprint.length-1) return; audio.tap();
+                            setDayBlueprint(arr => { const a = [...arr]; [a[idx], a[idx+1]] = [a[idx+1], a[idx]]; return a; });
+                          }} style={{ cursor: idx === dayBlueprint.length-1 ? 'default' : 'pointer', opacity: idx === dayBlueprint.length-1 ? 0.25 : 1, width:24, height:18, borderRadius:5, background:'#f0f0f7', display:'flex', alignItems:'center', justifyContent:'center', fontSize:11, fontWeight:800 }}>▼</div>
+                        </div>
+                        {/* Time picker */}
+                        <input type="time" value={b.time} onChange={(e) => {
+                          const val = e.target.value;
+                          setDayBlueprint(arr => arr.map(x => x.id === b.id ? {...x, time: val} : x));
+                        }} style={{ width:88, fontSize:14, fontWeight:800, border:'1px solid #e3e3ea', borderRadius:8, padding:'6px 8px', background:'#fafafd' }} />
+                        {/* Emoji */}
+                        <input value={b.emoji} maxLength={4} onChange={(e) => {
+                          const val = e.target.value;
+                          setDayBlueprint(arr => arr.map(x => x.id === b.id ? {...x, emoji: val} : x));
+                        }} style={{ width:42, fontSize:22, border:'1px solid #e3e3ea', borderRadius:8, padding:'4px 2px', textAlign:'center', background:'#fafafd' }} />
+                        {/* Label */}
+                        <input value={b.label} onChange={(e) => {
+                          const val = e.target.value;
+                          setDayBlueprint(arr => arr.map(x => x.id === b.id ? {...x, label: val} : x));
+                        }} style={{ flex:1, minWidth:0, fontFamily:'var(--display)', fontSize:14, fontWeight:500, color:'#1a1530', border:'1px solid #e3e3ea', borderRadius:8, padding:'8px 10px' }} />
+                        {/* Delete */}
+                        <div onClick={() => {
+                          if (!window.confirm(`Smazat milník "${b.label}"?`)) return;
+                          setDayBlueprint(arr => arr.filter(x => x.id !== b.id));
+                          audio.undo();
+                        }} style={{ cursor:'pointer', width:24, height:24, borderRadius:6, background:'#fdeaea', color:'#e23', display:'flex', alignItems:'center', justifyContent:'center', fontWeight:800, fontSize:13 }}>✕</div>
+                      </div>
+                    ))}
+                    <div onClick={() => {
+                      // Najdi další volný čas + 30 min od posledního
+                      const last = dayBlueprint[dayBlueprint.length-1];
+                      let nextTime = '12:00';
+                      if (last) {
+                        const p = String(last.time||'12:0').split(':');
+                        const m = parseInt(p[0])*60 + parseInt(p[1]) + 30;
+                        const h = Math.floor(m/60) % 24, mm = m % 60;
+                        nextTime = (h < 10 ? '0' : '') + h + ':' + (mm < 10 ? '0' : '') + mm;
+                      }
+                      setDayBlueprint(arr => [...arr, { id:'mb'+Date.now(), time: nextTime, emoji:'⭐', label:'nový milník' }]);
+                      audio.coin();
+                    }} style={{ cursor:'pointer', background:'var(--accent)', color:'#fff', fontWeight:600, fontSize:14, padding:'12px 14px', borderRadius:11, textAlign:'center', marginTop:14 }}>+ Přidat milník</div>
+                    <div onClick={() => {
+                      if (!window.confirm('Resetovat rozvrh dne na výchozí (vstávat, snídaně, škola, oběd, …)?')) return;
+                      setDayBlueprint(DAY_BLUEPRINT.map(b => ({...b})));
+                      audio.ding();
+                    }} style={{ cursor:'pointer', background:'#f0f0f7', color:'#6a6680', fontWeight:600, fontSize:12, padding:'8px 12px', borderRadius:10, textAlign:'center', marginTop:8 }}>↻ Reset na výchozí</div>
+                  </div>
+
                   {/* Pomoci doma - editovatelný seznam s reorderem */}
                   <div style={{ background:'#fff', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
                     <div style={{ fontFamily:'var(--display)', fontSize:18, fontWeight:600, color:'#1a1530', marginBottom:4 }}>Domácí úkoly 🧹</div>
@@ -4274,8 +4362,8 @@ function App() {
                   </div>
 
                   <div style={{ background:'#fff', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
-                    <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'#1a1530' }}>Verze: Domácí pomocník v17</div>
-                    <div style={{ fontSize:12, color:'#9a96ac', marginTop:4 }}>Build 2026-06-21 · 07:25</div>
+                    <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'#1a1530' }}>Verze: Domácí pomocník v18</div>
+                    <div style={{ fontSize:12, color:'#9a96ac', marginTop:4 }}>Build 2026-06-21 · 07:35</div>
                   </div>
                 </div>
                 )}
