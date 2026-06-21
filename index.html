@@ -373,6 +373,9 @@ const saveState = (s) => {
       petMood: s.petMood, petEnergy: s.petEnergy, petSleeping: s.petSleeping, petLastDecay: s.petLastDecay,
       // v14 hero quest
       inventory: s.inventory, bossState: s.bossState,
+      // v15
+      lastDayKey: s.lastDayKey, gcalUrl: s.gcalUrl, gcalEvents: s.gcalEvents, gcalLastFetch: s.gcalLastFetch,
+      whoHomeSchedule: s.whoHomeSchedule,
     };
     localStorage.setItem(LS_KEY, JSON.stringify(persistable));
   } catch(e) {}
@@ -761,6 +764,13 @@ function App() {
   const [inventory, setInventory] = useState((persisted && Array.isArray(persisted.inventory)) ? persisted.inventory : []);
   const [bossState, setBossState] = useState((persisted && persisted.bossState && typeof persisted.bossState === 'object') ? persisted.bossState : { weekId: getWeekId(), hp: 7, defeated: false });
   const [floatingXp, setFloatingXp] = useState([]); // efemerní {id, x, y, value, critical}
+  // v15: denní reset + kalendář + týdenní whoHome
+  const [lastDayKey, setLastDayKey] = useState((persisted && persisted.lastDayKey) || todayISO());
+  const [gcalUrl, setGcalUrl] = useState((persisted && persisted.gcalUrl) || '');
+  const [gcalEvents, setGcalEvents] = useState((persisted && Array.isArray(persisted.gcalEvents)) ? persisted.gcalEvents : []);
+  const [gcalLastFetch, setGcalLastFetch] = useState((persisted && persisted.gcalLastFetch) || 0);
+  // whoHomeSchedule: 7 položek (0=Pondělí ... 6=Neděle), hodnoty 'mama'|'tata'|'oba'|'sam'|'babi'|'deda'
+  const [whoHomeSchedule, setWhoHomeSchedule] = useState((persisted && Array.isArray(persisted.whoHomeSchedule) && persisted.whoHomeSchedule.length === 7) ? persisted.whoHomeSchedule : ['mama','mama','mama','mama','mama','mama','mama']);
   // v8 step timer (časovač pro děti s časovou slepotou)
   const [currentStepStart, setCurrentStepStart] = useState(null); // timestamp začátku aktuálního kroku
   const [nowTick, setNowTick] = useState(Date.now()); // pro re-render každou vteřinu
@@ -779,6 +789,8 @@ function App() {
   const [newBookPages, setNewBookPages] = useState('');
   const [newChoreText, setNewChoreText] = useState('');
   const [newChorePoints, setNewChorePoints] = useState('5');
+  const [newStepText, setNewStepText] = useState('');
+  const [moodSliderValue, setMoodSliderValue] = useState(50);
   const [newEvent, setNewEvent] = useState({ day:0, time:'15:00', emoji:'⚽', title:'', type:'sport' });
   const [showWorryBox, setShowWorryBox] = useState(false);
 
@@ -814,6 +826,7 @@ function App() {
       syncUrl, lastSyncTime,
       petMood, petEnergy, petSleeping, petLastDecay,
       inventory, bossState,
+      lastDayKey, gcalUrl, gcalEvents, gcalLastFetch, whoHomeSchedule,
     });
   }, [theme, points, totalXp, streak, morning, evening, doneM, doneE, whoHome, departMin,
       shopItems, shopState, choreState, pendingApprovals, packState, packAwarded,
@@ -824,7 +837,8 @@ function App() {
       weekEvents, worryMessages, readingList, stickers, childPhoto, choresList, weeklyChores,
       syncUrl, lastSyncTime,
       petMood, petEnergy, petSleeping, petLastDecay,
-      inventory, bossState]);
+      inventory, bossState,
+      lastDayKey, gcalUrl, gcalEvents, gcalLastFetch, whoHomeSchedule]);
 
   // --- helpers
   const tv = useMemo(() => THEMES[theme] || THEMES.cisto, [theme]);
@@ -946,6 +960,101 @@ function App() {
     setFloatingXp(arr => [...arr, { id, x: x || window.innerWidth/2, y: y || window.innerHeight/2, value, critical }]);
     setTimeout(() => setFloatingXp(arr => arr.filter(f => f.id !== id)), 1500);
   }, []);
+
+  // ---------------------- v15: Půlnoční reset ----------------------
+  // Když se změní den, resetuj rutiny a úkoly (jinak by zůstaly "splněné" z předchozího dne)
+  useEffect(() => {
+    const check = () => {
+      const today = todayISO();
+      if (today !== lastDayKey) {
+        setDoneM({});
+        setDoneE({});
+        setChoreState({});
+        setPackState({});
+        setPackAwarded(false);
+        setLastDayKey(today);
+      }
+    };
+    check();
+    const id = setInterval(check, 60 * 1000);
+    return () => clearInterval(id);
+  }, [lastDayKey]);
+
+  // ---------------------- v15: Google Calendar fetch ----------------------
+  const parseICal = useCallback((text) => {
+    // Jednoduchý iCal parser - bere VEVENT s DTSTART, DTEND, SUMMARY
+    if (!text || typeof text !== 'string') return [];
+    const events = [];
+    const blocks = text.split('BEGIN:VEVENT');
+    for (let i = 1; i < blocks.length; i++) {
+      const block = blocks[i].split('END:VEVENT')[0];
+      const ev = {};
+      // unfold řádky (Google iCal používá CRLF + mezera pro continuation)
+      const lines = block.replace(/\r\n[ \t]/g, '').split(/\r?\n/);
+      for (const line of lines) {
+        if (line.startsWith('SUMMARY:')) ev.summary = line.slice(8).replace(/\\,/g, ',').replace(/\\n/g, ' ').trim();
+        else if (line.startsWith('DTSTART')) {
+          const val = line.split(':')[1];
+          if (val) {
+            const allDay = !val.includes('T');
+            ev.start = val;
+            ev.allDay = allDay;
+            // Parse YYYYMMDDTHHMMSS or YYYYMMDD
+            const y = val.slice(0, 4), m = val.slice(4, 6), d = val.slice(6, 8);
+            const hh = allDay ? '00' : val.slice(9, 11);
+            const mm = allDay ? '00' : val.slice(11, 13);
+            ev.iso = `${y}-${m}-${d}`;
+            ev.time = allDay ? '' : `${hh}:${mm}`;
+            ev.dateTime = `${y}-${m}-${d}T${hh}:${mm}:00`;
+          }
+        } else if (line.startsWith('DTEND')) {
+          const val = line.split(':')[1];
+          if (val) ev.end = val;
+        } else if (line.startsWith('LOCATION:')) ev.location = line.slice(9).trim();
+        else if (line.startsWith('UID:')) ev.uid = line.slice(4).trim();
+      }
+      if (ev.summary && ev.iso) events.push(ev);
+    }
+    // Vyfiltruj jen události od dnes do +14 dní
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const inTwoWeeks = new Date(today); inTwoWeeks.setDate(today.getDate() + 14);
+    return events
+      .filter(e => {
+        const d = new Date(e.dateTime || e.iso);
+        return d >= today && d <= inTwoWeeks;
+      })
+      .sort((a, b) => (a.dateTime || a.iso).localeCompare(b.dateTime || b.iso));
+  }, []);
+
+  const fetchGcal = useCallback(async (force) => {
+    if (!gcalUrl || !gcalUrl.startsWith('http')) return;
+    // Cache 15 minut pokud nepřišlo force
+    if (!force && Date.now() - gcalLastFetch < 15 * 60 * 1000) return;
+    try {
+      // CORS proxy - allorigins.win je veřejný, kdyby přestal, můžeme změnit
+      const proxyUrl = 'https://api.allorigins.win/raw?url=' + encodeURIComponent(gcalUrl);
+      const r = await fetch(proxyUrl);
+      if (!r.ok) throw new Error('Calendar fetch failed: ' + r.status);
+      const text = await r.text();
+      const events = parseICal(text);
+      setGcalEvents(events);
+      setGcalLastFetch(Date.now());
+    } catch (e) {
+      console.warn('GCal fetch error:', e);
+    }
+  }, [gcalUrl, gcalLastFetch, parseICal]);
+
+  useEffect(() => {
+    if (!gcalUrl) return;
+    fetchGcal(false);
+    const id = setInterval(() => fetchGcal(false), 15 * 60 * 1000); // 15 min auto-refresh
+    return () => clearInterval(id);
+    // eslint-disable-next-line
+  }, [gcalUrl]);
+
+  // Dnešní whoHome z týdenního rozvrhu (key/string)
+  const todayDayIdx = (() => { const d = new Date(); return (d.getDay() + 6) % 7; })(); // 0=Po
+  const whoHomeTodayKey = whoHomeSchedule[todayDayIdx] || whoHome || 'mama';
 
   // Tamagotchi decay: 2 body za hodinu (pomalu), když spí tak nic
   useEffect(() => {
@@ -1289,7 +1398,7 @@ function App() {
   };
 
   // who-home today
-  const plToday = PLACES[whoHome] || PLACES.mama;
+  const plToday = PLACES[whoHomeTodayKey] || PLACES.mama;
   const whoTodayColor = tv[plToday.cvar];
   const whoHomeToday = { label: plToday.label, short: plToday.short, color: whoTodayColor, ring: hexA(whoTodayColor, 0.18), bg: tv['--surface'] };
 
@@ -1375,12 +1484,24 @@ function App() {
   const cal = { bodyH: calBodyH, hours: calHours };
   const weekDays = dayShort.map((dn, i) => {
     const dd = new Date(monday); dd.setDate(monday.getDate() + i);
-    const who = WEEK_WHO[i];
+    const ddISO = dd.getFullYear() + '-' + pad2(dd.getMonth()+1) + '-' + pad2(dd.getDate());
+    const who = whoHomeSchedule[i] || WEEK_WHO[i] || 'mama'; // v15 priorita: rozvrh -> default const
     const isToday = i === wd;
     const plc = PLACES[who] || PLACES.mama;
     const wcol = tv[plc.cvar];
-    const evs = (weekEvents[i] || []).map(e => {
-      const col = TYPE_COLOR[e.type] || accent;
+    // Spoj ruční události + Google Calendar
+    const gcalForDay = gcalEvents.filter(g => g.iso === ddISO).map(g => ({
+      id: 'gcal-' + (g.uid || g.iso + g.time),
+      t: g.summary,
+      time: g.time || '9:00',
+      dur: 1,
+      type: 'gcal',
+      fromGcal: true
+    }));
+    const manualEvents = (weekEvents[i] || []);
+    const allEvents = [...manualEvents, ...gcalForDay];
+    const evs = allEvents.map(e => {
+      const col = e.fromGcal ? '#1e40af' : (TYPE_COLOR[e.type] || accent);
       const startDec = parseT(e.time);
       let top = (startDec - calStart) * pxH;
       let height = (e.dur || 1) * pxH - 4;
@@ -1595,17 +1716,38 @@ function App() {
     for (var i = 6; i >= 0; i--) {
       var d = new Date(); d.setDate(d.getDate() - i);
       var iso = d.getFullYear() + '-' + pad2(d.getMonth()+1) + '-' + pad2(d.getDate());
-      arr.push({ iso, day: ['Ne','Po','Út','St','Čt','Pá','So'][d.getDay()], mood: moodLog[iso] || null });
+      var raw = moodLog[iso];
+      var entry = null;
+      if (raw != null) {
+        if (typeof raw === 'string') {
+          // legacy emoji
+          entry = { emoji: raw, value: null };
+        } else if (typeof raw === 'object' && raw.emoji) {
+          entry = { emoji: raw.emoji, value: raw.value };
+        }
+      }
+      arr.push({ iso, day: ['Ne','Po','Út','St','Čt','Pá','So'][d.getDay()], mood: entry });
     }
     return arr;
   }, [moodLog]);
 
   // --- v2 handlers
-  const logMood = useCallback((emoji) => {
+  const logMood = useCallback((value) => {
     const today = todayISO();
-    setMoodLog(m => ({ ...m, [today]: emoji }));
+    // Hodnotu uložíme jako objekt s emoji + value; zachováme zpětnou kompatibilitu se stringem
+    let entry;
+    if (typeof value === 'number') {
+      const v = Math.max(0, Math.min(100, value));
+      const emoji = v < 20 ? '😭' : v < 40 ? '😢' : v < 60 ? '😐' : v < 80 ? '🙂' : '😄';
+      entry = { value: v, emoji };
+    } else {
+      // legacy emoji string
+      entry = value;
+    }
+    setMoodLog(m => ({ ...m, [today]: entry }));
     setLastMoodDate(today);
     setShowMoodPrompt(false);
+    setMoodSliderValue(50);
     audio.coin();
     showToast('Díky, že jsi to napsal/a!', '💜');
   }, [audio, showToast]);
@@ -1759,6 +1901,11 @@ function App() {
     if (isNum(s.petLastDecay)) setPetLastDecay(s.petLastDecay);
     if (isArr(s.inventory)) setInventory(s.inventory);
     if (isObj(s.bossState)) setBossState(s.bossState);
+    if (isStr(s.lastDayKey)) setLastDayKey(s.lastDayKey);
+    if (isStr(s.gcalUrl)) setGcalUrl(s.gcalUrl);
+    if (isArr(s.gcalEvents)) setGcalEvents(s.gcalEvents);
+    if (isNum(s.gcalLastFetch)) setGcalLastFetch(s.gcalLastFetch);
+    if (isArr(s.whoHomeSchedule) && s.whoHomeSchedule.length === 7) setWhoHomeSchedule(s.whoHomeSchedule);
   }, []);
 
   // PULL ze serveru (manuální nebo periodicky)
@@ -2340,7 +2487,11 @@ function App() {
           <div style={{ flex:1 }}>
             <div style={{ fontFamily:'var(--display)', fontSize:32, fontWeight:600, color:'var(--ink)', lineHeight:1 }}>Tvůj týden</div>
             <div style={{ fontSize:15, fontWeight:800, color:'var(--muted)', marginTop:2, display:'flex', alignItems:'center', gap:8 }}>
-              <span style={{ display:'inline-flex', alignItems:'center', gap:5, color:'var(--good)' }}>● Připojeno na Google kalendář</span>
+              {gcalUrl ? (
+                <span style={{ display:'inline-flex', alignItems:'center', gap:5, color: gcalEvents.length > 0 ? 'var(--good)' : '#f59e0b' }}>● {gcalEvents.length > 0 ? `Google kalendář: ${gcalEvents.length} událostí` : 'Google kalendář se načítá…'}</span>
+              ) : (
+                <span style={{ display:'inline-flex', alignItems:'center', gap:5, color:'var(--muted)' }}>● Bez Google kalendáře</span>
+              )}
             </div>
           </div>
           <div style={{ display:'flex', gap:14 }}>
@@ -3013,13 +3164,49 @@ function App() {
                 {parentTab === 'dnes' && (
                 <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
                   <div style={{ background:'#fff', borderRadius:20, padding:18, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
-                    <div style={{ fontFamily:'var(--display)', fontSize:18, fontWeight:600, color:'#1a1530' }}>Kde je {childName} dnes?</div>
-                    <div style={{ display:'flex', flexWrap:'wrap', gap:9, marginTop:12 }}>
-                      {placeButtons.map((b) => (
-                        <div key={b.k} onClick={() => { audio.tap(); setWhoHome(b.k); }} style={{ cursor:'pointer', flex:1, minWidth:90, textAlign:'center', padding:'15px 8px', borderRadius:16, background: b.bg, color: b.ink, fontFamily:'var(--display)', fontSize:18, fontWeight:600 }}>{b.label}</div>
-                      ))}
-                    </div>
-                    <div style={{ fontSize:12, fontWeight:700, color:'#9a96ac', marginTop:9 }}>Změnu hned uvidí dítě na tabletu.</div>
+                    <div style={{ fontFamily:'var(--display)', fontSize:18, fontWeight:600, color:'#1a1530' }}>Týdenní rozvrh — kdo je doma</div>
+                    <div style={{ fontSize:12, fontWeight:700, color:'#9a96ac', marginTop:4, marginBottom:14 }}>Nastav celý týden dopředu. Dítě uvidí na home obrazovce kdo ho čeká dnes.</div>
+                    {(() => {
+                      const days = ['Pondělí','Úterý','Středa','Čtvrtek','Pátek','Sobota','Neděle'];
+                      const opts = [
+                        { k:'mama',  label:'Máma',  bg:'#fce7f3', ink:'#9d174d' },
+                        { k:'tata',  label:'Táta',  bg:'#dbeafe', ink:'#1e40af' },
+                        { k:'oba',   label:'Oba',   bg:'#d1fae5', ink:'#065f46' },
+                        { k:'babi',  label:'Babi',  bg:'#fef3c7', ink:'#92400e' },
+                        { k:'deda',  label:'Děda',  bg:'#fef3c7', ink:'#92400e' },
+                        { k:'sam',   label:'Sám',   bg:'#f3f4f6', ink:'#6b7280' },
+                      ];
+                      return whoHomeSchedule.map((curK, dayIdx) => {
+                        const isToday = dayIdx === todayDayIdx;
+                        return (
+                          <div key={dayIdx} style={{ marginBottom:10, padding: isToday ? '10px 12px' : '8px 0', background: isToday ? '#eef4ff' : 'transparent', borderRadius: isToday ? 12 : 0, border: isToday ? '2px solid var(--accent)' : 'none' }}>
+                            <div style={{ fontSize:13, fontWeight:800, color: isToday ? 'var(--accent)' : '#1a1530', marginBottom:6, display:'flex', alignItems:'center', gap:6 }}>
+                              {days[dayIdx]} {isToday && <span style={{ fontSize:10, background:'var(--accent)', color:'#fff', padding:'2px 7px', borderRadius:6 }}>DNES</span>}
+                            </div>
+                            <div style={{ display:'flex', flexWrap:'wrap', gap:5 }}>
+                              {opts.map(o => {
+                                const active = o.k === curK;
+                                return (
+                                  <div key={o.k} onClick={() => {
+                                    audio.tap();
+                                    setWhoHomeSchedule(s => s.map((v, i) => i === dayIdx ? o.k : v));
+                                  }} style={{
+                                    cursor:'pointer',
+                                    background: active ? o.ink : o.bg,
+                                    color: active ? '#fff' : o.ink,
+                                    fontWeight: 800,
+                                    fontSize: 13,
+                                    padding: '7px 12px',
+                                    borderRadius: 10,
+                                    border: active ? '2px solid '+o.ink : '2px solid transparent'
+                                  }}>{o.label}</div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        );
+                      });
+                    })()}
                   </div>
                   <div style={{ background:'#fff', borderRadius:20, padding:18, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
                     <div style={{ fontFamily:'var(--display)', fontSize:18, fontWeight:600, color:'#1a1530' }}>Časy a odpočty</div>
@@ -3063,32 +3250,112 @@ function App() {
                     <div onClick={() => { audio.tap(); setEditRoutine('evening'); }} style={{ cursor:'pointer', flex:1, textAlign:'center', padding:11, borderRadius:13, background: editKind === 'evening' ? accent : '#f0f0f7', color: editKind === 'evening' ? '#fff' : '#6a6680', fontFamily:'var(--display)', fontWeight:600 }}>🌙 Večerní</div>
                   </div>
                   <div style={{ background:'#fff', borderRadius:20, padding:'10px 14px', boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
-                    {editSteps.map((s) => (
-                      <div key={s.id} style={{ display:'flex', alignItems:'center', gap:11, padding:'12px 2px', borderBottom:'1px solid #f0f0f5' }}>
-                        <div style={{ fontSize:24 }}>{s.icon}</div>
-                        <div style={{ flex:1, fontFamily:'var(--display)', fontSize:16, fontWeight:500, color:'#1a1530' }}>{s.t}</div>
-                        <div onClick={() => toggleEditStep(editKind, s.id)} style={{ cursor:'pointer', width:48, height:28, borderRadius:16, background: s.toggleBg, position:'relative', transition:'background .2s' }}>
-                          <div style={{ position:'absolute', top:3, left: s.knobLeft, width:22, height:22, borderRadius:'50%', background:'#fff', transition:'left .2s', boxShadow:'0 2px 4px rgba(0,0,0,.2)' }}/>
-                        </div>
-                      </div>
-                    ))}
-                    <div style={{ fontSize:13, fontWeight:800, color:'#9a96ac', padding:'12px 2px' }}>Vypnuté kroky se dítěti na tabletu neukážou.</div>
+                    {(() => {
+                      const list = editKind === 'morning' ? morning : evening;
+                      const setList = editKind === 'morning' ? setMorning : setEvening;
+                      return (
+                        <React.Fragment>
+                          {list.map((s, idx) => (
+                            <div key={s.id} style={{ display:'flex', alignItems:'center', gap:8, padding:'10px 2px', borderBottom:'1px solid #f0f0f5' }}>
+                              {/* Reorder šipky */}
+                              <div style={{ display:'flex', flexDirection:'column', gap:1 }}>
+                                <div onClick={() => {
+                                  if (idx === 0) return; audio.tap();
+                                  setList(arr => { const a = [...arr]; [a[idx-1], a[idx]] = [a[idx], a[idx-1]]; return a; });
+                                }} style={{ cursor: idx === 0 ? 'default' : 'pointer', opacity: idx === 0 ? 0.25 : 1, width:24, height:18, borderRadius:5, background:'#f0f0f7', display:'flex', alignItems:'center', justifyContent:'center', fontSize:11, fontWeight:800 }}>▲</div>
+                                <div onClick={() => {
+                                  if (idx === list.length-1) return; audio.tap();
+                                  setList(arr => { const a = [...arr]; [a[idx], a[idx+1]] = [a[idx+1], a[idx]]; return a; });
+                                }} style={{ cursor: idx === list.length-1 ? 'default' : 'pointer', opacity: idx === list.length-1 ? 0.25 : 1, width:24, height:18, borderRadius:5, background:'#f0f0f7', display:'flex', alignItems:'center', justifyContent:'center', fontSize:11, fontWeight:800 }}>▼</div>
+                              </div>
+                              {/* Emoji */}
+                              <input value={s.icon} maxLength={4} onChange={(e) => {
+                                const val = e.target.value;
+                                setList(arr => arr.map(x => x.id === s.id ? {...x, icon: val} : x));
+                              }} style={{ width:42, fontSize:22, border:'1px solid #e3e3ea', borderRadius:8, padding:'4px 2px', textAlign:'center', background:'#fafafd' }} />
+                              {/* Název */}
+                              <input value={s.t} onChange={(e) => {
+                                const val = e.target.value;
+                                setList(arr => arr.map(x => x.id === s.id ? {...x, t: val} : x));
+                              }} style={{ flex:1, minWidth:0, fontFamily:'var(--display)', fontSize:14, fontWeight:500, color:'#1a1530', border:'1px solid #e3e3ea', borderRadius:8, padding:'8px 10px' }} />
+                              {/* Time (secs) */}
+                              <input value={Math.round((s.secs||180)/60)} type="number" min="1" max="60" onChange={(e) => {
+                                const mins = parseInt(e.target.value) || 3;
+                                setList(arr => arr.map(x => x.id === s.id ? {...x, secs: mins * 60} : x));
+                              }} title="Očekávaná doba (minuty)" style={{ width:44, fontSize:12, border:'1px solid #e3e3ea', borderRadius:8, padding:'8px 4px', textAlign:'center' }} />
+                              <span style={{ fontSize:10, fontWeight:800, color:'#9a96ac' }}>min</span>
+                              {/* Toggle on/off */}
+                              <div onClick={() => toggleEditStep(editKind, s.id)} style={{ cursor:'pointer', width:42, height:24, borderRadius:14, background: s.on ? '#16a34a' : '#cdcdd6', position:'relative', transition:'background .2s' }}>
+                                <div style={{ position:'absolute', top:2, left: s.on ? 20 : 2, width:20, height:20, borderRadius:'50%', background:'#fff', transition:'left .2s', boxShadow:'0 2px 4px rgba(0,0,0,.2)' }}/>
+                              </div>
+                              {/* Delete */}
+                              <div onClick={() => {
+                                if (!window.confirm(`Smazat krok "${s.t}"?`)) return;
+                                setList(arr => arr.filter(x => x.id !== s.id));
+                                audio.undo();
+                              }} style={{ cursor:'pointer', width:24, height:24, borderRadius:6, background:'#fdeaea', color:'#e23', display:'flex', alignItems:'center', justifyContent:'center', fontWeight:800, fontSize:13 }}>✕</div>
+                            </div>
+                          ))}
+                          <div style={{ display:'flex', gap:8, marginTop:14 }}>
+                            <input value={newStepText} onChange={(e) => setNewStepText(e.target.value)} placeholder="Nový krok…" style={{ flex:1, minWidth:0, border:'1px solid #e3e3ea', borderRadius:11, padding:'10px 12px', fontSize:14 }}/>
+                            <div onClick={() => {
+                              const name = (newStepText || '').trim();
+                              if (!name) return;
+                              const newStep = { id:'s'+Date.now(), t:name, icon:'✨', hint:'', on:true, secs:180 };
+                              setList(arr => [...arr, newStep]);
+                              setNewStepText('');
+                              audio.coin();
+                            }} style={{ cursor:'pointer', background:'var(--accent)', color:'#fff', fontWeight:600, fontSize:14, padding:'10px 14px', borderRadius:11 }}>+ Přidat krok</div>
+                          </div>
+                          <div style={{ fontSize:11, fontWeight:800, color:'#9a96ac', padding:'10px 2px 4px' }}>Vypnuté kroky se dítěti neukážou. Minuty = očekávaná doba (přesypací hodiny).</div>
+                        </React.Fragment>
+                      );
+                    })()}
                   </div>
 
-                  {/* Pomoci doma - editovatelný seznam */}
+                  {/* Pomoci doma - editovatelný seznam s reorderem */}
                   <div style={{ background:'#fff', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
-                    <div style={{ fontFamily:'var(--display)', fontSize:18, fontWeight:600, color:'#1a1530', marginBottom:8 }}>Domácí úkoly 🧹</div>
-                    <div style={{ fontSize:12, fontWeight:700, color:'#9a96ac', marginBottom:10 }}>To, co dítě vidí v sekci „Pomoci doma" — klikne, počká na schválení, dostane body.</div>
-                    {choresList.map((c) => (
-                      <div key={c.id} style={{ display:'flex', alignItems:'center', gap:10, padding:'9px 2px', borderBottom:'1px solid #f0f0f5' }}>
-                        <div style={{ fontSize:22 }}>{c.emoji}</div>
-                        <div style={{ flex:1, fontFamily:'var(--display)', fontSize:14, fontWeight:500, color:'#1a1530' }}>{c.t}</div>
-                        <div style={{ fontSize:13, fontWeight:900, color:'var(--accent)' }}>+{c.points}</div>
-                        <div onClick={() => { setChoresList(s => s.filter(x => x.id !== c.id)); audio.undo(); }} style={{ cursor:'pointer', width:28, height:28, borderRadius:8, background:'#fdeaea', color:'#e23', display:'flex', alignItems:'center', justifyContent:'center', fontWeight:800 }}>✕</div>
+                    <div style={{ fontFamily:'var(--display)', fontSize:18, fontWeight:600, color:'#1a1530', marginBottom:4 }}>Domácí úkoly 🧹</div>
+                    <div style={{ fontSize:12, fontWeight:700, color:'#9a96ac', marginBottom:12 }}>Klikni na emoji/text/body a edituj. Šipkami změníš pořadí.</div>
+                    {choresList.map((c, idx) => (
+                      <div key={c.id} style={{ display:'flex', alignItems:'center', gap:8, padding:'8px 2px', borderBottom:'1px solid #f0f0f5' }}>
+                        {/* Reorder šipky */}
+                        <div style={{ display:'flex', flexDirection:'column', gap:1 }}>
+                          <div onClick={() => {
+                            if (idx === 0) return;
+                            audio.tap();
+                            setChoresList(s => { const ns = [...s]; [ns[idx-1], ns[idx]] = [ns[idx], ns[idx-1]]; return ns; });
+                          }} style={{ cursor: idx === 0 ? 'default' : 'pointer', opacity: idx === 0 ? 0.25 : 1, width:24, height:18, borderRadius:5, background:'#f0f0f7', display:'flex', alignItems:'center', justifyContent:'center', fontSize:11, fontWeight:800 }}>▲</div>
+                          <div onClick={() => {
+                            if (idx === choresList.length - 1) return;
+                            audio.tap();
+                            setChoresList(s => { const ns = [...s]; [ns[idx], ns[idx+1]] = [ns[idx+1], ns[idx]]; return ns; });
+                          }} style={{ cursor: idx === choresList.length-1 ? 'default' : 'pointer', opacity: idx === choresList.length-1 ? 0.25 : 1, width:24, height:18, borderRadius:5, background:'#f0f0f7', display:'flex', alignItems:'center', justifyContent:'center', fontSize:11, fontWeight:800 }}>▼</div>
+                        </div>
+                        {/* Emoji input */}
+                        <input value={c.emoji} maxLength={4} onChange={(e) => {
+                          const val = e.target.value;
+                          setChoresList(s => s.map(x => x.id === c.id ? {...x, emoji: val} : x));
+                        }} style={{ width:42, fontSize:22, border:'1px solid #e3e3ea', borderRadius:8, padding:'4px 2px', textAlign:'center', background:'#fafafd' }} />
+                        {/* Name input */}
+                        <input value={c.t} onChange={(e) => {
+                          const val = e.target.value;
+                          setChoresList(s => s.map(x => x.id === c.id ? {...x, t: val} : x));
+                        }} style={{ flex:1, minWidth:0, fontFamily:'var(--display)', fontSize:14, fontWeight:500, color:'#1a1530', border:'1px solid #e3e3ea', borderRadius:8, padding:'8px 10px' }} />
+                        {/* Points input */}
+                        <input value={c.points} type="number" min="1" max="100" onChange={(e) => {
+                          const val = parseInt(e.target.value) || 1;
+                          setChoresList(s => s.map(x => x.id === c.id ? {...x, points: val} : x));
+                        }} style={{ width:48, fontSize:13, fontWeight:900, color:'var(--accent)', border:'1px solid #e3e3ea', borderRadius:8, padding:'8px 4px', textAlign:'center' }} />
+                        <div onClick={() => {
+                          if (!window.confirm(`Smazat úkol "${c.t}"?`)) return;
+                          setChoresList(s => s.filter(x => x.id !== c.id));
+                          audio.undo();
+                        }} style={{ cursor:'pointer', width:28, height:28, borderRadius:8, background:'#fdeaea', color:'#e23', display:'flex', alignItems:'center', justifyContent:'center', fontWeight:800 }}>✕</div>
                       </div>
                     ))}
-                    <div style={{ display:'flex', gap:8, marginTop:12 }}>
-                      <input value={newChoreText} onChange={(e) => setNewChoreText(e.target.value)} placeholder="Nový úkol…" style={{ flex:1, minWidth:0, border:'1px solid #e3e3ea', borderRadius:11, padding:'11px 12px', fontSize:14 }}/>
+                    <div style={{ display:'flex', gap:8, marginTop:14 }}>
+                      <input value={newChoreText} onChange={(e) => setNewChoreText(e.target.value)} placeholder="Nový úkol (např. Vysát koberec)" style={{ flex:1, minWidth:0, border:'1px solid #e3e3ea', borderRadius:11, padding:'11px 12px', fontSize:14 }}/>
                       <input value={newChorePoints} onChange={(e) => setNewChorePoints(e.target.value)} placeholder="body" inputMode="numeric" style={{ width:60, border:'1px solid #e3e3ea', borderRadius:11, padding:'11px 8px', fontSize:14, textAlign:'center' }}/>
                       <div onClick={() => {
                         const name = newChoreText.trim();
@@ -3146,9 +3413,59 @@ function App() {
                 {/* TAB: kalendar */}
                 {parentTab === 'kalendar' && (
                 <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
+                  {/* Google Calendar integrace */}
+                  <div style={{ background:'linear-gradient(135deg, #eef4ff, #dbeafe)', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)', border:'2px solid #93c5fd' }}>
+                    <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:8 }}>
+                      <div style={{ fontSize:26 }}>🔗</div>
+                      <div style={{ fontFamily:'var(--display)', fontSize:18, fontWeight:600, color:'#1e40af' }}>Google Calendar dítěte</div>
+                    </div>
+                    <div style={{ fontSize:12, fontWeight:700, color:'#1e40af', lineHeight:1.5, marginBottom:10 }}>
+                      Tady vlož <b>tajnou iCal adresu</b> Google kalendáře. App stáhne události a ukáže dítěti na home + v kalendáři. Aktualizuje se každých 15 minut.
+                    </div>
+                    <details style={{ marginBottom:10 }}>
+                      <summary style={{ cursor:'pointer', fontSize:12, fontWeight:800, color:'#1e40af' }}>📋 Jak na to (klikni)</summary>
+                      <ol style={{ fontSize:12, color:'#1e40af', lineHeight:1.6, marginTop:6, paddingLeft:20 }}>
+                        <li>Otevři <b>calendar.google.com</b> na počítači</li>
+                        <li>U požadovaného kalendáře klikni <b>⋮ → Nastavení a sdílení</b></li>
+                        <li>Sjeď dolů na <b>Integrovat kalendář</b></li>
+                        <li>Zkopíruj <b>"Tajná adresa ve formátu iCal"</b> (NE veřejná!)</li>
+                        <li>Vlož sem dolů</li>
+                      </ol>
+                    </details>
+                    <input
+                      value={gcalUrl}
+                      onChange={(e) => setGcalUrl(e.target.value)}
+                      placeholder="https://calendar.google.com/calendar/ical/.../basic.ics"
+                      style={{ width:'100%', boxSizing:'border-box', border:'1px solid #93c5fd', borderRadius:11, padding:'10px 12px', fontSize:11, fontFamily:'monospace', background:'#fff', outline:'none', marginBottom:10 }}
+                    />
+                    <div style={{ display:'flex', gap:6 }}>
+                      <div onClick={() => fetchGcal(true)} style={{ cursor:'pointer', flex:1, background:'#1e40af', color:'#fff', borderRadius:10, padding:'9px 12px', textAlign:'center', fontWeight:800, fontSize:13 }}>🔄 Stáhnout teď</div>
+                      {gcalUrl && (
+                        <div onClick={() => { if (window.confirm('Odpojit Google Calendar?')) { setGcalUrl(''); setGcalEvents([]); }}} style={{ cursor:'pointer', background:'#fee2e2', color:'#991b1b', borderRadius:10, padding:'9px 14px', fontWeight:800, fontSize:13 }}>✕</div>
+                      )}
+                    </div>
+                    {gcalUrl && (
+                      <div style={{ fontSize:11, fontWeight:800, color:'#1e40af', marginTop:8, padding:'6px 10px', background:'#fff', borderRadius:8 }}>
+                        {gcalEvents.length > 0
+                          ? `✓ Načteno ${gcalEvents.length} událostí • Posl. aktualizace ${new Date(gcalLastFetch).toLocaleTimeString('cs-CZ', {hour:'2-digit',minute:'2-digit'})}`
+                          : (gcalLastFetch ? '⚠ Žádné události v příštích 14 dnech' : 'Stáhni teď nebo počkej…')}
+                      </div>
+                    )}
+                    {gcalEvents.length > 0 && (
+                      <div style={{ marginTop:10, background:'#fff', borderRadius:10, padding:'8px 10px', maxHeight:200, overflowY:'auto' }}>
+                        {gcalEvents.slice(0, 10).map((ev, i) => (
+                          <div key={i} style={{ padding:'5px 0', borderBottom: i < 9 ? '1px solid #f0f0f5' : 'none', fontSize:12 }}>
+                            <span style={{ fontWeight:800, color:'#1e40af' }}>{ev.iso.slice(5).replace('-','/')} {ev.time}</span>
+                            <span style={{ color:'#1a1530', marginLeft:6 }}>{ev.summary}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
                   <div style={{ background:'#fff', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
-                    <div style={{ fontFamily:'var(--display)', fontSize:18, fontWeight:600, color:'#1a1530' }}>Události v týdnu 📅</div>
-                    <div style={{ fontSize:13, fontWeight:700, color:'#5a566e', lineHeight:1.5, marginTop:6 }}>Sport, kroužky, návštěvy. Dítě je uvidí na hlavní obrazovce a v kalendáři.</div>
+                    <div style={{ fontFamily:'var(--display)', fontSize:18, fontWeight:600, color:'#1a1530' }}>Ručně přidané události 📅</div>
+                    <div style={{ fontSize:13, fontWeight:700, color:'#5a566e', lineHeight:1.5, marginTop:6 }}>Pro věci co nejsou v Google Calendaru. Dítě je uvidí spolu s GCal událostmi.</div>
                   </div>
 
                   {/* Přidat událost */}
@@ -3294,12 +3611,25 @@ function App() {
                   </div>
                   <div style={{ background:'#fff', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
                     <div style={{ display:'grid', gridTemplateColumns:'repeat(7, 1fr)', gap:6 }}>
-                      {moodHistory.map((d, i) => (
-                        <div key={i} style={{ background:'#f7f7fb', borderRadius:12, padding:'10px 4px', textAlign:'center' }}>
-                          <div style={{ fontSize:11, fontWeight:800, color:'#9a96ac' }}>{d.day}</div>
-                          <div style={{ fontSize:30, marginTop:6, minHeight:36 }}>{d.mood || '—'}</div>
-                        </div>
-                      ))}
+                      {moodHistory.map((d, i) => {
+                        const m = d.mood;
+                        const value = m && m.value != null ? m.value : null;
+                        const color = value == null ? '#e5e7eb' : value < 20 ? '#dc2626' : value < 40 ? '#ea580c' : value < 60 ? '#f59e0b' : value < 80 ? '#84cc16' : '#16a34a';
+                        return (
+                          <div key={i} style={{ background:'#f7f7fb', borderRadius:12, padding:'10px 4px', textAlign:'center' }}>
+                            <div style={{ fontSize:11, fontWeight:800, color:'#9a96ac' }}>{d.day}</div>
+                            <div style={{ fontSize:28, marginTop:4, minHeight:34 }}>{m ? m.emoji : '—'}</div>
+                            {value != null && (
+                              <React.Fragment>
+                                <div style={{ height:5, background:'#e5e7eb', borderRadius:3, overflow:'hidden', marginTop:4 }}>
+                                  <div style={{ height:'100%', width: value+'%', background: color, borderRadius:3 }}/>
+                                </div>
+                                <div style={{ fontSize:9, fontWeight:800, color: color, marginTop:2 }}>{value}/100</div>
+                              </React.Fragment>
+                            )}
+                          </div>
+                        );
+                      })}
                     </div>
                     {!todayMoodDone && (
                       <div onClick={() => { setShowMoodPrompt(true); setParentOpen(false); }} style={{ cursor:'pointer', marginTop:12, background:'var(--accent)', color:'#fff', borderRadius:12, padding:'10px 14px', textAlign:'center', fontWeight:800, fontSize:14 }}>Spustit dotaz teď</div>
@@ -3630,7 +3960,7 @@ function App() {
                   </div>
 
                   <div style={{ background:'#fff', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
-                    <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'#1a1530' }}>Verze: Domácí pomocník v14</div>
+                    <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'#1a1530' }}>Verze: Domácí pomocník v15</div>
                     <div style={{ fontSize:12, color:'#9a96ac', marginTop:4 }}>Build 2026-06-21 · 06:30</div>
                   </div>
                 </div>
@@ -3693,27 +4023,61 @@ function App() {
         </div>
       )}
 
-      {/* v2: Mood prompt (po dokončení ranní rutiny) */}
-      {showMoodPrompt && !parentOpen && (
+      {/* v15: Mood prompt - posuvník 0-100 */}
+      {showMoodPrompt && !parentOpen && !isMobile && (
         <div style={{ position:'absolute', inset:0, zIndex:78, background:'rgba(10,8,30,.55)', display:'flex', alignItems:'center', justifyContent:'center', backdropFilter:'blur(6px)' }}>
-          <div style={{ background:'var(--surface)', borderRadius:28, padding:'34px 38px', maxWidth:620, width:'90%', boxShadow:'var(--shadow)', animation:'popIn .4s ease' }}>
+          <div style={{ background:'var(--surface)', borderRadius:28, padding:'34px 38px', maxWidth:680, width:'92%', boxShadow:'var(--shadow)', animation:'popIn .4s ease' }}>
             <div style={{ display:'flex', justifyContent:'space-between', alignItems:'start', marginBottom:18 }}>
               <div>
                 <div style={{ fontFamily:'var(--display)', fontSize:26, fontWeight:700, color:'var(--ink)' }}>Jak ti dneska je?</div>
-                <div style={{ fontSize:14, color:'var(--muted)', fontWeight:700, marginTop:4 }}>Ťukni na obrázek, který sedí.</div>
+                <div style={{ fontSize:14, color:'var(--muted)', fontWeight:700, marginTop:4 }}>Posuň čudlík tam, kde je to tak akorát.</div>
               </div>
               <div onClick={() => { setShowMoodPrompt(false); setLastMoodDate(todayISO()); }} style={{ cursor:'pointer', fontSize:24, color:'var(--muted)', padding:8 }}>✕</div>
             </div>
-            <div style={{ display:'grid', gridTemplateColumns:'repeat(3, 1fr)', gap:14 }}>
-              {moodOptions.map(o => (
-                <div key={o.e} onClick={() => logMood(o.e)} style={{ cursor:'pointer', background:'var(--soft)', borderRadius:18, padding:'20px 12px', textAlign:'center', transition:'transform .12s' }}
-                  onMouseDown={(e) => e.currentTarget.style.transform='scale(.95)'}
-                  onMouseUp={(e) => e.currentTarget.style.transform='scale(1)'}>
-                  <div style={{ fontSize:52, lineHeight:1 }}>{o.e}</div>
-                  <div style={{ fontSize:13, fontWeight:800, color:'var(--ink)', marginTop:6 }}>{o.t}</div>
+            {(() => {
+              const v = moodSliderValue;
+              const emoji = v < 20 ? '😭' : v < 40 ? '😢' : v < 60 ? '😐' : v < 80 ? '🙂' : '😄';
+              const label = v < 20 ? 'hodně špatně' : v < 40 ? 'mizerně' : v < 60 ? 'tak napůl' : v < 80 ? 'fajn' : 'SUPER!';
+              const color = v < 20 ? '#dc2626' : v < 40 ? '#ea580c' : v < 60 ? '#f59e0b' : v < 80 ? '#84cc16' : '#16a34a';
+              return (
+                <div>
+                  <div style={{ textAlign:'center', marginBottom:16 }}>
+                    <div style={{ fontSize:110, lineHeight:1, transition:'transform .25s', transform:'scale(' + (0.85 + v/250) + ')' }}>{emoji}</div>
+                    <div style={{ fontFamily:'var(--display)', fontSize:24, fontWeight:600, color: color, marginTop:6, textTransform:'uppercase', letterSpacing:'.05em' }}>{label}</div>
+                  </div>
+                  {/* Slider */}
+                  <div style={{ padding:'0 8px', marginBottom:8 }}>
+                    <input
+                      type="range"
+                      min="0"
+                      max="100"
+                      step="1"
+                      value={v}
+                      onChange={(e) => setMoodSliderValue(parseInt(e.target.value))}
+                      style={{
+                        width:'100%',
+                        height: 14,
+                        WebkitAppearance:'none',
+                        appearance:'none',
+                        background: `linear-gradient(90deg, #dc2626 0%, #ea580c 25%, #f59e0b 50%, #84cc16 75%, #16a34a 100%)`,
+                        borderRadius: 10,
+                        outline:'none',
+                        cursor:'pointer'
+                      }}
+                    />
+                  </div>
+                  <div style={{ display:'flex', justifyContent:'space-between', fontSize:11, fontWeight:800, color:'var(--muted)', padding:'0 4px' }}>
+                    <span>😭 hodně špatně</span>
+                    <span>😐 tak napůl</span>
+                    <span>SUPER 😄</span>
+                  </div>
+                  {/* Potvrď */}
+                  <div onClick={() => logMood(v)} style={{ cursor:'pointer', marginTop:22, background:'linear-gradient(135deg, var(--accent), var(--accent2))', color:'#fff', fontFamily:'var(--display)', fontSize:18, fontWeight:600, textAlign:'center', padding:'14px 16px', borderRadius:16, boxShadow:'0 6px 20px rgba(47,107,255,.35)' }}>
+                    Hotovo ✓
+                  </div>
                 </div>
-              ))}
-            </div>
+              );
+            })()}
           </div>
         </div>
       )}
