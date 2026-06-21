@@ -949,11 +949,14 @@ function App() {
   // v24: voice panel default sbalený
   const [showVoicePanel, setShowVoicePanel] = useState(false);
   // v29: Webhook tlačítka (Apple Home → Apps Script → app)
+  // v30: webhook URL je defaultně stejná jako sync URL (jeden script dělá obě věci)
   const [hueWebhookUrl, setHueWebhookUrl] = useState((persisted && persisted.hueWebhookUrl) || '');
   const [hueButtons, setHueButtons] = useState((persisted && Array.isArray(persisted.hueButtons)) ? persisted.hueButtons : []); // [{key, label, action: {type, ref}}]
   const [hueEvents, setHueEvents] = useState([]); // diagnostika - posledních pár eventů
   const [hueLastError, setHueLastError] = useState(null);
   const [showHuePanel, setShowHuePanel] = useState(false);
+  // Effective URL: pokud není v hueWebhookUrl nic, použij sync URL (1 script pro obě věci)
+  const effectiveHueWebhookUrl = (hueWebhookUrl && hueWebhookUrl.trim()) || (syncUrl && syncUrl.trim()) || '';
   // v8 step timer (časovač pro děti s časovou slepotou)
   const [currentStepStart, setCurrentStepStart] = useState(null); // timestamp začátku aktuálního kroku
   const [nowTick, setNowTick] = useState(Date.now()); // pro re-render každou vteřinu
@@ -1260,8 +1263,8 @@ function App() {
   // Polling Apps Script webhook endpoint pro nové eventy
   const hueLastTsRef = useRef(null); // ISO timestamp posledního zpracovaného eventu
   useEffect(() => {
-    if (!hueWebhookUrl || !hueWebhookUrl.trim()) return;
-    const url = hueWebhookUrl.trim();
+    if (!effectiveHueWebhookUrl || !effectiveHueWebhookUrl.trim()) return;
+    const url = effectiveHueWebhookUrl.trim();
     let cancelled = false;
     const tick = async () => {
       if (cancelled) return;
@@ -1313,7 +1316,7 @@ function App() {
     init();
     const id = setInterval(tick, 3000);
     return () => { cancelled = true; clearInterval(id); };
-  }, [hueWebhookUrl, hueButtons, triggerHueAction]);
+  }, [effectiveHueWebhookUrl, hueButtons, triggerHueAction]);
 
 
   const fetchGcal = useCallback(async (force) => {
@@ -4611,12 +4614,14 @@ function App() {
                       <React.Fragment>
                         {/* Webhook URL */}
                         <div style={{ background:'#fff', borderRadius:10, padding:'10px 12px', marginBottom:10 }}>
-                          <div style={{ fontSize:11, fontWeight:800, color:'#6b21a8', marginBottom:4, textTransform:'uppercase', letterSpacing:'.05em' }}>Webhook URL (z Apps Script)</div>
-                          <input value={hueWebhookUrl} onChange={(e) => setHueWebhookUrl(e.target.value)} placeholder="https://script.google.com/macros/s/.../exec"
+                          <div style={{ fontSize:11, fontWeight:800, color:'#6b21a8', marginBottom:4, textTransform:'uppercase', letterSpacing:'.05em' }}>Webhook URL</div>
+                          <input value={hueWebhookUrl} onChange={(e) => setHueWebhookUrl(e.target.value)} placeholder={syncUrl ? `(prázdné = používá Synchronizace URL)` : 'https://script.google.com/macros/s/.../exec'}
                             style={{ width:'100%', boxSizing:'border-box', border:'1px solid #c4b5fd', borderRadius:8, padding:'8px 10px', fontSize:11, fontFamily:'monospace', outline:'none' }}
                           />
                           <div style={{ fontSize:10, fontWeight:700, color:'#6b21a8', marginTop:4, lineHeight:1.4 }}>
-                            Vytvoř nový Apps Script projekt (návod níže), deploy jako web app, sem vlož URL.
+                            {effectiveHueWebhookUrl
+                              ? <span>✓ Aktivní: <code style={{wordBreak:'break-all'}}>{effectiveHueWebhookUrl.length > 60 ? effectiveHueWebhookUrl.slice(0, 60) + '…' : effectiveHueWebhookUrl}</code>{!hueWebhookUrl.trim() && syncUrl ? ' (dědí z Synchronizace)' : ''}</span>
+                              : 'Nastav nejdřív Synchronizace URL nebo vlož webhook URL ručně'}
                           </div>
                         </div>
 
@@ -4681,22 +4686,22 @@ function App() {
                                 </select>
                               </div>
                               {/* URL pro Apple Home shortcut */}
-                              {b.key && hueWebhookUrl && (
+                              {b.key && effectiveHueWebhookUrl && (
                                 <div style={{ background:'#f9f5ff', borderRadius:8, padding:'8px 10px', fontSize:11, fontFamily:'monospace', color:'#581c87', wordBreak:'break-all', display:'flex', gap:6, alignItems:'center' }}>
-                                  <div style={{ flex:1, minWidth:0, overflow:'hidden' }}>{hueWebhookUrl + (hueWebhookUrl.includes('?') ? '&' : '?') + 'press=' + b.key}</div>
+                                  <div style={{ flex:1, minWidth:0, overflow:'hidden' }}>{effectiveHueWebhookUrl + (effectiveHueWebhookUrl.includes('?') ? '&' : '?') + 'press=' + b.key}</div>
                                   <div onClick={() => {
-                                    const u = hueWebhookUrl + (hueWebhookUrl.includes('?') ? '&' : '?') + 'press=' + b.key;
+                                    const u = effectiveHueWebhookUrl + (effectiveHueWebhookUrl.includes('?') ? '&' : '?') + 'press=' + b.key;
                                     if (navigator.clipboard) navigator.clipboard.writeText(u);
                                     audio.tap();
                                     showToast('URL zkopírováno', '📋');
                                   }} style={{ cursor:'pointer', background:'#7c3aed', color:'#fff', borderRadius:6, padding:'5px 9px', fontWeight:800, fontSize:11, whiteSpace:'nowrap' }}>📋 Kopír</div>
                                   <div onClick={async () => {
                                     // Test - simulate webhook
-                                    if (!hueWebhookUrl) return;
+                                    if (!effectiveHueWebhookUrl) return;
                                     audio.tap();
                                     try {
-                                      const sep = hueWebhookUrl.includes('?') ? '&' : '?';
-                                      await fetch(hueWebhookUrl + sep + 'press=' + b.key);
+                                      const sep = effectiveHueWebhookUrl.includes('?') ? '&' : '?';
+                                      await fetch(effectiveHueWebhookUrl + sep + 'press=' + b.key);
                                       showToast('Webhook poslán - počkej 3s', '🔔');
                                     } catch(e) { showToast('Chyba: ' + e.message, '⚠'); }
                                   }} style={{ cursor:'pointer', background:'#16a34a', color:'#fff', borderRadius:6, padding:'5px 9px', fontWeight:800, fontSize:11, whiteSpace:'nowrap' }}>🔊 Test</div>
@@ -4727,12 +4732,13 @@ function App() {
                         <div style={{ background:'#fff', borderRadius:10, padding:'10px 12px', fontSize:11, color:'#581c87', lineHeight:1.5 }}>
                           <div style={{ fontWeight:900, marginBottom:6 }}>📖 Setup (1× nastavit, pak funguje):</div>
                           <ol style={{ margin:'0 0 0 18px', padding:0 }}>
-                            <li><b>Vytvoř webhook server:</b> jdi na <code>script.google.com</code> → Nový projekt → vlož kód <a href="https://github.com/marketaliterova/domaci-pomocnik/blob/main/hue-webhook.gs" target="_blank" style={{color:'#7c3aed', fontWeight:800}}>z tohoto souboru</a> → Deploy → Web app → Execute as: Me, Who has access: Anyone → URL zkopíruj sem nahoru</li>
-                            <li><b>Přidej tlačítko:</b> dej mu název („WC nahoře") a klíč („wc-up") a vyber akci</li>
-                            <li><b>Zkopíruj URL</b> (📋 vedle řádku) - to je adresa pro Apple Home</li>
-                            <li><b>iPhone → Domácnost</b> → automatizace → „Tlačítko je stisknuto" → vyber Hue Dimmer → Convert to Shortcut → akce <b>„Načíst obsah URL"</b> → vlož zkopírovanou URL</li>
+                            <li><b>Aktualizuj svůj Apps Script:</b> otevři svůj <b>existující</b> Apps Script (ten co máš pro sync) → smaž celý kód → vlož <a href="https://github.com/marketaliterova/domaci-pomocnik/blob/main/apps-script.gs" target="_blank" style={{color:'#7c3aed', fontWeight:800}}>nový kód z repo</a> → uloz → Deploy → Manage deployments → existující ✏️ → Verze: New version → Deploy. URL ZŮSTÁVÁ STEJNÁ.</li>
+                            <li><b>Webhook URL výše</b> nech prázdnou — používá automaticky stejnou URL jako sync</li>
+                            <li><b>Přidej tlačítko:</b> klepni "+ Přidat tlačítko", dej mu název (např. „WC nahoře") a klíč (např. „wc-up") a vyber akci</li>
+                            <li><b>Test:</b> klepni "🔊 Test" vedle tlačítka → během 3s by se měla v appce odškrtnout akce</li>
+                            <li><b>Zkopíruj URL</b> (📋) - to je adresa pro Apple Home Shortcut</li>
+                            <li><b>iPhone → Domácnost</b> → Automatizace → "Tlačítko je stisknuto" → Hue Dimmer → Convert to Shortcut → akce <b>"Načíst obsah URL"</b> → vlož URL</li>
                             <li><b>Apple TV jako home hub</b> musí být zapnutý a doma — automatizace běží přes něj</li>
-                            <li>Zmáčkni Dimmer → do 3s se v appce odškrtne krok / přičtou body / přehraje hlas</li>
                           </ol>
                         </div>
                       </React.Fragment>
@@ -5000,8 +5006,8 @@ function App() {
                   </div>
 
                   <div style={{ background:'#fff', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
-                    <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'#1a1530' }}>Verze: Domácí pomocník v29</div>
-                    <div style={{ fontSize:12, color:'#9a96ac', marginTop:4 }}>Build 2026-06-21 · 11:36</div>
+                    <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'#1a1530' }}>Verze: Domácí pomocník v30</div>
+                    <div style={{ fontSize:12, color:'#9a96ac', marginTop:4 }}>Build 2026-06-21 · 12:46</div>
                   </div>
                 </div>
                 )}
