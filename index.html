@@ -855,6 +855,8 @@ function App() {
   const [editRoutine, setEditRoutine] = useState('morning');
   const [pin, setPin] = useState('');
   const [rozvrhDay, setRozvrhDay] = useState(0);
+  // v40: posun týdne v kalendáři (0 = dnes, -1 = minulý, +1 = příští)
+  const [weekOffset, setWeekOffset] = useState(0);
 
   // brushing
   const [brushRunning, setBrushRunning] = useState(false);
@@ -1915,7 +1917,8 @@ function App() {
   };
 
   // calendar week
-  const monday = new Date(simNow); monday.setDate(monday.getDate() - wd); monday.setHours(0,0,0,0);
+  // v40: weekOffset = 0 (aktuální), -1 (minulý), +1 (příští) atd
+  const monday = new Date(simNow); monday.setDate(monday.getDate() - wd + weekOffset * 7); monday.setHours(0,0,0,0);
   const dayShort = ['Po','Út','St','Čt','Pá','So','Ne'];
   const calStart = 7, calEnd = 20, pxH = 46;
   const calBodyH = (calEnd - calStart) * pxH;
@@ -1926,7 +1929,7 @@ function App() {
     const dd = new Date(monday); dd.setDate(monday.getDate() + i);
     const ddISO = dd.getFullYear() + '-' + pad2(dd.getMonth()+1) + '-' + pad2(dd.getDate());
     const who = whoHomeSchedule[i] || WEEK_WHO[i] || 'mama'; // v15 priorita: rozvrh -> default const
-    const isToday = i === wd;
+    const isToday = (weekOffset === 0 && i === wd);
     const plc = PLACES[who] || PLACES.mama;
     const wcol = tv[plc.cvar];
     // Spoj ruční události + Google Calendar
@@ -2327,7 +2330,21 @@ function App() {
     if (isNum(s.departMin)) setDepartMin(s.departMin);
     if (isArr(s.shopItems)) setShopItems(s.shopItems);
     if (isObj(s.shopState)) setShopState(s.shopState);
-    if (isObj(s.choreState)) setChoreState(s.choreState);
+    // v40: Auto-heal při sync - když chore má 'pending' bez záznamu v pendingApprovals, smaž ho.
+    // Předchází tomu aby sync přepsal lokální stav rozbitým z minulosti.
+    if (isObj(s.choreState)) {
+      const cs = s.choreState;
+      const pa = isArr(s.pendingApprovals) ? s.pendingApprovals : [];
+      const healed = {};
+      Object.keys(cs).forEach(id => {
+        if (cs[id] === 'pending' && !pa.some(p => p.refId === id && p.type === 'chore')) {
+          // Stuck pending - vynech (jako kdyby nebyl)
+          return;
+        }
+        healed[id] = cs[id];
+      });
+      setChoreState(healed);
+    }
     if (isArr(s.pendingApprovals)) setPendingApprovals(s.pendingApprovals);
     if (isObj(s.packState)) setPackState(s.packState);
     if (isBool(s.packAwarded)) setPackAwarded(s.packAwarded);
@@ -3122,14 +3139,29 @@ function App() {
         <div style={{ display:'flex', alignItems:'center', gap:16 }}>
           <div onClick={() => go('home')} style={{ cursor:'pointer', width:52, height:52, borderRadius:17, background:'var(--surface)', border:'var(--hair)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:23, boxShadow:'var(--shadow)' }}>←</div>
           <div style={{ flex:1 }}>
-            <div style={{ fontFamily:'var(--display)', fontSize:32, fontWeight:600, color:'var(--ink)', lineHeight:1 }}>Tvůj týden</div>
+            <div style={{ fontFamily:'var(--display)', fontSize:32, fontWeight:600, color:'var(--ink)', lineHeight:1 }}>
+              {weekOffset === 0 ? 'Tento týden' : weekOffset === -1 ? 'Minulý týden' : weekOffset === 1 ? 'Příští týden' : weekOffset < 0 ? `Před ${-weekOffset} týdny` : `Za ${weekOffset} týdny`}
+            </div>
             <div style={{ fontSize:15, fontWeight:800, color:'var(--muted)', marginTop:2, display:'flex', alignItems:'center', gap:8 }}>
-              {gcalUrl ? (
-                <span style={{ display:'inline-flex', alignItems:'center', gap:5, color: gcalEvents.length > 0 ? 'var(--good)' : '#f59e0b' }}>● {gcalEvents.length > 0 ? `Google kalendář: ${gcalEvents.length} událostí` : 'Google kalendář se načítá…'}</span>
-              ) : (
-                <span style={{ display:'inline-flex', alignItems:'center', gap:5, color:'var(--muted)' }}>● Bez Google kalendáře</span>
+              {(() => {
+                // Datum prvního a posledního dne
+                const lastDay = new Date(monday); lastDay.setDate(lastDay.getDate() + 6);
+                const months = ['ledna','února','března','dubna','května','června','července','srpna','září','října','listopadu','prosince'];
+                const dateRange = `${monday.getDate()}. ${months[monday.getMonth()]} – ${lastDay.getDate()}. ${months[lastDay.getMonth()]}`;
+                return <span>{dateRange}</span>;
+              })()}
+              {gcalUrl && weekOffset === 0 && (
+                <span style={{ display:'inline-flex', alignItems:'center', gap:5, color: gcalEvents.length > 0 ? 'var(--good)' : '#f59e0b' }}>● {gcalEvents.length > 0 ? `Google: ${gcalEvents.length} událostí` : 'GCal načítá…'}</span>
               )}
             </div>
+          </div>
+          {/* Week navigation */}
+          <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+            <div onClick={() => { audio.tap(); setWeekOffset(w => w - 1); }} style={{ cursor:'pointer', width:42, height:42, borderRadius:14, background:'var(--surface)', border:'var(--hair)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:20, fontWeight:800, boxShadow:'var(--shadow)' }}>‹</div>
+            {weekOffset !== 0 && (
+              <div onClick={() => { audio.tap(); setWeekOffset(0); }} style={{ cursor:'pointer', padding:'10px 14px', borderRadius:14, background:'var(--accent)', color:'#fff', fontWeight:800, fontSize:13, boxShadow:'var(--shadow)' }}>Dnes</div>
+            )}
+            <div onClick={() => { audio.tap(); setWeekOffset(w => w + 1); }} style={{ cursor:'pointer', width:42, height:42, borderRadius:14, background:'var(--surface)', border:'var(--hair)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:20, fontWeight:800, boxShadow:'var(--shadow)' }}>›</div>
           </div>
           <div style={{ display:'flex', gap:14 }}>
             {placeLegend.map((l, i) => (
@@ -3179,10 +3211,6 @@ function App() {
               ))}
             </div>
           </div>
-        </div>
-        <div style={{ display:'flex', alignItems:'center', gap:12, background:'var(--soft)', borderRadius:16, padding:'13px 18px' }}>
-          <div style={{ fontSize:26 }}>🤝</div>
-          <div style={{ fontWeight:800, color:'var(--ink)', fontSize:17 }}>{handover}</div>
         </div>
       </div>
       )}
@@ -3880,12 +3908,56 @@ function App() {
                         <div onClick={() => changeDepart(5)} style={{ cursor:'pointer', width:32, height:32, borderRadius:10, background:'#f0f0f7', display:'flex', alignItems:'center', justifyContent:'center', fontSize:20, fontWeight:800 }}>+</div>
                       </div>
                     </div>
-                    <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginTop:12 }}>
+                    <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginTop:12, paddingBottom:12, borderBottom:'1px solid #eee' }}>
                       <div>
                         <div style={{ fontWeight:800, color:'#1a1530', fontSize:15 }}>🌙 Večerka</div>
                         <div style={{ fontSize:12, fontWeight:700, color:'#9a96ac' }}>Spustí večerní rutinu</div>
                       </div>
-                      <div style={{ fontFamily:'var(--display)', fontSize:20, fontWeight:600, color:'#1a1530' }}>20:30</div>
+                      <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+                        <div onClick={() => {
+                          // Posun o -15 min
+                          const [h, m] = (bedtime || '20:30').split(':').map(Number);
+                          let total = h * 60 + m - 15;
+                          if (total < 17 * 60) total = 17 * 60; // min 17:00
+                          if (total > 23 * 60 + 30) total = 23 * 60 + 30;
+                          setBedtime(pad2(Math.floor(total/60)) + ':' + pad2(total%60));
+                          audio.tap();
+                        }} style={{ cursor:'pointer', width:32, height:32, borderRadius:10, background:'#f0f0f7', display:'flex', alignItems:'center', justifyContent:'center', fontSize:20, fontWeight:800 }}>−</div>
+                        <div style={{ fontFamily:'var(--display)', fontSize:20, fontWeight:600, color:'#1a1530', minWidth:64, textAlign:'center' }}>{bedtime || '20:30'}</div>
+                        <div onClick={() => {
+                          const [h, m] = (bedtime || '20:30').split(':').map(Number);
+                          let total = h * 60 + m + 15;
+                          if (total > 23 * 60 + 30) total = 23 * 60 + 30; // max 23:30
+                          if (total < 17 * 60) total = 17 * 60;
+                          setBedtime(pad2(Math.floor(total/60)) + ':' + pad2(total%60));
+                          audio.tap();
+                        }} style={{ cursor:'pointer', width:32, height:32, borderRadius:10, background:'#f0f0f7', display:'flex', alignItems:'center', justifyContent:'center', fontSize:20, fontWeight:800 }}>+</div>
+                      </div>
+                    </div>
+                    <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginTop:12 }}>
+                      <div>
+                        <div style={{ fontWeight:800, color:'#1a1530', fontSize:15 }}>☀️ Vstávání</div>
+                        <div style={{ fontSize:12, fontWeight:700, color:'#9a96ac' }}>Začátek dne pro Riki</div>
+                      </div>
+                      <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+                        <div onClick={() => {
+                          const [h, m] = (wakeTime || '06:30').split(':').map(Number);
+                          let total = h * 60 + m - 15;
+                          if (total < 5 * 60) total = 5 * 60;
+                          if (total > 10 * 60) total = 10 * 60;
+                          setWakeTime(pad2(Math.floor(total/60)) + ':' + pad2(total%60));
+                          audio.tap();
+                        }} style={{ cursor:'pointer', width:32, height:32, borderRadius:10, background:'#f0f0f7', display:'flex', alignItems:'center', justifyContent:'center', fontSize:20, fontWeight:800 }}>−</div>
+                        <div style={{ fontFamily:'var(--display)', fontSize:20, fontWeight:600, color:'#1a1530', minWidth:64, textAlign:'center' }}>{wakeTime || '06:30'}</div>
+                        <div onClick={() => {
+                          const [h, m] = (wakeTime || '06:30').split(':').map(Number);
+                          let total = h * 60 + m + 15;
+                          if (total > 10 * 60) total = 10 * 60;
+                          if (total < 5 * 60) total = 5 * 60;
+                          setWakeTime(pad2(Math.floor(total/60)) + ':' + pad2(total%60));
+                          audio.tap();
+                        }} style={{ cursor:'pointer', width:32, height:32, borderRadius:10, background:'#f0f0f7', display:'flex', alignItems:'center', justifyContent:'center', fontSize:20, fontWeight:800 }}>+</div>
+                      </div>
                     </div>
                   </div>
                   <div style={{ background:'#fff', borderRadius:20, padding:18, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
@@ -4540,6 +4612,63 @@ function App() {
                 {parentTab === 'nastav' && (
                 <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
 
+                  {/* v40: Záloha dat - export do JSON / import zpět */}
+                  <div style={{ background:'linear-gradient(135deg, #dbeafe, #bfdbfe)', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)', border:'2px solid #3b82f6' }}>
+                    <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:10 }}>
+                      <span style={{ fontSize:24 }}>💾</span>
+                      <div>
+                        <div style={{ fontFamily:'var(--display)', fontSize:18, fontWeight:600, color:'#1e3a8a' }}>Záloha dat</div>
+                        <div style={{ fontSize:11, fontWeight:700, color:'#1e40af' }}>Stáhni si JSON soubor se vším co máš v appce. Můžeš ho pak obnovit.</div>
+                      </div>
+                    </div>
+                    <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8 }}>
+                      <div onClick={() => {
+                        // Vyexportuj kompletní state jako JSON file
+                        try {
+                          const snapshot = buildSnapshot();
+                          const blob = new Blob([JSON.stringify(snapshot, null, 2)], { type: 'application/json' });
+                          const url = URL.createObjectURL(blob);
+                          const a = document.createElement('a');
+                          a.href = url;
+                          a.download = `domaci-pomocnik-zaloha-${new Date().toISOString().slice(0,10)}-${new Date().toTimeString().slice(0,5).replace(':','')}.json`;
+                          a.click();
+                          URL.revokeObjectURL(url);
+                          audio.success();
+                          showToast('Záloha stažena', '💾');
+                        } catch(e) { showToast('Chyba: ' + e.message, '⚠'); }
+                      }} style={{ cursor:'pointer', background:'#fff', border:'2px solid #3b82f6', borderRadius:12, padding:'12px 11px', textAlign:'center' }}>
+                        <div style={{ fontSize:20, marginBottom:4 }}>⬇</div>
+                        <div style={{ fontFamily:'var(--display)', fontSize:13, fontWeight:600, color:'#1e3a8a' }}>Stáhnout zálohu</div>
+                        <div style={{ fontSize:10, color:'#1e40af', marginTop:2 }}>JSON soubor</div>
+                      </div>
+
+                      <label style={{ cursor:'pointer', background:'#fff', border:'2px solid #3b82f6', borderRadius:12, padding:'12px 11px', textAlign:'center', display:'block' }}>
+                        <div style={{ fontSize:20, marginBottom:4 }}>⬆</div>
+                        <div style={{ fontFamily:'var(--display)', fontSize:13, fontWeight:600, color:'#1e3a8a' }}>Obnovit ze zálohy</div>
+                        <div style={{ fontSize:10, color:'#1e40af', marginTop:2 }}>vyber JSON</div>
+                        <input type="file" accept=".json,application/json" style={{ display:'none' }} onChange={(e) => {
+                          const file = e.target.files && e.target.files[0];
+                          if (!file) return;
+                          if (!window.confirm(`Obnovit z "${file.name}"? Přepíše tvá aktuální data.`)) { e.target.value=''; return; }
+                          const reader = new FileReader();
+                          reader.onload = () => {
+                            try {
+                              const data = JSON.parse(reader.result);
+                              applySnapshot(data);
+                              audio.success();
+                              showToast('Záloha obnovena', '✓');
+                            } catch(err) { showToast('Chyba načtení: ' + err.message, '⚠'); }
+                            e.target.value = '';
+                          };
+                          reader.readAsText(file);
+                        }} />
+                      </label>
+                    </div>
+                    <div style={{ fontSize:10, fontWeight:700, color:'#1e40af', marginTop:8, lineHeight:1.4 }}>
+                      💡 Tip: Stáhni si zálohu jednou týdně. Kdyby se něco rozbilo (špatný sync, omyl), můžeš se vrátit.
+                    </div>
+                  </div>
+
                   {/* v39: Administrace dat - reset bodů, rutin, schvalování, vše */}
                   <div style={{ background:'linear-gradient(135deg, #fef3c7, #fde68a)', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)', border:'2px solid #f59e0b' }}>
                     <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:10 }}>
@@ -5139,8 +5268,8 @@ function App() {
                   </div>
 
                   <div style={{ background:'#fff', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
-                    <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'#1a1530' }}>Verze: Domácí pomocník v39</div>
-                    <div style={{ fontSize:12, color:'#9a96ac', marginTop:4 }}>Build 2026-06-21 · 17:51</div>
+                    <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'#1a1530' }}>Verze: Domácí pomocník v40</div>
+                    <div style={{ fontSize:12, color:'#9a96ac', marginTop:4 }}>Build 2026-06-21 · 17:57</div>
                   </div>
                 </div>
                 )}
