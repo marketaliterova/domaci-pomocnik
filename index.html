@@ -771,6 +771,7 @@ function useWeather(soundOn) {
       + '?latitude=' + LOCATION.lat
       + '&longitude=' + LOCATION.lon
       + '&current=temperature_2m,weather_code,wind_speed_10m,precipitation'
+      + '&hourly=temperature_2m,weather_code,precipitation_probability'
       + '&daily=temperature_2m_min,temperature_2m_max,precipitation_probability_max,weather_code'
       + '&timezone=Europe%2FPrague&forecast_days=1';
 
@@ -780,6 +781,21 @@ function useWeather(soundOn) {
         if (cancelled) return;
         const cur = j.current || {};
         const day = (j.daily || {});
+        const hrly = j.hourly || {};
+        // v52: vytáhnout 3 časové úseky - ráno (8h), odpoledne (14h), večer (19h)
+        const periods = {};
+        if (Array.isArray(hrly.time) && Array.isArray(hrly.temperature_2m)) {
+          const hourly = hrly.time.map((t, i) => ({
+            hour: new Date(t).getHours(),
+            temp: hrly.temperature_2m[i],
+            code: hrly.weather_code ? hrly.weather_code[i] : null,
+            rainProb: hrly.precipitation_probability ? hrly.precipitation_probability[i] : null
+          }));
+          const find = (h) => hourly.find(x => x.hour === h);
+          periods.morning   = find(8)  || null;
+          periods.afternoon = find(14) || null;
+          periods.evening   = find(19) || null;
+        }
         const d = {
           temp: cur.temperature_2m,
           wind: cur.wind_speed_10m,
@@ -787,7 +803,8 @@ function useWeather(soundOn) {
           code: cur.weather_code,
           tmin: day.temperature_2m_min ? day.temperature_2m_min[0] : null,
           tmax: day.temperature_2m_max ? day.temperature_2m_max[0] : null,
-          rainProb: day.precipitation_probability_max ? day.precipitation_probability_max[0] : null
+          rainProb: day.precipitation_probability_max ? day.precipitation_probability_max[0] : null,
+          periods: periods,
         };
         setData(d);
         try { localStorage.setItem(cacheKey, JSON.stringify({ t: Date.now(), d })); } catch(e) {}
@@ -977,21 +994,72 @@ function Mascot({ size, sleeping, dancing, onTap, kind }) {
     );
   }
 
-  // FOTBALISTA - sportovní postavička s míčem
+  // FOTBALISTA - mladý sportovec s kudrnatými tmavými vlasy, tmavší pletí, červeno-modrý pruhovaný dres
   if (kind === 'soccer') {
     return (
       <div onClick={onTap} style={{ width: s, height: s, position:'relative', animation: floatAnim, cursor: onTap ? 'pointer' : 'default' }}>
-        {/* Hlava */}
-        <div style={{ position:'absolute', top: px(-4), left: px(12), right: px(12), height: px(74), borderRadius:'50%', background:'linear-gradient(160deg, #fde68a, #d97706)', boxShadow:'inset 0 -8px 16px rgba(0,0,0,.12), 0 10px 22px -8px #d97706' }}/>
-        {/* Vlasy nahoře - tmavé */}
-        <div style={{ position:'absolute', top: px(-12), left: px(14), right: px(14), height: px(28), background:'#1a1530', borderRadius:'50% 50% 30% 30%' }}/>
-        {/* Oči */}
-        {sleeping ? (<><ClosedEye left={24}/><ClosedEye right={24}/><SleepZzz/></>) : (<><Eye left={24}/><Eye right={24}/></>)}
-        {/* Úsměv */}
-        <div style={{ position:'absolute', top: px(58), left:'50%', transform:'translateX(-50%)', width: px(18), height: px(10), borderBottom:`${Math.max(2,Math.round(3*scale))}px solid #2a2240`, borderRadius:'0 0 18px 18px' }}/>
-        {/* Míč v pravém spodním rohu */}
-        <div style={{ position:'absolute', bottom: px(-12), right: px(-8), width: px(34), height: px(34), borderRadius:'50%', background:'radial-gradient(circle at 35% 35%, #fff 0%, #fff 60%, #d1d5db 100%)', border:`${Math.max(2,Math.round(2*scale))}px solid #1a1530`, boxShadow:'0 4px 10px rgba(0,0,0,.2)', animation: dancing ? 'spin 0.8s linear infinite' : (sleeping ? 'none' : 'floatY 2.5s ease-in-out infinite .3s') }}>
-          {/* Šestiúhelníky vzoru */}
+        {/* DRES s vertikálními pruhy - vzadu za hlavou */}
+        <div style={{
+          position:'absolute',
+          bottom: px(-8), left: px(-4), right: px(-4),
+          height: px(48),
+          borderRadius:'40% 40% 30% 30%',
+          background: 'repeating-linear-gradient(90deg, #1d4ed8 0, #1d4ed8 ' + px(8) + ', #dc2626 ' + px(8) + ', #dc2626 ' + px(16) + ')',
+          boxShadow:'0 6px 14px rgba(0,0,0,.2)',
+          zIndex: 0,
+        }}/>
+        {/* Krk */}
+        <div style={{ position:'absolute', bottom: px(20), left:'50%', transform:'translateX(-50%)', width: px(28), height: px(20), background:'#8b5a3c', zIndex: 1 }}/>
+        {/* Hlava - tmavší pleť */}
+        <div style={{
+          position:'absolute',
+          top: px(8), left: px(10), right: px(10),
+          height: px(68),
+          borderRadius:'50%',
+          background:'linear-gradient(160deg, #b08568, #6f4730)',
+          boxShadow:'inset 0 -8px 14px rgba(0,0,0,.18), 0 6px 16px -4px rgba(0,0,0,.3)',
+          zIndex: 2,
+        }}/>
+        {/* Kudrnaté vlasy - několik překrývajících kruhů nahoře pro nepravidelný tvar */}
+        <div style={{ position:'absolute', top: px(-6), left: px(18), width: px(24), height: px(24), background:'#3d1f0a', borderRadius:'50%', zIndex: 3 }}/>
+        <div style={{ position:'absolute', top: px(-4), left: px(8), width: px(22), height: px(22), background:'#3d1f0a', borderRadius:'50%', zIndex: 3 }}/>
+        <div style={{ position:'absolute', top: px(-4), right: px(8), width: px(22), height: px(22), background:'#3d1f0a', borderRadius:'50%', zIndex: 3 }}/>
+        <div style={{ position:'absolute', top: px(-8), left:'50%', transform:'translateX(-50%)', width: px(26), height: px(24), background:'#3d1f0a', borderRadius:'50%', zIndex: 3 }}/>
+        <div style={{ position:'absolute', top: px(-2), right: px(14), width: px(20), height: px(22), background:'#5c3416', borderRadius:'50%', zIndex: 3 }}/>
+        <div style={{ position:'absolute', top: px(6), left: px(6), width: px(16), height: px(16), background:'#3d1f0a', borderRadius:'50%', zIndex: 3 }}/>
+        <div style={{ position:'absolute', top: px(6), right: px(6), width: px(16), height: px(16), background:'#3d1f0a', borderRadius:'50%', zIndex: 3 }}/>
+        {/* Oči - tmavé na světlejším pozadí (poseny níž kvůli vlasům) */}
+        <div style={{ position:'relative', zIndex: 4 }}>
+          {sleeping ? (
+            <>
+              <div style={{ position:'absolute', top: px(36), left: px(26), width: px(14), height: px(3), background:'#1a0a02', borderRadius:'2px' }}/>
+              <div style={{ position:'absolute', top: px(36), right: px(26), width: px(14), height: px(3), background:'#1a0a02', borderRadius:'2px' }}/>
+              {/* zZZ */}
+              <div style={{ position:'absolute', top: px(-18), right: px(-6), fontSize: px(20), color:'#2a2240', opacity:.85, animation:'floatY 2.4s ease-in-out infinite', fontWeight:900 }}>z</div>
+              <div style={{ position:'absolute', top: px(-32), right: px(2), fontSize: px(14), color:'#2a2240', opacity:.65, animation:'floatY 2.4s ease-in-out infinite .4s', fontWeight:900 }}>z</div>
+            </>
+          ) : (
+            <>
+              <div style={{ position:'absolute', top: px(30), left: px(24), width: px(14), height: px(16), background:'#fff', borderRadius:'50%', animation: eyeAnim }}>
+                <div style={{ position:'absolute', bottom: px(2), left: px(3), width: px(8), height: px(8), background:'#1a0a02', borderRadius:'50%' }}/>
+              </div>
+              <div style={{ position:'absolute', top: px(30), right: px(24), width: px(14), height: px(16), background:'#fff', borderRadius:'50%', animation: eyeAnim }}>
+                <div style={{ position:'absolute', bottom: px(2), left: px(3), width: px(8), height: px(8), background:'#1a0a02', borderRadius:'50%' }}/>
+              </div>
+            </>
+          )}
+        </div>
+        {/* Velký úsměv s bílými zuby */}
+        {!sleeping && (
+          <div style={{ position:'absolute', top: px(54), left:'50%', transform:'translateX(-50%)', width: px(28), height: px(14), background:'#1a0a02', borderRadius:'0 0 50% 50%', zIndex: 4, overflow:'hidden' }}>
+            <div style={{ position:'absolute', top: 0, left: 0, right: 0, height: '40%', background:'#fff', borderBottom: px(1) + ' solid #ccc' }}/>
+          </div>
+        )}
+        {sleeping && (
+          <div style={{ position:'absolute', top: px(56), left:'50%', transform:'translateX(-50%)', width: px(14), height: px(8), borderBottom:`${Math.max(2,Math.round(3*scale))}px solid #1a0a02`, borderRadius:'0 0 12px 12px', zIndex: 4 }}/>
+        )}
+        {/* Míč v rohu - otáčí se při tanci */}
+        <div style={{ position:'absolute', bottom: px(-14), right: px(-10), width: px(32), height: px(32), borderRadius:'50%', background:'radial-gradient(circle at 35% 35%, #fff 0%, #fff 60%, #d1d5db 100%)', border:`${Math.max(2,Math.round(2*scale))}px solid #1a1530`, boxShadow:'0 4px 10px rgba(0,0,0,.25)', animation: dancing ? 'spin 0.8s linear infinite' : (sleeping ? 'none' : 'floatY 2.5s ease-in-out infinite .3s'), zIndex: 5 }}>
           <div style={{ position:'absolute', top:'30%', left:'40%', width:'25%', height:'25%', background:'#1a1530', borderRadius:'30%' }}/>
           <div style={{ position:'absolute', top:'12%', left:'18%', width:'18%', height:'18%', background:'#1a1530', borderRadius:'30%' }}/>
           <div style={{ position:'absolute', bottom:'15%', right:'15%', width:'18%', height:'18%', background:'#1a1530', borderRadius:'30%' }}/>
@@ -1064,6 +1132,37 @@ function Mascot({ size, sleeping, dancing, onTap, kind }) {
 
   // Fallback - default fox
   return null;
+}
+
+
+// v52: WalletKidForm - dětská verze, jen výdaje (kid si zaznamenává co koupil)
+function WalletKidForm({ balance, onSubmit }) {
+  const [amount, setAmount] = useState('');
+  const [reason, setReason] = useState('');
+
+  const submit = () => {
+    const n = parseInt(amount, 10);
+    if (!n || n < 1) return;
+    if (n > balance) {
+      window.alert('Hej, tolik peněz nemáš! Máš jen ' + balance + ' Kč.');
+      return;
+    }
+    onSubmit(n, reason.trim());
+    setAmount('');
+    setReason('');
+  };
+
+  return (
+    <React.Fragment>
+      <div style={{ display:'flex', gap:10, marginBottom:10 }}>
+        <input value={amount} onChange={(e) => setAmount(e.target.value.replace(/[^\d]/g, ''))} placeholder="Kč" inputMode="numeric" style={{ width:120, border:'2px solid #e3e3ea', borderRadius:14, padding:'14px 12px', fontSize:24, fontWeight:700, textAlign:'center', fontFamily:'var(--display)' }}/>
+        <input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Za co? (sladkost, hračka, …)" style={{ flex:1, minWidth:0, border:'2px solid #e3e3ea', borderRadius:14, padding:'14px 16px', fontSize:16 }}/>
+      </div>
+      <div onClick={submit} style={{ cursor:'pointer', background: amount && parseInt(amount,10) > 0 ? 'linear-gradient(135deg, #dc2626, #991b1b)' : '#cbd5e1', color:'#fff', fontFamily:'var(--display)', fontWeight:600, fontSize:18, padding:16, borderRadius:16, textAlign:'center' }}>
+        💸 Zapsat výdaj {amount && parseInt(amount,10) > 0 ? '(' + amount + ' Kč)' : ''}
+      </div>
+    </React.Fragment>
+  );
 }
 
 
@@ -2497,6 +2596,19 @@ function App() {
 
   // weather (Open-Meteo přes hook; pokud data nedorazí, fallback)
   const wD = weather.data;
+  // v52: helper pro WMO code → emoji
+  const wmoIcon = (c) => {
+    if (c == null) return '🌤️';
+    if (c == 0) return '☀️';
+    if (c <= 3) return '⛅';
+    if (c <= 48) return '🌫️';
+    if (c <= 57) return '🌦️';
+    if (c <= 67) return '🌧️';
+    if (c <= 77) return '🌨️';
+    if (c <= 82) return '🌧️';
+    if (c <= 86) return '🌨️';
+    return '⛈️';
+  };
   const wAdvice = (() => {
     if (!wD) return 'Načítám počasí…';
     if (wD.tmin != null && wD.tmin < 5) return 'Ráno bude chladno, obleč se tepleji.';
@@ -2507,13 +2619,21 @@ function App() {
     return 'Bude chladněji, obleč se tepleji.';
   })();
   const wWearLine = weather.outfit ? weather.outfit.map(o => o.icon).join(' ') : '🌤️';
+  // v52: 3-time přehled (ráno 8h, odpoledne 14h, večer 19h)
+  const wPeriods = (wD && wD.periods) ? [
+    { label:'Ráno',      tag:'8:00',  data: wD.periods.morning },
+    { label:'Odpoledne', tag:'14:00', data: wD.periods.afternoon },
+    { label:'Večer',     tag:'19:00', data: wD.periods.evening },
+  ].filter(p => p.data) : [];
   const wInfo = {
     tempNow: wD && wD.temp != null ? Math.round(wD.temp) : '–',
     tempMax: wD && wD.tmax != null ? Math.round(wD.tmax) : '–',
     cond: weather.visual ? weather.visual.label : 'načítám',
     emoji: weather.visual ? weather.visual.icon : '🌤️',
     advice: wAdvice,
-    wear: wWearLine
+    wear: wWearLine,
+    periods: wPeriods,
+    wmoIcon: wmoIcon,
   };
 
   // who-home today
@@ -3639,6 +3759,21 @@ function App() {
                     <div style={{ fontSize:10, fontWeight:800, color:'var(--muted)', textTransform:'uppercase', letterSpacing:'.05em' }}>Vezmi si</div>
                   </div>
                 </div>
+                {/* v52: Ráno / Odpoledne / Večer */}
+                {wInfo.periods.length > 0 && (
+                  <div style={{ display:'grid', gridTemplateColumns:'repeat(' + wInfo.periods.length + ', 1fr)', gap:6, marginTop:2 }}>
+                    {wInfo.periods.map((p, i) => (
+                      <div key={i} style={{ background:'var(--soft)', borderRadius:12, padding:'8px 6px', textAlign:'center' }}>
+                        <div style={{ fontSize:10, fontWeight:900, color:'var(--muted)', textTransform:'uppercase', letterSpacing:'.05em' }}>{p.label}</div>
+                        <div style={{ fontSize:22, lineHeight:1.1, marginTop:2 }}>{wInfo.wmoIcon(p.data.code)}</div>
+                        <div style={{ fontFamily:'var(--display)', fontSize:16, fontWeight:700, color:'var(--ink)', lineHeight:1, marginTop:2 }}>{Math.round(p.data.temp)}°</div>
+                        {p.data.rainProb != null && p.data.rainProb >= 30 && (
+                          <div style={{ fontSize:9, fontWeight:800, color:'#0891b2', marginTop:2 }}>💧 {Math.round(p.data.rainProb)}%</div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
                 <div style={{ display:'flex', alignItems:'center', gap:11, background:'var(--soft)', borderRadius:14, padding:'10px 14px' }}>
                   <div style={{ width:14, height:14, borderRadius:'50%', background: whoHomeToday.color, boxShadow:`0 0 0 3px ${whoHomeToday.ring}` }}/>
                   <div style={{ fontSize:11, fontWeight:800, textTransform:'uppercase', letterSpacing:'.06em', color:'var(--muted)' }}>Dnes jsi</div>
@@ -3790,7 +3925,114 @@ function App() {
                   return null;
                 })()}
               </div>
+              {/* v52: POKLADNIČKA pro dítě */}
+              <div onClick={() => go('wallet')} style={{ cursor:'pointer', background:'linear-gradient(135deg, #16a34a, #15803d)', borderRadius:16, padding:'11px 14px', display:'flex', alignItems:'center', gap:10, boxShadow:'var(--shadow)' }}>
+                <div style={{ fontSize:24 }}>🐷</div>
+                <div style={{ flex:1, minWidth:0 }}>
+                  <div style={{ fontFamily:'var(--display)', fontSize:15, fontWeight:600, color:'#fff', lineHeight:1 }}>Moje peníze</div>
+                  <div style={{ fontSize:11, fontWeight:800, color:'rgba(255,255,255,.85)' }}>{walletBalance.toLocaleString('cs-CZ')} Kč</div>
+                </div>
+              </div>
             </div>
+          </div>
+        </div>
+      </div>
+      )}
+
+
+      {/* ===================== WALLET KID VIEW (v52) ===================== */}
+      {screen === 'wallet' && (
+      <div data-screen-label="Pokladnička" style={{ position:'absolute', inset:0, background:'linear-gradient(180deg, #f0fdf4 0%, #dcfce7 100%)', display:'flex', flexDirection:'column', overflow:'hidden' }}>
+        {/* Header */}
+        <div style={{ padding:'22px 28px 14px', display:'flex', alignItems:'center', gap:16 }}>
+          <div onClick={() => go('home')} style={{ cursor:'pointer', width:48, height:48, borderRadius:16, background:'#fff', display:'flex', alignItems:'center', justifyContent:'center', fontSize:22, boxShadow:'0 4px 12px rgba(0,0,0,.08)' }}>←</div>
+          <div style={{ flex:1 }}>
+            <div style={{ fontFamily:'var(--display)', fontSize:30, fontWeight:600, color:'#14532d', lineHeight:1 }}>Moje pokladnička</div>
+            <div style={{ fontSize:14, fontWeight:700, color:'#15803d', marginTop:2 }}>🐷 Tvoje úspory a výdaje</div>
+          </div>
+        </div>
+
+        <div style={{ flex:1, minHeight:0, overflow:'auto', padding:'4px 28px 28px' }}>
+          {/* Velký zůstatek */}
+          <div style={{ background:'linear-gradient(135deg, #16a34a, #15803d)', borderRadius:28, padding:'26px 28px', color:'#fff', boxShadow:'0 10px 30px rgba(22,163,74,.3)', marginBottom:16 }}>
+            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:18 }}>
+              <div>
+                <div style={{ fontSize:13, fontWeight:900, color:'rgba(255,255,255,.85)', textTransform:'uppercase', letterSpacing:'.1em' }}>Mám naspořeno</div>
+                <div style={{ fontFamily:'var(--display)', fontSize:72, fontWeight:700, lineHeight:1, marginTop:6 }}>{walletBalance.toLocaleString('cs-CZ')} <span style={{ fontSize:30, fontWeight:600, opacity:.85 }}>Kč</span></div>
+              </div>
+              <div style={{ fontSize:90, lineHeight:1, animation:'floatY 3s ease-in-out infinite' }}>🐷</div>
+            </div>
+
+            {/* Cíl */}
+            {walletGoalAmount > 0 && walletGoalName && (
+              <div style={{ background:'rgba(255,255,255,.18)', borderRadius:16, padding:'14px 16px', marginTop:18, backdropFilter:'blur(4px)' }}>
+                <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:8 }}>
+                  <div style={{ fontSize:15, fontWeight:800 }}>🎯 Šetřím na: <b>{walletGoalName}</b></div>
+                  <div style={{ fontSize:14, fontWeight:800 }}>{walletBalance.toLocaleString('cs-CZ')} / {walletGoalAmount.toLocaleString('cs-CZ')} Kč</div>
+                </div>
+                <div style={{ background:'rgba(255,255,255,.25)', borderRadius:10, height:14, overflow:'hidden' }}>
+                  <div style={{ background:'linear-gradient(90deg, #fbbf24, #f59e0b)', height:'100%', width: Math.min(100, walletBalance / walletGoalAmount * 100) + '%', transition:'width .5s ease' }}/>
+                </div>
+                <div style={{ fontSize:13, fontWeight:700, marginTop:8 }}>
+                  {walletBalance >= walletGoalAmount
+                    ? '🎉 SUPER! Máš dost na to, co chceš!'
+                    : '💪 Ještě ti chybí ' + (walletGoalAmount - walletBalance).toLocaleString('cs-CZ') + ' Kč'}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Velké tlačítko Přidat výdaj (pro dítě) */}
+          <div style={{ background:'#fff', borderRadius:24, padding:18, boxShadow:'0 6px 18px rgba(0,0,0,.08)', marginBottom:16 }}>
+            <div style={{ fontFamily:'var(--display)', fontSize:18, fontWeight:600, color:'#1a1530', marginBottom:10 }}>💸 Něco jsem si koupil</div>
+            <div style={{ fontSize:12, fontWeight:700, color:'#5a566e', marginBottom:12 }}>Zapiš si co jsi koupil a kolik to stálo. (Přidat peníze může jen rodič v admin.)</div>
+            <WalletKidForm balance={walletBalance} onSubmit={(amount, reason) => {
+              const entry = {
+                id: 'w' + Date.now(),
+                date: new Date().toISOString(),
+                amount: amount,
+                reason: reason || 'Výdaj',
+                type: 'expense'
+              };
+              setWalletBalance(b => Math.max(0, b - amount));
+              setWalletHistory(h => [entry, ...h].slice(0, 200));
+              audio.coin();
+              showToast('-' + amount + ' Kč: ' + (reason || 'Výdaj'), '💸');
+            }}/>
+          </div>
+
+          {/* Historie - co jsem koupil */}
+          <div style={{ background:'#fff', borderRadius:24, padding:18, boxShadow:'0 6px 18px rgba(0,0,0,.08)' }}>
+            <div style={{ fontFamily:'var(--display)', fontSize:18, fontWeight:600, color:'#1a1530', marginBottom:12 }}>📜 Co jsem dělal/a s penězi</div>
+            {walletHistory.length === 0 ? (
+              <div style={{ background:'#f0fdf4', borderRadius:14, padding:'24px 16px', textAlign:'center' }}>
+                <div style={{ fontSize:42, marginBottom:8 }}>🐷</div>
+                <div style={{ fontSize:15, fontWeight:700, color:'#15803d' }}>Zatím nic. Jakmile dostaneš nebo utratíš peníze, ukáže se to tady.</div>
+              </div>
+            ) : (
+              <div style={{ display:'flex', flexDirection:'column', gap:9 }}>
+                {walletHistory.slice(0, 15).map(entry => {
+                  const isIncome = entry.type === 'income';
+                  const d = new Date(entry.date);
+                  const dateStr = d.getDate() + '. ' + (d.getMonth()+1) + '.';
+                  return (
+                    <div key={entry.id} style={{ display:'flex', alignItems:'center', gap:12, padding:'12px 14px', background: isIncome ? '#f0fdf4' : '#fef2f2', borderRadius:14, borderLeft:'5px solid ' + (isIncome ? '#16a34a' : '#dc2626') }}>
+                      <div style={{ fontSize:28 }}>{isIncome ? '💰' : '💸'}</div>
+                      <div style={{ flex:1, minWidth:0 }}>
+                        <div style={{ fontFamily:'var(--display)', fontSize:17, fontWeight:600, color:'#1a1530', lineHeight:1.1 }}>{entry.reason}</div>
+                        <div style={{ fontSize:12, fontWeight:700, color:'#9a96ac', marginTop:3 }}>{dateStr}</div>
+                      </div>
+                      <div style={{ fontFamily:'var(--display)', fontSize:22, fontWeight:700, color: isIncome ? '#16a34a' : '#dc2626' }}>
+                        {isIncome ? '+' : '-'}{entry.amount.toLocaleString('cs-CZ')} Kč
+                      </div>
+                    </div>
+                  );
+                })}
+                {walletHistory.length > 15 && (
+                  <div style={{ textAlign:'center', fontSize:12, fontWeight:700, color:'#9a96ac', marginTop:4 }}>… a {walletHistory.length - 15} dalších v historii (vidí rodič)</div>
+                )}
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -6748,8 +6990,8 @@ function App() {
 
                   {/* Verze (vždy zobrazeno) */}
                   <div style={{ background:'#fff', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
-                    <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'#1a1530' }}>Verze: Domácí pomocník v51</div>
-                    <div style={{ fontSize:12, color:'#9a96ac', marginTop:4 }}>Build 2026-06-22 · 15:50</div>
+                    <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'#1a1530' }}>Verze: Domácí pomocník v52</div>
+                    <div style={{ fontSize:12, color:'#9a96ac', marginTop:4 }}>Build 2026-06-22 · 15:54</div>
                   </div>
                 </div>
                 )}
