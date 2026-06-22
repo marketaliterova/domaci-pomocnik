@@ -2,6 +2,10 @@
 <html lang="cs">
 <head>
 <meta charset="utf-8">
+<!-- v54: anti-cache pro iOS Chrome - vždy stáhnout čerstvou verzi -->
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
 <title>Domácí pomocník</title>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#2f6bff">
@@ -1254,16 +1258,20 @@ function App() {
 
   // parent overlay
   const [parentOpen, setParentOpen] = useState(false);
-  // v12: detekce mobilu — když je viewport úzký, je to rodičovský telefon
-  const [isMobile, setIsMobile] = useState(() => typeof window !== 'undefined' && window.innerWidth < 700);
+  // v54: detekce mobilu — threshold snížen na 500 (jen telefony), iPady jsou vždy > 700
+  const [isMobile, setIsMobile] = useState(() => typeof window !== 'undefined' && window.innerWidth < 500);
   useEffect(() => {
-    const handler = () => setIsMobile(window.innerWidth < 700);
+    const handler = () => setIsMobile(window.innerWidth < 500);
     window.addEventListener('resize', handler);
     return () => window.removeEventListener('resize', handler);
   }, []);
-  // Na mobilu automaticky otevři parent overlay při prvním vstupu
+  // v54: auto-open parent overlay JEN POPRVÉ při mountu na mobilu (ne pokaždé když se isMobile přepne)
+  const autoOpenedRef = useRef(false);
   useEffect(() => {
-    if (isMobile && !parentOpen) setParentOpen(true);
+    if (isMobile && !autoOpenedRef.current) {
+      autoOpenedRef.current = true;
+      setParentOpen(true);
+    }
     // eslint-disable-next-line
   }, [isMobile]);
   const [parentLocked, setParentLocked] = useState(true);
@@ -4470,10 +4478,10 @@ function App() {
 
       {/* ===================== REWARDS ===================== */}
       {screen === 'rewards' && (
-      <div data-screen-label="Odměny" style={{ position:'absolute', inset:0, padding:'26px 30px', display:'flex', flexDirection:'column', gap:18, overflow:'auto' }}>
-        <div style={{ display:'flex', alignItems:'center', gap:16 }}>
-          <div onClick={() => go('home')} style={{ cursor:'pointer', width:52, height:52, borderRadius:17, background:'var(--surface)', border:'var(--hair)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:23, boxShadow:'var(--shadow)' }}>←</div>
-          <div style={{ fontFamily:'var(--display)', fontSize:32, fontWeight:600, color:'var(--ink)', flex:1 }}>Body a odměny</div>
+      <div data-screen-label="Odměny" style={{ position:'absolute', inset:0, padding:'18px 22px', display:'flex', flexDirection:'column', gap:12, overflow:'auto' }}>
+        <div style={{ display:'flex', alignItems:'center', gap:14 }}>
+          <div onClick={() => go('home')} style={{ cursor:'pointer', width:46, height:46, borderRadius:15, background:'var(--surface)', border:'var(--hair)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:21, boxShadow:'var(--shadow)' }}>←</div>
+          <div style={{ fontFamily:'var(--display)', fontSize:26, fontWeight:600, color:'var(--ink)', flex:1 }}>Body a odměny</div>
         </div>
 
         {/* v14: BOSS karta */}
@@ -4486,42 +4494,42 @@ function App() {
           return (
             <div style={{
               background: defeated ? 'linear-gradient(135deg, #16a34a, #15803d)' : 'linear-gradient(135deg, #1f2937, #0f172a)',
-              color:'#fff', borderRadius:24, padding:'20px 22px',
-              boxShadow:'0 10px 30px rgba(0,0,0,.25)', display:'flex', alignItems:'center', gap:18, position:'relative',
-              minHeight: 130, flex:'none'
+              color:'#fff', borderRadius:18, padding:'12px 16px',
+              boxShadow:'0 6px 18px rgba(0,0,0,.2)', display:'flex', alignItems:'center', gap:14, position:'relative',
+              flex:'none'
             }}>
-              {/* Emoji v bíléh kruhu (chrání proti color inherit bugu) */}
+              {/* Emoji v bílém kruhu */}
               <div style={{
                 flex:'none',
-                width: 100, height: 100,
+                width: 64, height: 64,
                 borderRadius: '50%',
                 background: defeated ? 'rgba(255,255,255,.92)' : '#fef3c7',
                 display:'flex',
                 alignItems:'center',
                 justifyContent:'center',
-                border: '3px solid '+(defeated ? '#15803d' : boss.color),
-                boxShadow: '0 6px 18px rgba(0,0,0,.3)',
+                border: '2px solid '+(defeated ? '#15803d' : boss.color),
+                boxShadow: '0 3px 10px rgba(0,0,0,.25)',
                 animation: defeated ? 'none' : 'bossShake 3s infinite',
                 filter: defeated ? 'grayscale(0.4) opacity(0.6)' : 'none'
               }}>
                 <span style={{
-                  fontSize: 60,
+                  fontSize: 38,
                   lineHeight: 1,
-                  color: 'initial', /* reset! aby emoji nedědil bílou */
+                  color: 'initial',
                   display: 'block'
                 }}>{boss.emoji}</span>
               </div>
               <div style={{ flex:1, minWidth:0 }}>
-                <div style={{ fontSize:11, fontWeight:900, opacity:.85, textTransform:'uppercase', letterSpacing:'.1em' }}>Týdenní boss</div>
-                <div style={{ fontFamily:'var(--display)', fontSize:24, fontWeight:600, marginBottom:8 }}>{boss.name}</div>
+                <div style={{ fontSize:10, fontWeight:900, opacity:.85, textTransform:'uppercase', letterSpacing:'.1em' }}>Týdenní boss</div>
+                <div style={{ fontFamily:'var(--display)', fontSize:18, fontWeight:600, marginBottom:6 }}>{boss.name}</div>
                 {defeated ? (
-                  <div style={{ fontSize:14, fontWeight:800, color:'#86efac' }}>🏆 PORAŽEN! Další přijde v pondělí.</div>
+                  <div style={{ fontSize:12, fontWeight:800, color:'#86efac' }}>🏆 PORAŽEN! Další přijde v pondělí.</div>
                 ) : (
                   <React.Fragment>
-                    <div style={{ height:14, background:'rgba(255,255,255,.18)', borderRadius:8, overflow:'hidden', marginBottom:6 }}>
-                      <div style={{ height:'100%', width: hpPct+'%', background:'linear-gradient(90deg, #ef4444, #b91c1c)', borderRadius:8, transition:'width .6s' }}/>
+                    <div style={{ height:10, background:'rgba(255,255,255,.18)', borderRadius:6, overflow:'hidden', marginBottom:4 }}>
+                      <div style={{ height:'100%', width: hpPct+'%', background:'linear-gradient(90deg, #ef4444, #b91c1c)', borderRadius:6, transition:'width .6s' }}/>
                     </div>
-                    <div style={{ fontSize:13, fontWeight:800, opacity:.9 }}>HP {hp} / {maxHp} · 1× rutina = 1 damage · poražení = +100 XP + legendární loot</div>
+                    <div style={{ fontSize:11, fontWeight:800, opacity:.9 }}>HP {hp} / {maxHp} · 1× rutina = 1 dmg · +100 XP za poražení</div>
                   </React.Fragment>
                 )}
               </div>
@@ -4530,16 +4538,16 @@ function App() {
         })()}
 
         {/* v14: TRUHLA POKLADŮ */}
-        <div style={{ background:'linear-gradient(135deg, #fef3c7, #fde68a)', borderRadius:24, padding:'20px 22px', boxShadow:'var(--shadow)', border:'2px solid #f59e0b' }}>
-          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:14 }}>
-            <div style={{ display:'flex', alignItems:'center', gap:10 }}>
-              <div style={{ fontSize:32 }}>🗝️</div>
+        <div style={{ background:'linear-gradient(135deg, #fef3c7, #fde68a)', borderRadius:18, padding:'12px 16px', boxShadow:'var(--shadow)', border:'2px solid #f59e0b' }}>
+          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:10 }}>
+            <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+              <div style={{ fontSize:24 }}>🗝️</div>
               <div>
-                <div style={{ fontFamily:'var(--display)', fontSize:22, fontWeight:600, color:'#7c2d12' }}>Truhla pokladů</div>
-                <div style={{ fontSize:12, fontWeight:800, color:'#92400e' }}>{inventory.length} {inventory.length === 1 ? 'předmět' : inventory.length < 5 ? 'předměty' : 'předmětů'}</div>
+                <div style={{ fontFamily:'var(--display)', fontSize:17, fontWeight:600, color:'#7c2d12' }}>Truhla pokladů</div>
+                <div style={{ fontSize:11, fontWeight:800, color:'#92400e' }}>{inventory.length} {inventory.length === 1 ? 'předmět' : inventory.length < 5 ? 'předměty' : 'předmětů'}</div>
               </div>
             </div>
-            <div style={{ fontSize:11, fontWeight:800, color:'#92400e', textAlign:'right', lineHeight:1.3 }}>Padá při<br/>dokončení rutiny</div>
+            <div style={{ fontSize:10, fontWeight:800, color:'#92400e', textAlign:'right', lineHeight:1.3 }}>Padá při<br/>dokončení rutiny</div>
           </div>
           {inventory.length === 0 ? (
             <div style={{ background:'#fff', borderRadius:14, padding:'18px 14px', textAlign:'center', color:'#92400e', fontSize:13, fontWeight:700 }}>
@@ -4573,51 +4581,51 @@ function App() {
           )}
         </div>
 
-        <div style={{ display:'grid', gridTemplateColumns:'1fr 1.4fr', gap:18 }}>
+        <div style={{ display:'grid', gridTemplateColumns:'260px 1fr', gap:14 }}>
           {/* maskot panel */}
-          <div style={{ background:'var(--maskotCard)', border:'var(--hair)', borderRadius:26, padding:26, display:'flex', flexDirection:'column', alignItems:'center', gap:16, boxShadow:'var(--shadow)' }}>
-            <Mascot size={170} kind={mascotKind} dancing={rikiDancing} sleeping={isRikiSleeping}/>
+          <div style={{ background:'var(--maskotCard)', border:'var(--hair)', borderRadius:20, padding:16, display:'flex', flexDirection:'column', alignItems:'center', gap:10, boxShadow:'var(--shadow)', alignSelf:'start' }}>
+            <Mascot size={110} kind={mascotKind} dancing={rikiDancing} sleeping={isRikiSleeping}/>
             <div style={{ textAlign:'center' }}>
-              <div style={{ fontFamily:'var(--display)', fontSize:26, fontWeight:600, color:'var(--ink)' }}>Lišák {mascotName}</div>
-              <div style={{ fontSize:15, fontWeight:800, color:'var(--muted)' }}>{child.levelLabel} · čím víc plníš, tím víc roste</div>
+              <div style={{ fontFamily:'var(--display)', fontSize:19, fontWeight:600, color:'var(--ink)' }}>{mascotName}</div>
+              <div style={{ fontSize:11, fontWeight:800, color:'var(--muted)', marginTop:2 }}>{child.levelLabel}</div>
             </div>
-            <div style={{ width:'100%', height:14, background:'var(--soft)', borderRadius:9, overflow:'hidden' }}>
+            <div style={{ width:'100%', height:9, background:'var(--soft)', borderRadius:6, overflow:'hidden' }}>
               <div style={{ height:'100%', width: child.xpPct+'%', background:'linear-gradient(90deg,var(--accent2),var(--accent))' }}/>
             </div>
-            <div style={{ display:'flex', gap:12, width:'100%' }}>
-              <div style={{ flex:1, textAlign:'center', background:'var(--soft)', borderRadius:16, padding:14 }}>
-                <div style={{ fontFamily:'var(--display)', fontSize:30, fontWeight:600, color:'var(--accent)' }}>{child.points}</div>
-                <div style={{ fontSize:13, fontWeight:800, color:'var(--muted)' }}>bodů</div>
+            <div style={{ display:'flex', gap:8, width:'100%' }}>
+              <div style={{ flex:1, textAlign:'center', background:'var(--soft)', borderRadius:11, padding:'8px 4px' }}>
+                <div style={{ fontFamily:'var(--display)', fontSize:22, fontWeight:600, color:'var(--accent)' }}>{child.points}</div>
+                <div style={{ fontSize:10, fontWeight:800, color:'var(--muted)' }}>bodů</div>
               </div>
-              <div style={{ flex:1, textAlign:'center', background:'var(--soft)', borderRadius:16, padding:14 }}>
-                <div style={{ fontFamily:'var(--display)', fontSize:30, fontWeight:600, color:'var(--ink)' }}>🔥 {child.streak}</div>
-                <div style={{ fontSize:13, fontWeight:800, color:'var(--muted)' }}>dní v řadě</div>
+              <div style={{ flex:1, textAlign:'center', background:'var(--soft)', borderRadius:11, padding:'8px 4px' }}>
+                <div style={{ fontFamily:'var(--display)', fontSize:22, fontWeight:600, color:'var(--ink)' }}>🔥 {child.streak}</div>
+                <div style={{ fontSize:10, fontWeight:800, color:'var(--muted)' }}>v řadě</div>
               </div>
             </div>
           </div>
 
-          {/* shop - real store look */}
-          <div style={{ background:'linear-gradient(135deg, #fef9c3 0%, #fef3c7 100%)', borderRadius:26, padding:'24px 26px', boxShadow:'var(--shadow)', position:'relative' }}>
-            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:18 }}>
+          {/* shop - kompaktnější */}
+          <div style={{ background:'linear-gradient(135deg, #fef9c3 0%, #fef3c7 100%)', borderRadius:20, padding:'16px 18px', boxShadow:'var(--shadow)', position:'relative' }}>
+            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:12 }}>
               <div>
-                <div style={{ fontFamily:'var(--display)', fontSize:26, fontWeight:600, color:'#854d0e' }}>🛍️ Obchůdek odměn</div>
-                <div style={{ fontSize:14, fontWeight:800, color:'#a16207', marginTop:2 }}>
+                <div style={{ fontFamily:'var(--display)', fontSize:20, fontWeight:600, color:'#854d0e' }}>🛍️ Obchůdek odměn</div>
+                <div style={{ fontSize:12, fontWeight:800, color:'#a16207' }}>
                   {child.points > 0
                     ? `Máš ${child.points} bodů — co si koupíš?`
                     : 'Posbírej body a něco si kup'}
                 </div>
               </div>
               {/* Wallet badge */}
-              <div style={{ background:'#fff', borderRadius:16, padding:'8px 14px', display:'flex', alignItems:'center', gap:8, boxShadow:'0 4px 12px rgba(146,64,14,.15)' }}>
-                <div style={{ fontSize:24 }}>💰</div>
+              <div style={{ background:'#fff', borderRadius:12, padding:'6px 12px', display:'flex', alignItems:'center', gap:6, boxShadow:'0 3px 10px rgba(146,64,14,.12)' }}>
+                <div style={{ fontSize:20 }}>💰</div>
                 <div>
-                  <div style={{ fontFamily:'var(--display)', fontSize:22, fontWeight:600, color:'#854d0e', lineHeight:1 }}>{child.points}</div>
-                  <div style={{ fontSize:10, fontWeight:800, color:'#a16207', textTransform:'uppercase', letterSpacing:'.05em' }}>bodů</div>
+                  <div style={{ fontFamily:'var(--display)', fontSize:18, fontWeight:600, color:'#854d0e', lineHeight:1 }}>{child.points}</div>
+                  <div style={{ fontSize:9, fontWeight:800, color:'#a16207', textTransform:'uppercase' }}>bodů</div>
                 </div>
               </div>
             </div>
 
-            <div style={{ display:'grid', gridTemplateColumns:'repeat(2, 1fr)', gap:14 }}>
+            <div style={{ display:'grid', gridTemplateColumns:'repeat(3, 1fr)', gap:10 }}>
               {shop.map((r) => {
                 const st = shopState[r.id];
                 const afford = points >= r.cost;
@@ -4627,46 +4635,45 @@ function App() {
                 return (
                   <div key={r.id} style={{
                     background:'#fff',
-                    border: unlocked ? '3px solid #16a34a' : pending ? '2px solid #f59e0b' : (afford ? '2px solid #16a34a' : '2px solid #e5e7eb'),
-                    borderRadius:18,
-                    padding:'16px 14px',
+                    border: unlocked ? '2px solid #16a34a' : pending ? '2px solid #f59e0b' : (afford ? '2px solid #16a34a' : '2px solid #e5e7eb'),
+                    borderRadius:14,
+                    padding:'10px 8px',
                     position:'relative',
-                    boxShadow: unlocked ? '0 8px 22px rgba(22,163,74,.25)' : '0 6px 18px rgba(0,0,0,.06)',
+                    boxShadow: unlocked ? '0 4px 14px rgba(22,163,74,.2)' : '0 3px 10px rgba(0,0,0,.05)',
                     opacity: locked ? 0.7 : 1,
-                    transition:'transform .15s',
                     animation: unlocked ? 'softPulse 2s ease-in-out infinite' : 'none'
                   }}>
                     {/* Cenovka v rohu */}
                     <div style={{
                       position:'absolute',
-                      top:-8, right:12,
+                      top:-6, right:8,
                       background: unlocked ? '#16a34a' : pending ? '#fbbf24' : (afford ? '#16a34a' : '#9ca3af'),
                       color:'#fff',
-                      borderRadius:10,
-                      padding:'4px 11px',
+                      borderRadius:8,
+                      padding:'2px 8px',
                       fontFamily:'var(--display)',
                       fontWeight:600,
-                      fontSize:14,
-                      boxShadow:'0 3px 8px rgba(0,0,0,.18)',
-                      display:'flex', alignItems:'center', gap:4
+                      fontSize:12,
+                      boxShadow:'0 2px 6px rgba(0,0,0,.15)',
+                      display:'flex', alignItems:'center', gap:3
                     }}>
-                      <span style={{ fontSize:13 }}>{unlocked ? '✓' : '⭐'}</span>
+                      <span style={{ fontSize:11 }}>{unlocked ? '✓' : '⭐'}</span>
                       <span>{unlocked ? 'TVOJE' : r.cost}</span>
                     </div>
 
                     {r.photo ? (
                       <div style={{
-                        width: 96, height: 96, borderRadius: 16,
+                        width: 60, height: 60, borderRadius: 12,
                         background: `url(${r.photo}) center/cover`,
-                        margin:'14px auto 8px',
-                        boxShadow: '0 4px 12px rgba(0,0,0,.15)',
+                        margin:'8px auto 6px',
+                        boxShadow: '0 3px 8px rgba(0,0,0,.12)',
                         filter: locked ? 'grayscale(0.6)' : 'none'
                       }}/>
                     ) : (
                       <div style={{
-                        fontSize: 64,
+                        fontSize: 42,
                         textAlign:'center',
-                        margin:'14px 0 8px',
+                        margin:'8px 0 6px',
                         lineHeight: 1,
                         filter: locked ? 'grayscale(0.6)' : 'none'
                       }}>{r.emoji}</div>
@@ -4675,12 +4682,12 @@ function App() {
                     <div style={{
                       textAlign:'center',
                       fontFamily:'var(--display)',
-                      fontSize:16,
+                      fontSize:13,
                       fontWeight:600,
                       color:'var(--ink)',
-                      lineHeight:1.15,
-                      minHeight:38,
-                      marginBottom:10
+                      lineHeight:1.1,
+                      minHeight:30,
+                      marginBottom:8
                     }}>{r.t}</div>
 
                     <div onClick={() => redeem(r)} style={{
@@ -4694,15 +4701,15 @@ function App() {
                             ? 'linear-gradient(135deg, #16a34a, #15803d)'
                             : '#f0f0f7',
                       color: unlocked ? '#fff' : pending ? '#92400e' : afford ? '#fff' : '#9ca3af',
-                      borderRadius:12,
-                      padding:'11px 8px',
+                      borderRadius:9,
+                      padding:'7px 4px',
                       textAlign:'center',
                       fontFamily:'var(--display)',
                       fontWeight:600,
-                      fontSize:14,
-                      boxShadow: (afford && !pending) || unlocked ? '0 4px 12px rgba(0,0,0,.18)' : 'none'
+                      fontSize:11,
+                      boxShadow: (afford && !pending) || unlocked ? '0 3px 8px rgba(0,0,0,.15)' : 'none'
                     }}>
-                      {unlocked ? '🎁 Vyzvednout!' : pending ? '⏳ Čeká na rodiče' : afford ? '🛒 Koupit' : `🔒 ještě ${r.cost - points} bodů`}
+                      {unlocked ? '🎁 Vyzvednout!' : pending ? '⏳ Čeká' : afford ? '🛒 Koupit' : `🔒 chybí ${r.cost - points}`}
                     </div>
                   </div>
                 );
@@ -7025,8 +7032,8 @@ function App() {
 
                   {/* Verze (vždy zobrazeno) */}
                   <div style={{ background:'#fff', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
-                    <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'#1a1530' }}>Verze: Domácí pomocník v53</div>
-                    <div style={{ fontSize:12, color:'#9a96ac', marginTop:4 }}>Build 2026-06-22 · 16:03</div>
+                    <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'#1a1530' }}>Verze: Domácí pomocník v54</div>
+                    <div style={{ fontSize:12, color:'#9a96ac', marginTop:4 }}>Build 2026-06-22 · 16:10</div>
                   </div>
                 </div>
                 )}
