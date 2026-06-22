@@ -3515,13 +3515,14 @@ function App() {
           </div>
         </div>
 
-        {/* v17+v23: A — barevný pruh dne, B — TEACCH pictogram timeline (full width) */}
+        {/* v59: KOMPLETNÍ REDESIGN HOME — podle Megyho návrhu */}
         {(() => {
           const nowD = new Date();
           const totalMins = nowD.getHours() * 60 + nowD.getMinutes();
           const dayProgress = totalMins / (24 * 60);
           const h = nowD.getHours();
-          // v51: české hranice fází
+
+          // Fáze dne
           let phase, phaseColor, phaseEmoji, phaseStartH, phaseEndH;
           if (h < 5)       { phase = 'NOC';       phaseColor = '#1e1b4b'; phaseEmoji = '🌙'; phaseStartH = 0;  phaseEndH = 5; }
           else if (h < 9)  { phase = 'RÁNO';      phaseColor = '#fb923c'; phaseEmoji = '🌅'; phaseStartH = 5;  phaseEndH = 9; }
@@ -3530,15 +3531,16 @@ function App() {
           else if (h < 17) { phase = 'ODPOLEDNE'; phaseColor = '#16a34a'; phaseEmoji = '🌳'; phaseStartH = 13; phaseEndH = 17; }
           else if (h < 22) { phase = 'VEČER';     phaseColor = '#7c3aed'; phaseEmoji = '🌆'; phaseStartH = 17; phaseEndH = 22; }
           else             { phase = 'NOC';       phaseColor = '#1e3a8a'; phaseEmoji = '🌙'; phaseStartH = 22; phaseEndH = 24; }
-          // Střed segmentu fáze v % (0-100)
           const phaseMidPct = ((phaseStartH + phaseEndH) / 2 / 24) * 100;
 
+          // Blueprint dne
           const todaysBp = (dayBlueprintByDay && dayBlueprintByDay[todayDayIdx]) || DAY_BLUEPRINT;
           const blueprintMins = todaysBp.map(b => ({ ...b, mins: (function(){ const p = String(b.time||'0:0').split(':'); return parseInt(p[0])*60+parseInt(p[1]); })() }));
           let currentIdx = -1;
           for (let i = blueprintMins.length - 1; i >= 0; i--) {
             if (blueprintMins[i].mins <= totalMins) { currentIdx = i; break; }
           }
+          const currentBp = currentIdx >= 0 ? blueprintMins[currentIdx] : null;
           const upcoming = blueprintMins.find(b => b.mins > totalMins);
           const remainingMins = upcoming ? Math.max(0, upcoming.mins - totalMins) : 0;
           const remH = Math.floor(remainingMins / 60);
@@ -3547,14 +3549,26 @@ function App() {
           const nextMs = upcoming ? upcoming.mins : 24*60;
           const phasePct = nextMs > prevMs ? Math.min(1, Math.max(0, (totalMins - prevMs) / (nextMs - prevMs))) : 0;
 
-          // v23: detekce špatného víkendového rozvrhu
+          // Morning + Evening status (oba zobrazujeme)
+          const morningList = morning.filter(s => s.on);
+          const morningDone = morningList.filter(s => doneM[s.id]).length;
+          const morningComplete = morningList.length > 0 && morningDone === morningList.length;
+          const eveningList = evening.filter(s => s.on);
+          const eveningDone = eveningList.filter(s => doneE[s.id]).length;
+          const eveningComplete = eveningList.length > 0 && eveningDone === eveningList.length;
+
+          // Víkend detection
           const isWeekendToday = todayDayIdx >= 5;
           const hasSchoolMilestone = blueprintMins.some(b => /škol/i.test(b.label || ''));
           const weekendNeedsFix = isWeekendToday && hasSchoolMilestone;
 
+          // Tier info
+          const tier = getTier(totalXp);
+          const nextTier = getNextTier(totalXp);
+
           return (
-            <div style={{ display:'flex', flexDirection:'column', gap:10, animation: ent(0.5) }}>
-              {/* Weekend fix banner */}
+            <React.Fragment>
+              {/* Víkend banner */}
               {weekendNeedsFix && (
                 <div style={{ background:'linear-gradient(135deg, #fef3c7, #fde68a)', border:'2px solid #f59e0b', borderRadius:14, padding:'10px 14px', display:'flex', alignItems:'center', gap:12 }}>
                   <span style={{ fontSize:24 }}>🎉</span>
@@ -3562,355 +3576,372 @@ function App() {
                     Dnes je víkend, ale rozvrh obsahuje školu. Mám použít víkendový rozvrh?
                   </div>
                   <div onClick={() => {
-                    if (!window.confirm('Přepíše dnešní den víkendovým rozvrhem (vstávat 8:00, snídaně, hraní, oběd, ...). Pokračovat?')) return;
+                    if (!window.confirm('Přepíše dnešní den víkendovým rozvrhem. Pokračovat?')) return;
                     audio.tap();
                     const def = WEEKEND_BLUEPRINT.map(b => ({...b, id: b.id + '-' + (todayDayIdx === 5 ? 'sa' : 'su')}));
                     setDayBlueprintByDay(all => all.map((day, i) => i === todayDayIdx ? def : day));
                   }} style={{ cursor:'pointer', background:'#f59e0b', color:'#fff', borderRadius:10, padding:'8px 14px', fontWeight:800, fontSize:13, whiteSpace:'nowrap', boxShadow:'0 4px 12px rgba(245,158,11,.3)' }}>✓ Použít víkend</div>
-                  <div onClick={() => {
-                    audio.tap();
-                    // V tichosti zruš - mark this day as "kept by user" by adding a flag? Pro teď jen close.
-                  }} title="Zavřít" style={{ cursor:'pointer', width:28, height:28, borderRadius:8, color:'#92400e', display:'flex', alignItems:'center', justifyContent:'center', fontWeight:900 }}>✕</div>
                 </div>
               )}
 
-              {/* A — barevný pruh + integrovaný phase badge + countdown v JEDNOM ROW */}
-              <div style={{ display:'grid', gridTemplateColumns: upcoming ? '1fr auto' : '1fr', gap:14, alignItems:'center' }}>
-                <div style={{ position:'relative' }}>
-                  <div style={{ position:'relative', height: 36, borderRadius: 18, background: 'linear-gradient(90deg, #1e1b4b 0%, #1e1b4b 20.8%, #fb923c 20.8%, #fb923c 37.5%, #facc15 37.5%, #facc15 50%, #dc2626 50%, #dc2626 54.2%, #16a34a 54.2%, #16a34a 70.8%, #7c3aed 70.8%, #7c3aed 91.6%, #1e3a8a 91.6%)', overflow:'visible', boxShadow:'0 4px 14px rgba(0,0,0,.18)', border:'2px solid #fff' }}>
-                    {/* Slunce/měsíc */}
-                    <div style={{
-                      position:'absolute',
-                      left: 'calc(' + (dayProgress * 100) + '% - 22px)',
-                      top: '50%',
-                      transform: 'translateY(-50%)',
-                      width: 48, height: 48,
-                      borderRadius: '50%',
-                      background: '#fff',
-                      boxShadow: '0 0 22px rgba(255,200,0,.85), 0 4px 12px rgba(0,0,0,.25)',
-                      display:'flex',
-                      alignItems:'center',
-                      justifyContent:'center',
-                      fontSize: 26,
-                      border: '3px solid '+phaseColor,
-                      zIndex: 2,
-                      transition: 'left 1s linear'
-                    }}>
-                      {phaseEmoji}
+              {/* === ŘÁDEK 1: PRÁVĚ TEĎ + COUNTDOWN === */}
+              <div style={{ display:'grid', gridTemplateColumns: upcoming ? '1fr 220px' : '1fr', gap:14, animation: ent(1) }}>
+                {/* PRÁVĚ TEĎ card */}
+                <div style={{ background:'linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)', color:'#fff', borderRadius:22, padding:'22px 26px', display:'flex', alignItems:'center', gap:18, boxShadow:'0 8px 24px rgba(99,102,241,.32)', position:'relative', overflow:'hidden', minHeight:110 }}>
+                  {currentBp ? (
+                    <React.Fragment>
+                      <div style={{ fontSize:64, lineHeight:1, flex:'none', filter:'drop-shadow(0 4px 8px rgba(0,0,0,.2))' }}>{currentBp.emoji}</div>
+                      <div style={{ flex:1, minWidth:0 }}>
+                        <div style={{ fontSize:11, fontWeight:900, letterSpacing:'.14em', textTransform:'uppercase', opacity:.75 }}>Právě teď</div>
+                        <div style={{ fontFamily:'var(--display)', fontSize:36, fontWeight:600, lineHeight:1.05, marginTop:2 }}>{currentBp.label} · {currentBp.time}</div>
+                        {currentBp.hint && (
+                          <div style={{ fontSize:14, fontWeight:700, opacity:.85, marginTop:4 }}>{currentBp.hint}</div>
+                        )}
+                      </div>
+                      {upcoming && (
+                        <div style={{ background:'rgba(255,255,255,.18)', borderRadius:14, padding:'10px 14px', textAlign:'center', flex:'none', backdropFilter:'blur(6px)' }}>
+                          <div style={{ fontSize:10, fontWeight:900, opacity:.8, letterSpacing:'.1em', textTransform:'uppercase' }}>Pak</div>
+                          <div style={{ fontSize:24, lineHeight:1, marginTop:2 }}>{upcoming.emoji}</div>
+                          <div style={{ fontFamily:'var(--display)', fontSize:15, fontWeight:600, marginTop:3, lineHeight:1 }}>{upcoming.label}</div>
+                          <div style={{ fontSize:11, fontWeight:800, opacity:.9, marginTop:1 }}>{upcoming.time}</div>
+                        </div>
+                      )}
+                    </React.Fragment>
+                  ) : (
+                    <div style={{ flex:1, textAlign:'center', padding:'10px 0' }}>
+                      <div style={{ fontSize:36 }}>🎉</div>
+                      <div style={{ fontFamily:'var(--display)', fontSize:24, fontWeight:600, marginTop:5 }}>Konec dne — zaslouženě odpočívej</div>
                     </div>
-                    {/* v51: Phase badge nad středem aktuálního segmentu (ne pevně vlevo) */}
+                  )}
+                </div>
+
+                {/* COUNTDOWN card */}
+                {upcoming && (
+                  <div style={{ background:'#fff', borderRadius:20, padding:'18px 22px', boxShadow:'0 6px 18px rgba(0,0,0,.08)', display:'flex', alignItems:'center', gap:14 }}>
+                    <svg width="56" height="56" style={{ transform:'rotate(-90deg)', flex:'none' }}>
+                      <circle cx="28" cy="28" r="22" fill="none" stroke="#e5e7eb" strokeWidth="6"/>
+                      <circle cx="28" cy="28" r="22" fill="none" stroke={remainingMins < 30 ? '#dc2626' : remainingMins < 60 ? '#f59e0b' : '#16a34a'} strokeWidth="6" strokeDasharray={138.2} strokeDashoffset={138.2 * (1 - phasePct)} strokeLinecap="round" style={{ transition:'stroke-dashoffset 1s' }}/>
+                    </svg>
+                    <div style={{ flex:1, minWidth:0 }}>
+                      <div style={{ fontSize:10, fontWeight:900, color:'var(--muted)', textTransform:'uppercase', letterSpacing:'.08em' }}>Do "{upcoming.label}"</div>
+                      <div style={{ fontFamily:'var(--display)', fontSize:34, fontWeight:600, color: remainingMins < 30 ? '#dc2626' : remainingMins < 60 ? '#f59e0b' : '#16a34a', lineHeight:1 }}>
+                        {remH > 0 ? remH + 'h ' : ''}{remM}<span style={{ fontSize:18, fontWeight:700, marginLeft:3 }}>min</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* === ŘÁDEK 2: TIME BAR === */}
+              <div style={{ background:'var(--surface)', borderRadius:18, padding:'12px 16px 8px', boxShadow:'var(--shadow)', animation: ent(1.5) }}>
+                <div style={{ position:'relative' }}>
+                  <div style={{ position:'relative', height: 30, borderRadius: 15, background: 'linear-gradient(90deg, #1e1b4b 0%, #1e1b4b 20.8%, #fb923c 20.8%, #fb923c 37.5%, #facc15 37.5%, #facc15 50%, #dc2626 50%, #dc2626 54.2%, #16a34a 54.2%, #16a34a 70.8%, #7c3aed 70.8%, #7c3aed 91.6%, #1e3a8a 91.6%)', overflow:'visible', boxShadow:'0 2px 8px rgba(0,0,0,.15)' }}>
+                    {/* Phase badge nad aktuální fází */}
                     <div style={{
                       position:'absolute',
-                      left: 'calc(' + phaseMidPct + '% - 50px)',
-                      top:'50%',
-                      transform:'translateY(-50%)',
-                      width: 100,
+                      left: 'calc(' + phaseMidPct + '% - 56px)',
+                      top:'-2px',
+                      width: 112,
                       textAlign:'center',
-                      background:'rgba(0,0,0,.45)',
-                      color:'#fff',
-                      borderRadius:12,
-                      padding:'4px 10px',
+                      background:'#fff',
+                      color:'var(--ink)',
+                      borderRadius:14,
+                      padding:'6px 8px',
                       fontWeight:800,
                       fontSize:13,
                       letterSpacing:'.06em',
-                      zIndex:1,
-                      backdropFilter:'blur(4px)',
+                      boxShadow:'0 4px 12px rgba(0,0,0,.18)',
+                      border:'2px solid '+phaseColor,
                       transition:'left .5s ease',
-                      pointerEvents:'none'
+                      pointerEvents:'none',
+                      display:'flex', alignItems:'center', justifyContent:'center', gap:5
                     }}>
-                      {phase}
+                      <span style={{ fontSize:14 }}>{phaseEmoji}</span>
+                      <span>{phase}</span>
                     </div>
                   </div>
                   {/* Hodinové značky */}
-                  <div style={{ position:'relative', height:14, marginTop:4 }}>
+                  <div style={{ position:'relative', height:14, marginTop:6 }}>
                     {[0,6,12,18,24].map(hh => (
-                      <div key={hh} style={{ position:'absolute', left: ((hh/24)*100) + '%', transform:'translateX(-50%)', fontSize:10, fontWeight:800, color:'var(--muted)' }}>
+                      <div key={hh} style={{ position:'absolute', left: ((hh/24)*100) + '%', transform:'translateX(-50%)', fontSize:11, fontWeight:800, color:'var(--muted)' }}>
                         {hh < 10 ? '0'+hh+':00' : hh+':00'}
                       </div>
                     ))}
                   </div>
                 </div>
-                {/* Countdown jako tiskněnka vpravo */}
-                {upcoming && (
-                  <div style={{ display:'flex', alignItems:'center', gap:12, background:'#fff', borderRadius:14, padding:'10px 16px', boxShadow:'0 4px 14px rgba(0,0,0,.08)', border:'var(--hair)' }}>
-                    <span style={{ fontSize:30, lineHeight:1 }}>{upcoming.emoji}</span>
-                    <div>
-                      <div style={{ fontSize:10, fontWeight:800, color:'var(--muted)', textTransform:'uppercase', letterSpacing:'.06em' }}>Do "{upcoming.label}"</div>
-                      <div style={{ fontFamily:'var(--display)', fontSize:22, fontWeight:600, color: remainingMins < 30 ? '#dc2626' : remainingMins < 60 ? '#f59e0b' : '#16a34a' }}>
-                        {remH > 0 ? remH + 'h ' : ''}{remM}min
-                      </div>
-                    </div>
-                    <svg width="40" height="40" style={{ transform:'rotate(-90deg)' }}>
-                      <circle cx="20" cy="20" r="16" fill="none" stroke="#e5e7eb" strokeWidth="4"/>
-                      <circle cx="20" cy="20" r="16" fill="none" stroke={remainingMins < 30 ? '#dc2626' : remainingMins < 60 ? '#f59e0b' : '#16a34a'} strokeWidth="4" strokeDasharray={100} strokeDashoffset={100 * phasePct} strokeLinecap="round" style={{ transition:'stroke-dashoffset 1s' }}/>
-                    </svg>
-                  </div>
-                )}
               </div>
 
-              {/* C — TEACCH pictogram timeline (v55: skryto, je už v rutině) */}
-              <div style={{ display:'none' }}>
-                {blueprintMins.map((b, idx) => {
-                  const isCurrent = idx === currentIdx;
-                  const isDone = idx < currentIdx;
-                  return (
-                    <div key={b.id} style={{
-                      background: isCurrent ? '#fef3c7' : isDone ? '#f3f4f6' : '#fff',
-                      border: isCurrent ? '2px solid #f59e0b' : isDone ? '1px solid #e5e7eb' : '1px solid #cbd5e1',
-                      borderRadius: 10,
-                      padding: '6px 3px',
-                      textAlign:'center',
-                      opacity: isDone ? 0.5 : 1,
-                      animation: isCurrent ? 'softPulse 1.8s ease-in-out infinite' : 'none',
-                      boxShadow: isCurrent ? '0 4px 12px rgba(245,158,11,.35)' : '0 1px 3px rgba(0,0,0,.05)',
-                      transition:'all .3s',
-                      minWidth: 0
-                    }}>
-                      <div style={{ fontSize: isCurrent ? 24 : 20, lineHeight: 1, filter: isDone ? 'grayscale(0.8)' : 'none' }}>{b.emoji}</div>
-                      <div style={{ fontSize: 9, fontWeight: 800, color: isCurrent ? '#92400e' : isDone ? '#9ca3af' : '#1a1530', marginTop: 2, textTransform:'uppercase', letterSpacing:'.02em', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>
-                        {isDone ? '✓ ' : ''}{b.label}
-                      </div>
-                      <div style={{ fontSize: 9, fontWeight: 700, color: isCurrent ? '#b45309' : '#9ca3af', marginTop: 1 }}>{b.time}</div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          );
-        })()}
-
-        {/* main grid - 3 sloupce */}
-        <div style={{ display:'grid', gridTemplateColumns:'1.15fr 1fr 1fr', gap:14 }}>
-
-          {/* COL 1 — Modrý banner + Rutina */}
-          <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
-
-            {/* semafor */}
-            <div style={{ background:'var(--hero)', borderRadius:22, padding:'14px 18px', display:'flex', alignItems:'center', gap:14, boxShadow:'var(--shadow)', position:'relative', overflow:'hidden', border:'var(--hair)', animation: ent(1) }}>
-              <div style={{ display:'flex', flexDirection:'column', gap:5, padding:'7px 7px', background:'rgba(20,18,40,.18)', borderRadius:12, flex:'none' }}>
-                <div style={{ width:24, height:24, borderRadius:'50%', background: semafor.redOn, transition:'all .4s' }}/>
-                <div style={{ width:24, height:24, borderRadius:'50%', background: semafor.amberOn, transition:'all .4s' }}/>
-                <div style={{ width:24, height:24, borderRadius:'50%', background: semafor.greenOn, transition:'all .4s' }}/>
-              </div>
-              {/* obsah ve 2 sloupcich: vlevo nadpis, vpravo pill+sub */}
-              <div style={{ flex:1, minWidth:0, display:'grid', gridTemplateColumns:'1fr 1fr', gap:12, alignItems:'center' }}>
-                <div style={{ minWidth:0 }}>
-                  <div style={{ fontSize:11, fontWeight:800, letterSpacing:'.1em', textTransform:'uppercase', color:'var(--onhero-mut)' }}>{semafor.caption}</div>
-                  <div style={{ fontFamily:'var(--display)', fontSize:38, fontWeight:600, lineHeight:1, color:'var(--onhero)', letterSpacing:'.01em', margin:'2px 0' }}>{semafor.big}</div>
-                </div>
-                <div style={{ minWidth:0, display:'flex', flexDirection:'column', gap:6, alignItems:'flex-start' }}>
-                  <div style={{ display:'inline-flex', alignItems:'center', gap:6, background: semafor.pillBg, color: semafor.pillInk, fontWeight:800, fontSize:12, padding:'5px 10px', borderRadius:10 }}>
-                    <span style={{ fontSize:14 }}>{semafor.face}</span>{semafor.status}
-                  </div>
-                  <div style={{ fontSize:12, fontWeight:700, color:'var(--onhero-mut)' }}>{semafor.sub}</div>
-                </div>
-              </div>
-            </div>
-
-            {/* routine card */}
-            <div onClick={() => startRoutine(todayKind)} style={{ cursor:'pointer', background:'var(--surface)', border:'var(--hair)', borderRadius:20, padding:'14px 18px', display:'flex', flexDirection:'column', boxShadow:'var(--shadow)', position:'relative', overflow:'hidden', animation: ent(3) }}>
-              <div style={{ display:'flex', alignItems:'center', gap:12 }}>
-                <div style={{ fontSize:32, lineHeight:1 }}>{todayRoutine.emoji}</div>
-                <div style={{ flex:1, minWidth:0 }}>
-                  <div style={{ fontFamily:'var(--display)', fontSize:20, fontWeight:600, color:'var(--ink)', lineHeight:1.05 }}>{todayRoutine.title}</div>
-                  <div style={{ fontSize:13, fontWeight:700, color:'var(--muted)', marginTop:2 }}>{todayRoutine.progressLabel}</div>
-                </div>
-                <div style={{ display:'flex', alignItems:'center', gap:7, background:'var(--accent)', color:'#fff', fontFamily:'var(--display)', fontWeight:600, fontSize:14, padding:'9px 16px', borderRadius:12, boxShadow:'0 6px 14px -5px var(--accentShadow)', whiteSpace:'nowrap' }}>{todayRoutine.cta} →</div>
-              </div>
-              <div style={{ marginTop:12, display:'flex', gap:6, alignItems:'stretch' }}>
-                {todayRoutine.dots.map((d, i) => (
-                  <div key={i} style={{ flex:1, height:8, borderRadius:5, background: d.color, transition:'background .3s' }}/>
-                ))}
-              </div>
-              <div style={{ marginTop:10, display:'flex', flexDirection:'column', gap:5 }}>
-                {todayRoutine.steps.map((st, i) => (
-                  <div key={i} style={{ display:'flex', alignItems:'center', gap:9, padding:'6px 10px', background:'var(--soft)', borderRadius:10, opacity: st.op }}>
-                    <div style={{ width:20, height:20, flex:'none', borderRadius:6, background: st.tickBg, border: `2px solid ${st.tickBorder}`, display:'flex', alignItems:'center', justifyContent:'center', color:'#fff', fontSize:12 }}>{st.check}</div>
-                    <div style={{ fontSize:17 }}>{st.icon}</div>
-                    <div style={{ flex:1, fontFamily:'var(--display)', fontSize:14, fontWeight:500, color:'var(--ink)', textDecoration: st.strike }}>{st.t}</div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          {/* COL 2 — Dnes tě čeká, počasí, u koho jsi */}
-          <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
-
-            {/* today */}
-            <div onClick={() => go('calendar')} style={{ cursor:'pointer', background:'var(--surface)', border:'var(--hair)', borderRadius:24, padding:'14px 18px', display:'flex', flexDirection:'column', boxShadow:'var(--shadow)', animation: ent(4), overflow:'hidden' }}>
-              <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
-                <div style={{ display:'flex', alignItems:'center', gap:12, background:'var(--soft)', borderRadius:14, padding:'10px 14px' }}>
-                  <div style={{ fontSize:32, lineHeight:1 }}>{wInfo.emoji}</div>
-                  <div style={{ flex:1, minWidth:0 }}>
-                    <div style={{ fontFamily:'var(--display)', fontSize:20, fontWeight:600, color:'var(--ink)', lineHeight:1 }}>{wInfo.tempNow}° · {wInfo.cond}</div>
-                    <div style={{ fontSize:13, fontWeight:700, color:'var(--muted)', lineHeight:1.25, marginTop:2 }}>{wInfo.advice}</div>
-                  </div>
-                  <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:1, alignSelf:'center' }}>
-                    <div style={{ fontSize:24, letterSpacing:1, whiteSpace:'nowrap' }}>{wInfo.wear}</div>
-                    <div style={{ fontSize:10, fontWeight:800, color:'var(--muted)', textTransform:'uppercase', letterSpacing:'.05em' }}>Vezmi si</div>
-                  </div>
-                </div>
-                {/* v52: Ráno / Odpoledne / Večer */}
-                {wInfo.periods.length > 0 && (
-                  <div style={{ display:'grid', gridTemplateColumns:'repeat(' + wInfo.periods.length + ', 1fr)', gap:6, marginTop:2 }}>
-                    {wInfo.periods.map((p, i) => (
-                      <div key={i} style={{ background:'var(--soft)', borderRadius:12, padding:'8px 6px', textAlign:'center' }}>
-                        <div style={{ fontSize:10, fontWeight:900, color:'var(--muted)', textTransform:'uppercase', letterSpacing:'.05em' }}>{p.label}</div>
-                        <div style={{ fontSize:22, lineHeight:1.1, marginTop:2 }}>{wInfo.wmoIcon(p.data.code)}</div>
-                        <div style={{ fontFamily:'var(--display)', fontSize:16, fontWeight:700, color:'var(--ink)', lineHeight:1, marginTop:2 }}>{Math.round(p.data.temp)}°</div>
-                        {p.data.rainProb != null && p.data.rainProb >= 30 && (
-                          <div style={{ fontSize:9, fontWeight:800, color:'#0891b2', marginTop:2 }}>💧 {Math.round(p.data.rainProb)}%</div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                )}
-                <div style={{ display:'flex', gap:6, background:'var(--soft)', borderRadius:14, padding:'10px 14px', alignItems:'center' }}>
-                  <div style={{ flex:1, display:'flex', alignItems:'center', gap:8 }}>
-                    <div style={{ width:14, height:14, borderRadius:'50%', background: whoHomeToday.color, boxShadow:`0 0 0 3px ${whoHomeToday.ring}`, flex:'none' }}/>
-                    <div>
-                      <div style={{ fontSize:10, fontWeight:800, textTransform:'uppercase', letterSpacing:'.06em', color:'var(--muted)', lineHeight:1 }}>Dnes</div>
-                      <div style={{ fontFamily:'var(--display)', fontSize:17, fontWeight:600, color:'var(--ink)', lineHeight:1.1 }}>{whoHomeToday.label}</div>
-                    </div>
-                  </div>
-                  <div style={{ width:1, alignSelf:'stretch', background:'rgba(0,0,0,.08)', margin:'4px 0' }}/>
-                  <div style={{ flex:1, display:'flex', alignItems:'center', gap:8 }}>
-                    <div style={{ width:10, height:10, borderRadius:'50%', background: whoHomeTomorrow.color, boxShadow:`0 0 0 2px ${whoHomeTomorrow.ring}`, flex:'none' }}/>
-                    <div>
-                      <div style={{ fontSize:10, fontWeight:800, textTransform:'uppercase', letterSpacing:'.06em', color:'var(--muted)', lineHeight:1 }}>Zítra ({dayNamesShort[tomorrowDayIdx]})</div>
-                      <div style={{ fontFamily:'var(--display)', fontSize:15, fontWeight:600, color:'var(--ink)', lineHeight:1.1 }}>{whoHomeTomorrow.label}</div>
-                    </div>
-                  </div>
-                  <div style={{ width:1, alignSelf:'stretch', background:'rgba(0,0,0,.08)', margin:'4px 0' }}/>
-                  <div style={{ display:'flex', alignItems:'center', gap:6, opacity:.65 }}>
-                    <div style={{ width:8, height:8, borderRadius:'50%', background: whoDayAfterColor, flex:'none' }}/>
-                    <div style={{ fontSize:11, fontWeight:700, color:'var(--muted)', lineHeight:1.1 }}>
-                      <div style={{ fontWeight:900, color:'var(--muted)', fontSize:9, textTransform:'uppercase' }}>{dayNamesShort[dayAfterIdx]}</div>
-                      <div>{plDayAfter.short}</div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-              <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginTop:12 }}>
-                <div style={{ fontFamily:'var(--display)', fontSize:17, fontWeight:600, color:'var(--ink)' }}>Dnes tě čeká</div>
-                <div onClick={() => go('calendar')} style={{ cursor:'pointer', fontSize:13, fontWeight:800, color:'var(--accent)' }}>Kalendář →</div>
-              </div>
-              {todayEvents.length === 0 ? (
-                <div style={{ marginTop:8, background:'var(--soft)', borderRadius:14, padding:'14px 16px', textAlign:'center', fontSize:13, fontWeight:700, color:'var(--muted)', lineHeight:1.4 }}>
-                  Žádné události 🎉<br/>
-                  <span style={{ fontSize:11, fontWeight:600 }}>Užij si volný čas!</span>
-                </div>
-              ) : (
-                <div style={{ marginTop:9, display:'flex', flexDirection:'column', gap:9 }}>
-                  {todayEvents.map((e, i) => (
-                    <div key={i} style={{ display:'flex', alignItems:'center', gap:11, padding:'10px 12px', background:'var(--soft)', borderRadius:14, borderLeft:`4px solid ${e.color}` }}>
-                      <div style={{ fontSize:22 }}>{e.emoji}</div>
-                      <div style={{ flex:1, minWidth:0 }}>
-                        <div style={{ fontFamily:'var(--display)', fontSize:16, fontWeight:500, color:'var(--ink)', lineHeight:1.1 }}>{e.title}</div>
-                        <div style={{ fontSize:13, fontWeight:700, color:'var(--muted)' }}>{e.sub}</div>
-                      </div>
-                      <div style={{ fontFamily:'var(--display)', fontSize:16, fontWeight:600, color:'var(--ink)' }}>{e.time}</div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* COL 3 — Riki + odměny dlaždice */}
-          <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
-
-            {/* v55: mascot - zjednodušená verze */}
-            <div style={{ background:'var(--maskotCard)', border:'var(--hair)', borderRadius:20, padding:'14px 16px', boxShadow:'var(--shadow)', position:'relative', overflow:'hidden', animation: ent(2) }}>
-              <div onClick={() => go('rewards')} style={{ cursor:'pointer', display:'flex', alignItems:'center', gap:12 }}>
-                <Mascot size={64} kind={mascotKind} dancing={rikiDancing} sleeping={petSleeping || isRikiSleeping}/>
-                <div style={{ flex:1, minWidth:0 }}>
-                  {(() => {
-                    const tier = getTier(totalXp);
+              {/* === ŘÁDEK 3: TEACCH timeline (viditelný) === */}
+              <div style={{ background:'var(--surface)', borderRadius:18, padding:'12px 14px', boxShadow:'var(--shadow)', animation: ent(2) }}>
+                <div style={{
+                  display:'grid',
+                  gridTemplateColumns: 'repeat(' + Math.max(1, blueprintMins.length) + ', 1fr)',
+                  gap:6
+                }}>
+                  {blueprintMins.map((b, idx) => {
+                    const isCurrent = idx === currentIdx;
+                    const isDone = idx < currentIdx;
                     return (
-                      <div style={{ display:'flex', alignItems:'center', gap:6, marginBottom:3 }}>
-                        <div style={{ display:'flex', alignItems:'center', gap:5, background: tier.color, color:'#fff', padding:'2px 9px', borderRadius:999, fontSize:11, fontWeight:900 }}>
-                          <span style={{ fontSize:12 }}>{tier.emoji}</span>
-                          <span style={{ textTransform:'uppercase', letterSpacing:'.06em' }}>{tier.name}</span>
+                      <div key={b.id} style={{
+                        background: isCurrent ? '#fef3c7' : isDone ? '#f3f4f6' : '#fff',
+                        border: isCurrent ? '2px solid #f59e0b' : isDone ? '1px solid #e5e7eb' : '1px solid #cbd5e1',
+                        borderRadius: 12,
+                        padding: '10px 4px',
+                        textAlign:'center',
+                        opacity: isDone ? 0.6 : 1,
+                        animation: isCurrent ? 'softPulse 1.8s ease-in-out infinite' : 'none',
+                        boxShadow: isCurrent ? '0 4px 12px rgba(245,158,11,.35)' : '0 1px 3px rgba(0,0,0,.04)',
+                        transition:'all .3s',
+                        minWidth: 0
+                      }}>
+                        <div style={{ fontSize: isCurrent ? 28 : 24, lineHeight: 1, filter: isDone ? 'grayscale(0.6)' : 'none' }}>{b.emoji}</div>
+                        <div style={{ fontSize: 10, fontWeight: 800, color: isCurrent ? '#92400e' : isDone ? '#9ca3af' : '#1a1530', marginTop: 4, textTransform:'uppercase', letterSpacing:'.02em', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>
+                          {isDone ? '✓ ' : ''}{b.label}
                         </div>
+                        <div style={{ fontSize: 10, fontWeight: 700, color: isCurrent ? '#b45309' : '#9ca3af', marginTop: 2 }}>{b.time}</div>
                       </div>
                     );
-                  })()}
-                  <div style={{ fontFamily:'var(--display)', fontSize:17, fontWeight:600, color:'var(--ink)', lineHeight:1.1 }}>{mascotName || 'Riki'}</div>
-                  <div style={{ display:'flex', alignItems:'center', gap:10, marginTop:6 }}>
-                    <div style={{ display:'flex', alignItems:'baseline', gap:3 }}>
-                      <span style={{ fontFamily:'var(--display)', fontSize:24, fontWeight:600, color:'var(--accent)' }}>{child.points}</span>
-                      <span style={{ fontSize:11, fontWeight:800, color:'var(--muted)' }}>bodů</span>
+                  })}
+                </div>
+              </div>
+
+              {/* === ŘÁDEK 4: 3 sloupce === */}
+              <div style={{ display:'grid', gridTemplateColumns:'1fr 1.3fr 1fr', gap:14, animation: ent(2.5) }}>
+
+                {/* === COL 1: Ranní rutina + Dnes tě čeká === */}
+                <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
+                  <div onClick={() => startRoutine('morning')} style={{
+                    cursor:'pointer',
+                    background: morningComplete ? 'linear-gradient(135deg, #22c55e, #16a34a)' : 'var(--surface)',
+                    color: morningComplete ? '#fff' : 'var(--ink)',
+                    border: morningComplete ? 'none' : 'var(--hair)',
+                    borderRadius:20, padding:'16px 18px',
+                    display:'flex', alignItems:'center', gap:14, boxShadow:'var(--shadow)'
+                  }}>
+                    <div style={{
+                      width:46, height:46, borderRadius:13, flex:'none',
+                      background: morningComplete ? 'rgba(255,255,255,.22)' : '#fef3c7',
+                      display:'flex', alignItems:'center', justifyContent:'center', fontSize:26
+                    }}>☀️</div>
+                    <div style={{ flex:1, minWidth:0 }}>
+                      <div style={{ fontSize:10, fontWeight:900, letterSpacing:'.1em', textTransform:'uppercase', opacity: morningComplete ? 0.85 : 0.55 }}>Rutina</div>
+                      <div style={{ fontFamily:'var(--display)', fontSize:20, fontWeight:600, lineHeight:1.05 }}>Ranní rutina</div>
+                      <div style={{ fontSize:12, fontWeight:800, opacity: morningComplete ? 0.9 : 0.7, marginTop:2 }}>
+                        {morningComplete ? `Hotovo · ${morningDone} z ${morningList.length} splněno` : `${morningDone}/${morningList.length} splněno`}
+                      </div>
                     </div>
-                    <div style={{ display:'flex', alignItems:'center', gap:4, background:'var(--soft)', padding:'3px 9px', borderRadius:10 }}>
-                      <span style={{ fontSize:14 }}>🔥</span>
-                      <span style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'var(--ink)' }}>{streakDays || child.streak}</span>
+                    {morningComplete ? (
+                      <div style={{ width:36, height:36, borderRadius:'50%', background:'rgba(255,255,255,.25)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:20, fontWeight:900, flex:'none' }}>✓</div>
+                    ) : (
+                      <div style={{ background:'var(--accent)', color:'#fff', borderRadius:11, padding:'7px 13px', fontFamily:'var(--display)', fontSize:13, fontWeight:600, whiteSpace:'nowrap', flex:'none' }}>Začít →</div>
+                    )}
+                  </div>
+
+                  <div style={{ background:'var(--surface)', border:'var(--hair)', borderRadius:20, padding:'16px 18px', boxShadow:'var(--shadow)' }}>
+                    <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:10 }}>
+                      <div style={{ fontFamily:'var(--display)', fontSize:18, fontWeight:600, color:'var(--ink)' }}>Dnes tě čeká</div>
+                      <div onClick={() => go('calendar')} style={{ cursor:'pointer', fontSize:12, fontWeight:800, color:'var(--accent)' }}>Kalendář →</div>
+                    </div>
+                    {todayEvents.length === 0 ? (
+                      <div style={{ background:'var(--soft)', borderRadius:12, padding:'16px 14px', textAlign:'center', fontSize:13, fontWeight:700, color:'var(--muted)', lineHeight:1.4 }}>
+                        Žádné události 🎉<br/>
+                        <span style={{ fontSize:11, fontWeight:600 }}>Užij si volný čas!</span>
+                      </div>
+                    ) : (
+                      <div style={{ display:'flex', flexDirection:'column', gap:7 }}>
+                        {todayEvents.map((e, i) => (
+                          <div key={i} style={{ display:'flex', alignItems:'center', gap:10, padding:'8px 11px', background:'var(--soft)', borderRadius:11, borderLeft:`3px solid ${e.color}` }}>
+                            <div style={{ fontSize:18 }}>{e.emoji}</div>
+                            <div style={{ flex:1, minWidth:0 }}>
+                              <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'var(--ink)', lineHeight:1.1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{e.title}</div>
+                              <div style={{ fontSize:11, fontWeight:700, color:'var(--muted)' }}>{e.sub}</div>
+                            </div>
+                            <div style={{ fontFamily:'var(--display)', fontSize:13, fontWeight:700, color:'var(--ink)' }}>{e.time}</div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* === COL 2: Počasí + Maskot === */}
+                <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
+                  <div style={{ background:'var(--surface)', border:'var(--hair)', borderRadius:20, padding:'14px 18px', boxShadow:'var(--shadow)' }}>
+                    <div style={{ display:'flex', alignItems:'center', gap:14, marginBottom:wInfo.periods.length > 0 ? 10 : 0 }}>
+                      <div style={{ fontSize:42, lineHeight:1, flex:'none' }}>{wInfo.emoji}</div>
+                      <div style={{ flex:1, minWidth:0 }}>
+                        <div style={{ fontFamily:'var(--display)', fontSize:22, fontWeight:600, color:'var(--ink)', lineHeight:1 }}>{wInfo.tempNow}° · {wInfo.cond}</div>
+                        <div style={{ fontSize:13, fontWeight:700, color:'var(--muted)', lineHeight:1.3, marginTop:3 }}>{wInfo.advice}</div>
+                      </div>
+                      <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:1, flex:'none' }}>
+                        <div style={{ fontSize:26, lineHeight:1 }}>{wInfo.wear}</div>
+                        <div style={{ fontSize:9, fontWeight:800, color:'var(--muted)', textTransform:'uppercase', letterSpacing:'.05em', marginTop:2 }}>Vezmi si</div>
+                      </div>
+                    </div>
+                    {wInfo.periods.length > 0 && (
+                      <div style={{ display:'grid', gridTemplateColumns:'repeat(' + wInfo.periods.length + ', 1fr)', gap:7 }}>
+                        {wInfo.periods.map((p, i) => (
+                          <div key={i} style={{ background:'var(--soft)', borderRadius:12, padding:'9px 6px', textAlign:'center' }}>
+                            <div style={{ fontSize:10, fontWeight:900, color:'var(--muted)', textTransform:'uppercase', letterSpacing:'.05em' }}>{p.label}</div>
+                            <div style={{ fontSize:24, lineHeight:1.1, marginTop:3 }}>{wInfo.wmoIcon(p.data.code)}</div>
+                            <div style={{ fontFamily:'var(--display)', fontSize:18, fontWeight:700, color:'var(--ink)', lineHeight:1, marginTop:3 }}>{Math.round(p.data.temp)}°</div>
+                            {p.data.rainProb != null && p.data.rainProb >= 30 && (
+                              <div style={{ fontSize:9, fontWeight:800, color:'#0891b2', marginTop:2 }}>💧 {Math.round(p.data.rainProb)}%</div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* MASCOT card */}
+                  <div style={{ background:'var(--maskotCard)', border:'var(--hair)', borderRadius:20, padding:'18px 18px 16px', boxShadow:'var(--shadow)', position:'relative' }}>
+                    {/* Top row: tier badge + Uspat */}
+                    <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:10 }}>
+                      <div style={{ display:'flex', alignItems:'center', gap:5, background: tier.color, color:'#fff', padding:'4px 10px', borderRadius:999, fontSize:11, fontWeight:900 }}>
+                        <span style={{ fontSize:13 }}>{tier.emoji}</span>
+                        <span style={{ textTransform:'uppercase', letterSpacing:'.06em' }}>{tier.name}</span>
+                      </div>
+                      <div onClick={(e) => { e.stopPropagation(); audio.tap(); togglePetSleep(); }} style={{
+                        cursor:'pointer',
+                        background: petSleeping ? '#fef3c7' : 'var(--soft)',
+                        color: petSleeping ? '#92400e' : 'var(--ink)',
+                        borderRadius:10,
+                        padding:'5px 10px',
+                        fontSize:11,
+                        fontWeight:800
+                      }}>
+                        {petSleeping ? '☀️ Vzbudit' : '💤 Uspat'}
+                      </div>
+                    </div>
+                    {/* Mascot centered */}
+                    <div onClick={() => go('rewards')} style={{ cursor:'pointer', display:'flex', flexDirection:'column', alignItems:'center', gap:8 }}>
+                      <Mascot size={96} kind={mascotKind} dancing={rikiDancing} sleeping={petSleeping || isRikiSleeping}/>
+                      <div style={{ fontFamily:'var(--display)', fontSize:20, fontWeight:600, color:'var(--ink)' }}>
+                        {mascotName || 'Riki'}{petSleeping ? ' · spí' : ''}
+                      </div>
+                      <div style={{ display:'flex', alignItems:'baseline', gap:6 }}>
+                        <span style={{ fontFamily:'var(--display)', fontSize:32, fontWeight:700, color:'var(--accent)' }}>{child.points}</span>
+                        <span style={{ fontSize:13, fontWeight:800, color:'var(--muted)' }}>bodů</span>
+                        <span style={{ display:'flex', alignItems:'center', gap:3, background:'var(--soft)', padding:'2px 9px', borderRadius:10, marginLeft:6 }}>
+                          <span style={{ fontSize:14 }}>🔥</span>
+                          <span style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'var(--ink)' }}>{streakDays || 0}</span>
+                        </span>
+                      </div>
+                      {nextTier && (
+                        <div style={{ fontSize:11, fontWeight:800, color:'var(--muted)', display:'flex', alignItems:'center', gap:4 }}>
+                          <span>→</span>
+                          <span style={{ fontSize:13 }}>{nextTier.emoji}</span>
+                          <span>{nextTier.name} za {nextTier.min - totalXp} XP</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* === COL 3: Večerní rutina + U koho budu === */}
+                <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
+                  <div onClick={() => startRoutine('evening')} style={{
+                    cursor:'pointer',
+                    background: eveningComplete ? 'linear-gradient(135deg, #22c55e, #16a34a)' : 'var(--surface)',
+                    color: eveningComplete ? '#fff' : 'var(--ink)',
+                    border: eveningComplete ? 'none' : 'var(--hair)',
+                    borderRadius:20, padding:'16px 18px',
+                    display:'flex', alignItems:'center', gap:14, boxShadow:'var(--shadow)'
+                  }}>
+                    <div style={{
+                      width:46, height:46, borderRadius:13, flex:'none',
+                      background: eveningComplete ? 'rgba(255,255,255,.22)' : '#e0e7ff',
+                      display:'flex', alignItems:'center', justifyContent:'center', fontSize:26
+                    }}>🌙</div>
+                    <div style={{ flex:1, minWidth:0 }}>
+                      <div style={{ fontSize:10, fontWeight:900, letterSpacing:'.1em', textTransform:'uppercase', opacity: eveningComplete ? 0.85 : 0.55 }}>Rutina</div>
+                      <div style={{ fontFamily:'var(--display)', fontSize:20, fontWeight:600, lineHeight:1.05 }}>Večerní rutina</div>
+                      <div style={{ fontSize:12, fontWeight:800, opacity: eveningComplete ? 0.9 : 0.7, marginTop:2 }}>
+                        {eveningComplete ? `Hotovo · ${eveningDone} z ${eveningList.length} splněno` : (h < 17 ? `${eveningDone}/${eveningList.length} · Začni po večeři` : `${eveningDone}/${eveningList.length} splněno`)}
+                      </div>
+                    </div>
+                    {eveningComplete ? (
+                      <div style={{ width:36, height:36, borderRadius:'50%', background:'rgba(255,255,255,.25)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:20, fontWeight:900, flex:'none' }}>✓</div>
+                    ) : (
+                      <div style={{ background:'var(--accent)', color:'#fff', borderRadius:11, padding:'7px 13px', fontFamily:'var(--display)', fontSize:13, fontWeight:600, whiteSpace:'nowrap', flex:'none' }}>Začít →</div>
+                    )}
+                  </div>
+
+                  <div style={{ background:'var(--surface)', border:'var(--hair)', borderRadius:20, padding:'16px 18px', boxShadow:'var(--shadow)' }}>
+                    <div style={{ fontFamily:'var(--display)', fontSize:18, fontWeight:600, color:'var(--ink)', marginBottom:10, display:'flex', alignItems:'center', gap:7 }}>
+                      <span>🏠</span>
+                      <span style={{ fontSize:11, fontWeight:900, letterSpacing:'.1em', textTransform:'uppercase', color:'var(--muted)' }}>U koho budu</span>
+                    </div>
+                    <div style={{ display:'flex', flexDirection:'column', gap:7 }}>
+                      <div style={{ display:'flex', alignItems:'center', gap:11, padding:'9px 12px', background:'var(--soft)', borderRadius:11 }}>
+                        <div style={{ width:12, height:12, borderRadius:'50%', background: whoHomeToday.color, boxShadow:`0 0 0 3px ${whoHomeToday.ring}`, flex:'none' }}/>
+                        <div style={{ flex:1, minWidth:0, fontSize:13, fontWeight:800, color:'var(--muted)' }}>Dnes</div>
+                        <div style={{ fontFamily:'var(--display)', fontSize:16, fontWeight:600, color:'var(--ink)' }}>u {whoHomeToday.label.toLowerCase()}</div>
+                      </div>
+                      <div style={{ display:'flex', alignItems:'center', gap:11, padding:'9px 12px', background:'var(--soft)', borderRadius:11 }}>
+                        <div style={{ width:11, height:11, borderRadius:'50%', background: whoHomeTomorrow.color, boxShadow:`0 0 0 2px ${whoHomeTomorrow.ring}`, flex:'none' }}/>
+                        <div style={{ flex:1, minWidth:0, fontSize:13, fontWeight:800, color:'var(--muted)' }}>Zítra ({dayNamesShort[tomorrowDayIdx]})</div>
+                        <div style={{ fontFamily:'var(--display)', fontSize:15, fontWeight:600, color:'var(--ink)' }}>u {whoHomeTomorrow.label.toLowerCase()}</div>
+                      </div>
+                      <div style={{ display:'flex', alignItems:'center', gap:11, padding:'9px 12px', background:'var(--soft)', borderRadius:11, opacity:.7 }}>
+                        <div style={{ width:10, height:10, borderRadius:'50%', background: whoDayAfterColor, flex:'none' }}/>
+                        <div style={{ flex:1, minWidth:0, fontSize:12, fontWeight:800, color:'var(--muted)' }}>{dayNamesShort[dayAfterIdx]}</div>
+                        <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'var(--ink)' }}>{plDayAfter.label}</div>
+                      </div>
                     </div>
                   </div>
                 </div>
               </div>
-              <div style={{ height:6, background:'var(--soft)', borderRadius:5, overflow:'hidden', marginTop:10 }}>
-                <div style={{ height:'100%', width: child.xpPct+'%', background:'linear-gradient(90deg,var(--accent2),var(--accent))', borderRadius:5, transition:'width .6s' }}/>
-              </div>
-              {/* v58: sleep toggle (uspat/vzbudit) */}
-              <div onClick={(e) => { e.stopPropagation(); audio.tap(); togglePetSleep(); }} style={{
-                cursor:'pointer',
-                marginTop:10,
-                background: petSleeping ? '#fef3c7' : 'var(--soft)',
-                color: petSleeping ? '#92400e' : 'var(--ink)',
-                borderRadius:11,
-                padding:'8px 12px',
-                fontSize:12,
-                fontWeight:800,
-                textAlign:'center'
-              }}>
-                {petSleeping ? '☀️ Vzbudit ' + (mascotName || 'Riki') : '💤 Uspat ' + (mascotName || 'Riki')}
-              </div>
-            </div>
 
-            {/* tiles - bez Extra úkoly */}
-            <div style={{ display:'grid', gridTemplateColumns:'1fr', gap:8, animation: ent(5), flex:'none' }}>
-              <div onClick={() => go('rozvrh')} style={{ cursor:'pointer', background:'linear-gradient(135deg,var(--accent2),var(--accent))', borderRadius:16, padding:'11px 14px', display:'flex', alignItems:'center', gap:10, boxShadow:'var(--shadow)' }}>
-                <div style={{ fontSize:22 }}>📚</div>
-                <div style={{ flex:1, minWidth:0 }}>
-                  <div style={{ fontFamily:'var(--display)', fontSize:15, fontWeight:600, color:'#fff', lineHeight:1 }}>Rozvrh</div>
-                  <div style={{ fontSize:11, fontWeight:800, color:'rgba(255,255,255,.85)' }}>Sbal se na zítřek</div>
+              {/* === ŘÁDEK 5: 5 tiles row === */}
+              <div style={{ display:'grid', gridTemplateColumns:'repeat(5, 1fr)', gap:10, animation: ent(3) }}>
+                <div onClick={() => go('rozvrh')} style={{ cursor:'pointer', background:'linear-gradient(135deg,var(--accent2),var(--accent))', borderRadius:16, padding:'14px 16px', display:'flex', alignItems:'center', gap:11, boxShadow:'var(--shadow)' }}>
+                  <div style={{ fontSize:26 }}>📚</div>
+                  <div style={{ flex:1, minWidth:0 }}>
+                    <div style={{ fontFamily:'var(--display)', fontSize:16, fontWeight:600, color:'#fff', lineHeight:1 }}>Rozvrh</div>
+                    <div style={{ fontSize:11, fontWeight:800, color:'rgba(255,255,255,.85)', marginTop:2 }}>Sbal se na zítřek</div>
+                  </div>
+                </div>
+                <div onClick={() => go('chores')} style={{ cursor:'pointer', background:'linear-gradient(135deg, #60a5fa, #3b82f6)', borderRadius:16, padding:'14px 16px', display:'flex', alignItems:'center', gap:11, boxShadow:'var(--shadow)' }}>
+                  <div style={{ fontSize:26 }}>✨</div>
+                  <div style={{ flex:1, minWidth:0 }}>
+                    <div style={{ fontFamily:'var(--display)', fontSize:16, fontWeight:600, color:'#fff', lineHeight:1 }}>Extra úkoly</div>
+                    <div style={{ fontSize:11, fontWeight:800, color:'rgba(255,255,255,.85)', marginTop:2 }}>Bodíky navíc</div>
+                  </div>
+                </div>
+                <div onClick={() => go('rewards')} style={{ cursor:'pointer', background:'linear-gradient(135deg, #f87171, #ef4444)', borderRadius:16, padding:'14px 16px', display:'flex', alignItems:'center', gap:11, boxShadow:'var(--shadow)' }}>
+                  <div style={{ fontSize:26 }}>🎁</div>
+                  <div style={{ flex:1, minWidth:0 }}>
+                    <div style={{ fontFamily:'var(--display)', fontSize:16, fontWeight:600, color:'#fff', lineHeight:1 }}>Odměny</div>
+                    <div style={{ fontSize:11, fontWeight:800, color:'rgba(255,255,255,.85)', marginTop:2 }}>Tvá přání</div>
+                  </div>
+                </div>
+                <div onClick={() => go('cursus')} style={{ cursor:'pointer', background:'linear-gradient(135deg, #818cf8, #4f46e5)', borderRadius:16, padding:'14px 16px', display:'flex', alignItems:'center', gap:11, boxShadow:'var(--shadow)', position:'relative' }}>
+                  <div style={{ fontSize:26 }}>🗺</div>
+                  <div style={{ flex:1, minWidth:0 }}>
+                    <div style={{ fontFamily:'var(--display)', fontSize:16, fontWeight:600, color:'#fff', lineHeight:1 }}>Cursus</div>
+                    <div style={{ fontSize:11, fontWeight:800, color:'rgba(255,255,255,.85)', marginTop:2 }}>{cursusUnlocked.length}/{CURSUS_STAGES.length} oblastí</div>
+                  </div>
+                  {(() => {
+                    const nextIdx = cursusUnlocked.length;
+                    if (nextIdx < CURSUS_STAGES.length && totalXp >= CURSUS_STAGES[nextIdx].costXp) {
+                      return <div style={{ position:'absolute', top:-4, right:-4, width:14, height:14, borderRadius:'50%', background:'#fbbf24', border:'2px solid #fff', animation:'softPulse 1.5s ease-in-out infinite' }}/>;
+                    }
+                    return null;
+                  })()}
+                </div>
+                <div onClick={() => go('wallet')} style={{ cursor:'pointer', background:'linear-gradient(135deg, #34d399, #16a34a)', borderRadius:16, padding:'14px 16px', display:'flex', alignItems:'center', gap:11, boxShadow:'var(--shadow)' }}>
+                  <div style={{ fontSize:28 }}>🐷</div>
+                  <div style={{ flex:1, minWidth:0 }}>
+                    <div style={{ fontFamily:'var(--display)', fontSize:16, fontWeight:600, color:'#fff', lineHeight:1 }}>Moje peníze</div>
+                    <div style={{ fontSize:11, fontWeight:800, color:'rgba(255,255,255,.85)', marginTop:2 }}>{walletBalance.toLocaleString('cs-CZ')} Kč</div>
+                  </div>
                 </div>
               </div>
-              <div onClick={() => go('rewards')} style={{ cursor:'pointer', background:'var(--tile2)', borderRadius:16, padding:'11px 14px', display:'flex', alignItems:'center', gap:10, boxShadow:'var(--shadow)' }}>
-                <div style={{ fontSize:22 }}>🎁</div>
-                <div style={{ flex:1, minWidth:0 }}>
-                  <div style={{ fontFamily:'var(--display)', fontSize:15, fontWeight:600, color:'#fff', lineHeight:1 }}>Odměny</div>
-                  <div style={{ fontSize:11, fontWeight:800, color:'rgba(255,255,255,.85)' }}>Tvá přání</div>
-                </div>
-              </div>
-              {/* v44: CURSUS - progresní mapa */}
-              <div onClick={() => go('cursus')} style={{ cursor:'pointer', background:'linear-gradient(135deg, #6366f1, #4338ca)', borderRadius:16, padding:'11px 14px', display:'flex', alignItems:'center', gap:10, boxShadow:'var(--shadow)', position:'relative' }}>
-                <div style={{ fontSize:22 }}>🗺</div>
-                <div style={{ flex:1, minWidth:0 }}>
-                  <div style={{ fontFamily:'var(--display)', fontSize:15, fontWeight:600, color:'#fff', lineHeight:1 }}>Cursus</div>
-                  <div style={{ fontSize:11, fontWeight:800, color:'rgba(255,255,255,.85)' }}>{cursusUnlocked.length}/{CURSUS_STAGES.length} oblastí</div>
-                </div>
-                {(() => {
-                  const nextIdx = cursusUnlocked.length;
-                  if (nextIdx < CURSUS_STAGES.length && totalXp >= CURSUS_STAGES[nextIdx].costXp) {
-                    return <div style={{ position:'absolute', top:-4, right:-4, width:14, height:14, borderRadius:'50%', background:'#fbbf24', border:'2px solid #fff', animation:'softPulse 1.5s ease-in-out infinite' }}/>;
-                  }
-                  return null;
-                })()}
-              </div>
-              {/* v52: POKLADNIČKA pro dítě */}
-              <div onClick={() => go('wallet')} style={{ cursor:'pointer', background:'linear-gradient(135deg, #16a34a, #15803d)', borderRadius:16, padding:'11px 14px', display:'flex', alignItems:'center', gap:10, boxShadow:'var(--shadow)' }}>
-                <div style={{ fontSize:24 }}>🐷</div>
-                <div style={{ flex:1, minWidth:0 }}>
-                  <div style={{ fontFamily:'var(--display)', fontSize:15, fontWeight:600, color:'#fff', lineHeight:1 }}>Moje peníze</div>
-                  <div style={{ fontSize:11, fontWeight:800, color:'rgba(255,255,255,.85)' }}>{walletBalance.toLocaleString('cs-CZ')} Kč</div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
+            </React.Fragment>
+          );
+        })()}
       </div>
       )}
 
@@ -6904,8 +6935,8 @@ function App() {
 
                   {/* Verze (vždy zobrazeno) */}
                   <div style={{ background:'#fff', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
-                    <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'#1a1530' }}>Verze: Domácí pomocník v58</div>
-                    <div style={{ fontSize:12, color:'#9a96ac', marginTop:4 }}>Build 2026-06-22 · 17:39</div>
+                    <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'#1a1530' }}>Verze: Domácí pomocník v59</div>
+                    <div style={{ fontSize:12, color:'#9a96ac', marginTop:4 }}>Build 2026-06-22 · 17:47 · nove home</div>
                   </div>
                 </div>
                 )}
