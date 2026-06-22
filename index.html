@@ -1771,6 +1771,8 @@ function App() {
           const colonIdx = line.indexOf(':');
           const val = colonIdx >= 0 ? line.slice(colonIdx + 1).trim() : '';
           const params = colonIdx >= 0 ? line.slice(0, colonIdx) : '';
+          // v57: DEBUG log pro každý DTSTART - uvidíme co posílá Google
+          try { console.log('[gcal] DTSTART line:', line, '| val:', val, '| params:', params); } catch(e) {}
           if (val) {
             const allDay = !val.includes('T');
             const isUTC = val.endsWith('Z'); // ends with Z = UTC time
@@ -1794,6 +1796,7 @@ function App() {
             ev.time = allDay ? '' : `${hh}:${mm}`;
             ev.dateTime = `${y}-${m}-${d}T${hh}:${mm}:00`;
             ev.startDate = new Date(parseInt(y), parseInt(m)-1, parseInt(d), parseInt(hh), parseInt(mm));
+            try { console.log('[gcal] parsed:', ev.iso, ev.time, '| isUTC:', isUTC, '| hasTZID:', hasTZID, '| browserTZ offset:', new Date().getTimezoneOffset()); } catch(e) {}
           }
         } else if (line.startsWith('DTEND')) {
           const colonIdx = line.indexOf(':');
@@ -2108,9 +2111,17 @@ function App() {
     if (force) showToast('Všechny proxies selhaly', '⚠');
   }, [gcalUrl, gcalLastFetch, parseICal, showToast]);
 
+  // v57: jednorázový force-refresh GCal pro zneplatnění staré (špatné) cached parse
+  const gcalForcedReparseRef = useRef(false);
   useEffect(() => {
     if (!gcalUrl) return;
-    fetchGcal(false);
+    if (!gcalForcedReparseRef.current) {
+      gcalForcedReparseRef.current = true;
+      console.log('[gcal] v57 force-refresh on first mount (kvůli stale UTC parse)');
+      fetchGcal(true); // FORCE - ignore cache
+    } else {
+      fetchGcal(false);
+    }
     const id = setInterval(() => fetchGcal(false), 15 * 60 * 1000); // 15 min auto-refresh
     return () => clearInterval(id);
     // eslint-disable-next-line
@@ -4314,11 +4325,11 @@ function App() {
                     <div key={i} style={{ position:'absolute', left:0, right:0, top: hh.top, borderTop:'1px solid var(--gridline)' }}/>
                   ))}
                   {day.events.map((e, i) => (
-                    <div key={i} style={{ position:'absolute', left:4, right:4, top: e.top, height: e.height, background: e.bg, borderLeft:`4px solid ${e.color}`, borderRadius:9, padding:'5px 8px', overflow:'hidden' }}>
+                    <div key={i} style={{ position:'absolute', left:4, right:4, top: e.top, height: e.height, background: e.bg, borderLeft:`4px solid ${e.color}`, borderRadius:9, padding:'5px 8px', overflow:'hidden', boxSizing:'border-box' }}>
                       <div style={{ fontSize:11, fontWeight:900, color: e.color }}>{e.time}</div>
-                      <div style={{ display:'flex', alignItems:'center', gap:5, marginTop:1 }}>
-                        <span style={{ fontSize:14 }}>{e.emoji}</span>
-                        <span style={{ fontFamily:'var(--display)', fontSize:13, fontWeight:600, color:'var(--ink)', lineHeight:1.05 }}>{e.title}</span>
+                      <div style={{ display:'flex', alignItems:'center', gap:5, marginTop:1, minWidth:0 }}>
+                        <span style={{ fontSize:14, flex:'none' }}>{e.emoji}</span>
+                        <span style={{ flex:1, minWidth:0, fontFamily:'var(--display)', fontSize:13, fontWeight:600, color:'var(--ink)', lineHeight:1.05, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{e.title}</span>
                       </div>
                     </div>
                   ))}
@@ -4485,10 +4496,10 @@ function App() {
 
       {/* ===================== REWARDS ===================== */}
       {screen === 'rewards' && (
-      <div data-screen-label="Odměny" style={{ position:'absolute', inset:0, padding:'18px 22px', display:'flex', flexDirection:'column', gap:12, overflow:'auto' }}>
-        <div style={{ display:'flex', alignItems:'center', gap:14 }}>
-          <div onClick={() => go('home')} style={{ cursor:'pointer', width:46, height:46, borderRadius:15, background:'var(--surface)', border:'var(--hair)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:21, boxShadow:'var(--shadow)' }}>←</div>
-          <div style={{ fontFamily:'var(--display)', fontSize:26, fontWeight:600, color:'var(--ink)', flex:1 }}>Body a odměny</div>
+      <div data-screen-label="Odměny" style={{ position:'absolute', inset:0, padding:'28px 36px', display:'flex', flexDirection:'column', gap:20, overflow:'auto' }}>
+        <div style={{ display:'flex', alignItems:'center', gap:18 }}>
+          <div onClick={() => go('home')} style={{ cursor:'pointer', width:56, height:56, borderRadius:18, background:'var(--surface)', border:'var(--hair)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:26, boxShadow:'var(--shadow)' }}>←</div>
+          <div style={{ fontFamily:'var(--display)', fontSize:34, fontWeight:600, color:'var(--ink)', flex:1 }}>Body a odměny</div>
         </div>
 
         {/* v14: BOSS karta */}
@@ -4501,42 +4512,42 @@ function App() {
           return (
             <div style={{
               background: defeated ? 'linear-gradient(135deg, #16a34a, #15803d)' : 'linear-gradient(135deg, #1f2937, #0f172a)',
-              color:'#fff', borderRadius:18, padding:'12px 16px',
-              boxShadow:'0 6px 18px rgba(0,0,0,.2)', display:'flex', alignItems:'center', gap:14, position:'relative',
+              color:'#fff', borderRadius:22, padding:'18px 22px',
+              boxShadow:'0 8px 24px rgba(0,0,0,.25)', display:'flex', alignItems:'center', gap:18, position:'relative',
               flex:'none'
             }}>
               {/* Emoji v bílém kruhu */}
               <div style={{
                 flex:'none',
-                width: 64, height: 64,
+                width: 84, height: 84,
                 borderRadius: '50%',
                 background: defeated ? 'rgba(255,255,255,.92)' : '#fef3c7',
                 display:'flex',
                 alignItems:'center',
                 justifyContent:'center',
-                border: '2px solid '+(defeated ? '#15803d' : boss.color),
-                boxShadow: '0 3px 10px rgba(0,0,0,.25)',
+                border: '3px solid '+(defeated ? '#15803d' : boss.color),
+                boxShadow: '0 4px 14px rgba(0,0,0,.25)',
                 animation: defeated ? 'none' : 'bossShake 3s infinite',
                 filter: defeated ? 'grayscale(0.4) opacity(0.6)' : 'none'
               }}>
                 <span style={{
-                  fontSize: 38,
+                  fontSize: 50,
                   lineHeight: 1,
                   color: 'initial',
                   display: 'block'
                 }}>{boss.emoji}</span>
               </div>
               <div style={{ flex:1, minWidth:0 }}>
-                <div style={{ fontSize:10, fontWeight:900, opacity:.85, textTransform:'uppercase', letterSpacing:'.1em' }}>Týdenní boss</div>
-                <div style={{ fontFamily:'var(--display)', fontSize:18, fontWeight:600, marginBottom:6 }}>{boss.name}</div>
+                <div style={{ fontSize:11, fontWeight:900, opacity:.85, textTransform:'uppercase', letterSpacing:'.1em' }}>Týdenní boss</div>
+                <div style={{ fontFamily:'var(--display)', fontSize:22, fontWeight:600, marginBottom:8 }}>{boss.name}</div>
                 {defeated ? (
-                  <div style={{ fontSize:12, fontWeight:800, color:'#86efac' }}>🏆 PORAŽEN! Další přijde v pondělí.</div>
+                  <div style={{ fontSize:14, fontWeight:800, color:'#86efac' }}>🏆 PORAŽEN! Další přijde v pondělí.</div>
                 ) : (
                   <React.Fragment>
-                    <div style={{ height:10, background:'rgba(255,255,255,.18)', borderRadius:6, overflow:'hidden', marginBottom:4 }}>
-                      <div style={{ height:'100%', width: hpPct+'%', background:'linear-gradient(90deg, #ef4444, #b91c1c)', borderRadius:6, transition:'width .6s' }}/>
+                    <div style={{ height:12, background:'rgba(255,255,255,.18)', borderRadius:7, overflow:'hidden', marginBottom:6 }}>
+                      <div style={{ height:'100%', width: hpPct+'%', background:'linear-gradient(90deg, #ef4444, #b91c1c)', borderRadius:7, transition:'width .6s' }}/>
                     </div>
-                    <div style={{ fontSize:11, fontWeight:800, opacity:.9 }}>HP {hp} / {maxHp} · 1× rutina = 1 dmg · +100 XP za poražení</div>
+                    <div style={{ fontSize:12, fontWeight:800, opacity:.9 }}>HP {hp} / {maxHp} · 1× rutina = 1 dmg · +100 XP za poražení</div>
                   </React.Fragment>
                 )}
               </div>
@@ -4545,16 +4556,16 @@ function App() {
         })()}
 
         {/* v14: TRUHLA POKLADŮ */}
-        <div style={{ background:'linear-gradient(135deg, #fef3c7, #fde68a)', borderRadius:18, padding:'12px 16px', boxShadow:'var(--shadow)', border:'2px solid #f59e0b' }}>
-          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:10 }}>
-            <div style={{ display:'flex', alignItems:'center', gap:8 }}>
-              <div style={{ fontSize:24 }}>🗝️</div>
+        <div style={{ background:'linear-gradient(135deg, #fef3c7, #fde68a)', borderRadius:22, padding:'18px 22px', boxShadow:'var(--shadow)', border:'2px solid #f59e0b' }}>
+          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:14 }}>
+            <div style={{ display:'flex', alignItems:'center', gap:12 }}>
+              <div style={{ fontSize:32 }}>🗝️</div>
               <div>
-                <div style={{ fontFamily:'var(--display)', fontSize:17, fontWeight:600, color:'#7c2d12' }}>Truhla pokladů</div>
-                <div style={{ fontSize:11, fontWeight:800, color:'#92400e' }}>{inventory.length} {inventory.length === 1 ? 'předmět' : inventory.length < 5 ? 'předměty' : 'předmětů'}</div>
+                <div style={{ fontFamily:'var(--display)', fontSize:22, fontWeight:600, color:'#7c2d12' }}>Truhla pokladů</div>
+                <div style={{ fontSize:13, fontWeight:800, color:'#92400e' }}>{inventory.length} {inventory.length === 1 ? 'předmět' : inventory.length < 5 ? 'předměty' : 'předmětů'}</div>
               </div>
             </div>
-            <div style={{ fontSize:10, fontWeight:800, color:'#92400e', textAlign:'right', lineHeight:1.3 }}>Padá při<br/>dokončení rutiny</div>
+            <div style={{ fontSize:11, fontWeight:800, color:'#92400e', textAlign:'right', lineHeight:1.3 }}>Padá při<br/>dokončení rutiny</div>
           </div>
           {inventory.length === 0 ? (
             <div style={{ background:'#fff', borderRadius:14, padding:'18px 14px', textAlign:'center', color:'#92400e', fontSize:13, fontWeight:700 }}>
@@ -4588,51 +4599,51 @@ function App() {
           )}
         </div>
 
-        <div style={{ display:'grid', gridTemplateColumns:'260px 1fr', gap:14 }}>
+        <div style={{ display:'grid', gridTemplateColumns:'320px 1fr', gap:20 }}>
           {/* maskot panel */}
-          <div style={{ background:'var(--maskotCard)', border:'var(--hair)', borderRadius:20, padding:16, display:'flex', flexDirection:'column', alignItems:'center', gap:10, boxShadow:'var(--shadow)', alignSelf:'start' }}>
-            <Mascot size={110} kind={mascotKind} dancing={rikiDancing} sleeping={isRikiSleeping}/>
+          <div style={{ background:'var(--maskotCard)', border:'var(--hair)', borderRadius:24, padding:24, display:'flex', flexDirection:'column', alignItems:'center', gap:14, boxShadow:'var(--shadow)', alignSelf:'start' }}>
+            <Mascot size={150} kind={mascotKind} dancing={rikiDancing} sleeping={isRikiSleeping}/>
             <div style={{ textAlign:'center' }}>
-              <div style={{ fontFamily:'var(--display)', fontSize:19, fontWeight:600, color:'var(--ink)' }}>{mascotName}</div>
-              <div style={{ fontSize:11, fontWeight:800, color:'var(--muted)', marginTop:2 }}>{child.levelLabel}</div>
+              <div style={{ fontFamily:'var(--display)', fontSize:24, fontWeight:600, color:'var(--ink)' }}>{mascotName || 'Riki'}</div>
+              <div style={{ fontSize:13, fontWeight:800, color:'var(--muted)', marginTop:3 }}>{child.levelLabel}</div>
             </div>
-            <div style={{ width:'100%', height:9, background:'var(--soft)', borderRadius:6, overflow:'hidden' }}>
+            <div style={{ width:'100%', height:12, background:'var(--soft)', borderRadius:8, overflow:'hidden' }}>
               <div style={{ height:'100%', width: child.xpPct+'%', background:'linear-gradient(90deg,var(--accent2),var(--accent))' }}/>
             </div>
-            <div style={{ display:'flex', gap:8, width:'100%' }}>
-              <div style={{ flex:1, textAlign:'center', background:'var(--soft)', borderRadius:11, padding:'8px 4px' }}>
-                <div style={{ fontFamily:'var(--display)', fontSize:22, fontWeight:600, color:'var(--accent)' }}>{child.points}</div>
-                <div style={{ fontSize:10, fontWeight:800, color:'var(--muted)' }}>bodů</div>
+            <div style={{ display:'flex', gap:10, width:'100%' }}>
+              <div style={{ flex:1, textAlign:'center', background:'var(--soft)', borderRadius:14, padding:'12px 6px' }}>
+                <div style={{ fontFamily:'var(--display)', fontSize:28, fontWeight:600, color:'var(--accent)' }}>{child.points}</div>
+                <div style={{ fontSize:11, fontWeight:800, color:'var(--muted)' }}>bodů</div>
               </div>
-              <div style={{ flex:1, textAlign:'center', background:'var(--soft)', borderRadius:11, padding:'8px 4px' }}>
-                <div style={{ fontFamily:'var(--display)', fontSize:22, fontWeight:600, color:'var(--ink)' }}>🔥 {child.streak}</div>
-                <div style={{ fontSize:10, fontWeight:800, color:'var(--muted)' }}>v řadě</div>
+              <div style={{ flex:1, textAlign:'center', background:'var(--soft)', borderRadius:14, padding:'12px 6px' }}>
+                <div style={{ fontFamily:'var(--display)', fontSize:28, fontWeight:600, color:'var(--ink)' }}>🔥 {child.streak}</div>
+                <div style={{ fontSize:11, fontWeight:800, color:'var(--muted)' }}>v řadě</div>
               </div>
             </div>
           </div>
 
-          {/* shop - kompaktnější */}
-          <div style={{ background:'linear-gradient(135deg, #fef9c3 0%, #fef3c7 100%)', borderRadius:20, padding:'16px 18px', boxShadow:'var(--shadow)', position:'relative' }}>
-            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:12 }}>
+          {/* shop */}
+          <div style={{ background:'linear-gradient(135deg, #fef9c3 0%, #fef3c7 100%)', borderRadius:24, padding:'22px 24px', boxShadow:'var(--shadow)', position:'relative' }}>
+            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:16 }}>
               <div>
-                <div style={{ fontFamily:'var(--display)', fontSize:20, fontWeight:600, color:'#854d0e' }}>🛍️ Obchůdek odměn</div>
-                <div style={{ fontSize:12, fontWeight:800, color:'#a16207' }}>
+                <div style={{ fontFamily:'var(--display)', fontSize:24, fontWeight:600, color:'#854d0e' }}>🛍️ Obchůdek odměn</div>
+                <div style={{ fontSize:13, fontWeight:800, color:'#a16207', marginTop:2 }}>
                   {child.points > 0
                     ? `Máš ${child.points} bodů — co si koupíš?`
                     : 'Posbírej body a něco si kup'}
                 </div>
               </div>
               {/* Wallet badge */}
-              <div style={{ background:'#fff', borderRadius:12, padding:'6px 12px', display:'flex', alignItems:'center', gap:6, boxShadow:'0 3px 10px rgba(146,64,14,.12)' }}>
-                <div style={{ fontSize:20 }}>💰</div>
+              <div style={{ background:'#fff', borderRadius:14, padding:'8px 14px', display:'flex', alignItems:'center', gap:8, boxShadow:'0 3px 10px rgba(146,64,14,.12)' }}>
+                <div style={{ fontSize:24 }}>💰</div>
                 <div>
-                  <div style={{ fontFamily:'var(--display)', fontSize:18, fontWeight:600, color:'#854d0e', lineHeight:1 }}>{child.points}</div>
-                  <div style={{ fontSize:9, fontWeight:800, color:'#a16207', textTransform:'uppercase' }}>bodů</div>
+                  <div style={{ fontFamily:'var(--display)', fontSize:20, fontWeight:600, color:'#854d0e', lineHeight:1 }}>{child.points}</div>
+                  <div style={{ fontSize:10, fontWeight:800, color:'#a16207', textTransform:'uppercase' }}>bodů</div>
                 </div>
               </div>
             </div>
 
-            <div style={{ display:'grid', gridTemplateColumns:'repeat(3, 1fr)', gap:10 }}>
+            <div style={{ display:'grid', gridTemplateColumns:'repeat(3, 1fr)', gap:14 }}>
               {shop.map((r) => {
                 const st = shopState[r.id];
                 const afford = points >= r.cost;
@@ -4642,45 +4653,45 @@ function App() {
                 return (
                   <div key={r.id} style={{
                     background:'#fff',
-                    border: unlocked ? '2px solid #16a34a' : pending ? '2px solid #f59e0b' : (afford ? '2px solid #16a34a' : '2px solid #e5e7eb'),
-                    borderRadius:14,
-                    padding:'10px 8px',
+                    border: unlocked ? '3px solid #16a34a' : pending ? '2px solid #f59e0b' : (afford ? '2px solid #16a34a' : '2px solid #e5e7eb'),
+                    borderRadius:16,
+                    padding:'14px 12px',
                     position:'relative',
-                    boxShadow: unlocked ? '0 4px 14px rgba(22,163,74,.2)' : '0 3px 10px rgba(0,0,0,.05)',
+                    boxShadow: unlocked ? '0 6px 18px rgba(22,163,74,.22)' : '0 4px 12px rgba(0,0,0,.05)',
                     opacity: locked ? 0.7 : 1,
                     animation: unlocked ? 'softPulse 2s ease-in-out infinite' : 'none'
                   }}>
                     {/* Cenovka v rohu */}
                     <div style={{
                       position:'absolute',
-                      top:-6, right:8,
+                      top:-7, right:10,
                       background: unlocked ? '#16a34a' : pending ? '#fbbf24' : (afford ? '#16a34a' : '#9ca3af'),
                       color:'#fff',
-                      borderRadius:8,
-                      padding:'2px 8px',
+                      borderRadius:9,
+                      padding:'3px 10px',
                       fontFamily:'var(--display)',
                       fontWeight:600,
-                      fontSize:12,
+                      fontSize:13,
                       boxShadow:'0 2px 6px rgba(0,0,0,.15)',
                       display:'flex', alignItems:'center', gap:3
                     }}>
-                      <span style={{ fontSize:11 }}>{unlocked ? '✓' : '⭐'}</span>
+                      <span style={{ fontSize:12 }}>{unlocked ? '✓' : '⭐'}</span>
                       <span>{unlocked ? 'TVOJE' : r.cost}</span>
                     </div>
 
                     {r.photo ? (
                       <div style={{
-                        width: 60, height: 60, borderRadius: 12,
+                        width: 80, height: 80, borderRadius: 14,
                         background: `url(${r.photo}) center/cover`,
-                        margin:'8px auto 6px',
-                        boxShadow: '0 3px 8px rgba(0,0,0,.12)',
+                        margin:'12px auto 8px',
+                        boxShadow: '0 3px 10px rgba(0,0,0,.12)',
                         filter: locked ? 'grayscale(0.6)' : 'none'
                       }}/>
                     ) : (
                       <div style={{
-                        fontSize: 42,
+                        fontSize: 54,
                         textAlign:'center',
-                        margin:'8px 0 6px',
+                        margin:'12px 0 8px',
                         lineHeight: 1,
                         filter: locked ? 'grayscale(0.6)' : 'none'
                       }}>{r.emoji}</div>
@@ -4689,12 +4700,12 @@ function App() {
                     <div style={{
                       textAlign:'center',
                       fontFamily:'var(--display)',
-                      fontSize:13,
+                      fontSize:15,
                       fontWeight:600,
                       color:'var(--ink)',
-                      lineHeight:1.1,
-                      minHeight:30,
-                      marginBottom:8
+                      lineHeight:1.15,
+                      minHeight:36,
+                      marginBottom:10
                     }}>{r.t}</div>
 
                     <div onClick={() => redeem(r)} style={{
@@ -4708,12 +4719,12 @@ function App() {
                             ? 'linear-gradient(135deg, #16a34a, #15803d)'
                             : '#f0f0f7',
                       color: unlocked ? '#fff' : pending ? '#92400e' : afford ? '#fff' : '#9ca3af',
-                      borderRadius:9,
-                      padding:'7px 4px',
+                      borderRadius:11,
+                      padding:'9px 6px',
                       textAlign:'center',
                       fontFamily:'var(--display)',
                       fontWeight:600,
-                      fontSize:11,
+                      fontSize:13,
                       boxShadow: (afford && !pending) || unlocked ? '0 3px 8px rgba(0,0,0,.15)' : 'none'
                     }}>
                       {unlocked ? '🎁 Vyzvednout!' : pending ? '⏳ Čeká' : afford ? '🛒 Koupit' : `🔒 chybí ${r.cost - points}`}
@@ -7011,8 +7022,8 @@ function App() {
 
                   {/* Verze (vždy zobrazeno) */}
                   <div style={{ background:'#fff', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
-                    <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'#1a1530' }}>Verze: Domácí pomocník v56</div>
-                    <div style={{ fontSize:12, color:'#9a96ac', marginTop:4 }}>Build 2026-06-22 · 17:00 · audit</div>
+                    <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'#1a1530' }}>Verze: Domácí pomocník v57</div>
+                    <div style={{ fontSize:12, color:'#9a96ac', marginTop:4 }}>Build 2026-06-22 · 17:22</div>
                   </div>
                 </div>
                 )}
