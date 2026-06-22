@@ -39,6 +39,8 @@
   @keyframes shake { 0%,100% { transform: translateX(0); } 25% { transform: translateX(-3px); } 75% { transform: translateX(3px); } }
   @keyframes bubbleUp { 0% { transform: translateY(0); opacity: 0; } 10% { opacity: 0.8; } 90% { opacity: 0.8; } 100% { transform: translateY(-130vh); opacity: 0; } }
   @keyframes explosionPulse { 0%, 100% { opacity: 0.8; transform: scale(1); } 50% { opacity: 1; transform: scale(1.04); } }
+  @keyframes wingFlap { 0%, 100% { transform: rotate(-15deg); } 50% { transform: rotate(-35deg); } }
+  @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
   @keyframes toastIn { 0% { opacity: 0; transform: translateY(-16px) scale(.96); } 100% { opacity: 1; transform: translateY(0) scale(1); } }
   @keyframes spinSlow { 0% { transform: rotate(0); } 100% { transform: rotate(360deg); } }
   @keyframes floatUp { 0% { transform: translate(-50%, 0) scale(1); opacity: 1; } 70% { opacity: 1; } 100% { transform: translate(-50%, -100px) scale(1.5); opacity: 0; } }
@@ -894,41 +896,216 @@ function useTTS(enabled) {
 // MASCOT (Lišák {mascotName}) - SVG-free pure divs, per prototype
 // ====================================================================
 
-function Mascot({ size, sleeping, dancing, onTap }) {
+function Mascot({ size, sleeping, dancing, onTap, kind }) {
   const s = size || 96;
   const scale = s / 96;
   const px = (n) => Math.round(n * scale) + 'px';
   const floatAnim = sleeping ? 'floatY 6s ease-in-out infinite' : (dancing ? 'softPulse 0.6s ease-in-out infinite' : 'floatY 3.4s ease-in-out infinite');
   const eyeAnim = sleeping ? 'none' : 'blink 5s infinite';
-  const mouthBorder = sleeping ? `${Math.max(2,Math.round(3*scale))}px solid #2a2240` : `${Math.max(2,Math.round(3*scale))}px solid #2a2240`;
-  return (
-    <div onClick={onTap} style={{ width: s, height: s, position:'relative', animation: floatAnim, cursor: onTap ? 'pointer' : 'default' }}>
-      <div style={{ position:'absolute', inset:0, borderRadius:'50% 50% 48% 48%', background:'linear-gradient(160deg, var(--accent2Lt), var(--accent2))', boxShadow:'inset 0 -10px 18px rgba(0,0,0,.12), 0 10px 22px -8px var(--accent2)' }}/>
-      <div style={{ position:'absolute', top: px(-9), left: px(14), width: px(30), height: px(30), background:'var(--accent2)', borderRadius:'50% 50% 10% 50%', transform: sleeping ? 'rotate(-30deg)' : 'rotate(-18deg)' }}/>
-      <div style={{ position:'absolute', top: px(-9), right: px(14), width: px(30), height: px(30), background:'var(--accent2)', borderRadius:'50% 50% 50% 10%', transform: sleeping ? 'rotate(30deg)' : 'rotate(18deg)' }}/>
-      {sleeping ? (
-        <React.Fragment>
-          {/* zavřená očka */}
-          <div style={{ position:'absolute', top: px(46), left: px(24), width: px(16), height: px(3), background:'#2a2240', borderRadius:'2px' }}/>
-          <div style={{ position:'absolute', top: px(46), right: px(24), width: px(16), height: px(3), background:'#2a2240', borderRadius:'2px' }}/>
-          {/* ZZZ */}
-          <div style={{ position:'absolute', top: px(-18), right: px(-6), fontSize: px(20), color:'#fff', opacity:.85, animation:'floatY 2.4s ease-in-out infinite' }}>z</div>
-          <div style={{ position:'absolute', top: px(-32), right: px(2), fontSize: px(14), color:'#fff', opacity:.65, animation:'floatY 2.4s ease-in-out infinite .4s' }}>z</div>
-        </React.Fragment>
-      ) : (
-        <React.Fragment>
-          <div style={{ position:'absolute', top: px(38), left: px(24), width: px(16), height: px(18), background:'#fff', borderRadius:'50%', animation: eyeAnim }}>
-            <div style={{ position:'absolute', bottom: px(3), left: px(4), width: px(8), height: px(8), background:'#2a2240', borderRadius:'50%' }}/>
-          </div>
-          <div style={{ position:'absolute', top: px(38), right: px(24), width: px(16), height: px(18), background:'#fff', borderRadius:'50%', animation: eyeAnim }}>
-            <div style={{ position:'absolute', bottom: px(3), left: px(4), width: px(8), height: px(8), background:'#2a2240', borderRadius:'50%' }}/>
-          </div>
-        </React.Fragment>
-      )}
-      <div style={{ position:'absolute', top: px(60), left:'50%', transform:'translateX(-50%)', width: px(14), height: px(8), borderBottom: mouthBorder, borderRadius:'0 0 12px 12px' }}/>
-      <div style={{ position:'absolute', top: px(55), left: px(13), width: px(13), height: px(8), background:'var(--accentLt)', borderRadius:'50%', opacity:.7 }}/>
-      <div style={{ position:'absolute', top: px(55), right: px(13), width: px(13), height: px(8), background:'var(--accentLt)', borderRadius:'50%', opacity:.7 }}/>
+
+  // ---- Helpery pro oči ----
+  const Eye = ({left, right, color}) => (
+    <div style={{
+      position:'absolute', top: px(38),
+      left: left != null ? px(left) : 'auto',
+      right: right != null ? px(right) : 'auto',
+      width: px(16), height: px(18), background:'#fff', borderRadius:'50%', animation: eyeAnim
+    }}>
+      <div style={{ position:'absolute', bottom: px(3), left: px(4), width: px(8), height: px(8), background: color || '#2a2240', borderRadius:'50%' }}/>
     </div>
+  );
+
+  const ClosedEye = ({left, right}) => (
+    <div style={{
+      position:'absolute', top: px(46),
+      left: left != null ? px(left) : 'auto',
+      right: right != null ? px(right) : 'auto',
+      width: px(16), height: px(3), background:'#2a2240', borderRadius:'2px'
+    }}/>
+  );
+
+  const SleepZzz = () => (
+    <React.Fragment>
+      <div style={{ position:'absolute', top: px(-18), right: px(-6), fontSize: px(20), color:'#2a2240', opacity:.85, animation:'floatY 2.4s ease-in-out infinite', fontWeight:900 }}>z</div>
+      <div style={{ position:'absolute', top: px(-32), right: px(2), fontSize: px(14), color:'#2a2240', opacity:.65, animation:'floatY 2.4s ease-in-out infinite .4s', fontWeight:900 }}>z</div>
+    </React.Fragment>
+  );
+
+  // ---- 5 postaviček ----
+  // FOX (Riki) - default
+  if (!kind || kind === 'fox') {
+    return (
+      <div onClick={onTap} style={{ width: s, height: s, position:'relative', animation: floatAnim, cursor: onTap ? 'pointer' : 'default' }}>
+        <div style={{ position:'absolute', inset:0, borderRadius:'50% 50% 48% 48%', background:'linear-gradient(160deg, #fbbf24, #f97316)', boxShadow:'inset 0 -10px 18px rgba(0,0,0,.12), 0 10px 22px -8px #f97316' }}/>
+        <div style={{ position:'absolute', top: px(-9), left: px(14), width: px(30), height: px(30), background:'#f97316', borderRadius:'50% 50% 10% 50%', transform: sleeping ? 'rotate(-30deg)' : 'rotate(-18deg)' }}/>
+        <div style={{ position:'absolute', top: px(-9), right: px(14), width: px(30), height: px(30), background:'#f97316', borderRadius:'50% 50% 50% 10%', transform: sleeping ? 'rotate(30deg)' : 'rotate(18deg)' }}/>
+        {sleeping ? (<><ClosedEye left={24}/><ClosedEye right={24}/><SleepZzz/></>) : (<><Eye left={24}/><Eye right={24}/></>)}
+        <div style={{ position:'absolute', top: px(60), left:'50%', transform:'translateX(-50%)', width: px(14), height: px(8), borderBottom:`${Math.max(2,Math.round(3*scale))}px solid #2a2240`, borderRadius:'0 0 12px 12px' }}/>
+        <div style={{ position:'absolute', top: px(55), left: px(13), width: px(13), height: px(8), background:'#fde68a', borderRadius:'50%', opacity:.7 }}/>
+        <div style={{ position:'absolute', top: px(55), right: px(13), width: px(13), height: px(8), background:'#fde68a', borderRadius:'50%', opacity:.7 }}/>
+      </div>
+    );
+  }
+
+  // BLESKOVEC - žlutá elektrická myška
+  if (kind === 'mouse') {
+    return (
+      <div onClick={onTap} style={{ width: s, height: s, position:'relative', animation: floatAnim, cursor: onTap ? 'pointer' : 'default' }}>
+        <div style={{ position:'absolute', inset:0, borderRadius:'50%', background:'linear-gradient(160deg, #fef08a, #facc15)', boxShadow:'inset 0 -10px 18px rgba(0,0,0,.12), 0 10px 22px -8px #facc15' }}/>
+        {/* Pointy ears - vyšší, černé špičky */}
+        <div style={{ position:'absolute', top: px(-18), left: px(10), width: px(20), height: px(34), background:'#facc15', borderRadius:'50% 50% 30% 30%', transform: sleeping ? 'rotate(-30deg)' : 'rotate(-22deg)' }}>
+          <div style={{ position:'absolute', top:0, left:0, right:0, height:'45%', background:'#1a1530', borderRadius:'50% 50% 0 0' }}/>
+        </div>
+        <div style={{ position:'absolute', top: px(-18), right: px(10), width: px(20), height: px(34), background:'#facc15', borderRadius:'50% 50% 30% 30%', transform: sleeping ? 'rotate(30deg)' : 'rotate(22deg)' }}>
+          <div style={{ position:'absolute', top:0, left:0, right:0, height:'45%', background:'#1a1530', borderRadius:'50% 50% 0 0' }}/>
+        </div>
+        {/* Červené tváře */}
+        <div style={{ position:'absolute', top: px(50), left: px(8), width: px(14), height: px(14), background:'radial-gradient(circle, #dc2626, #991b1b)', borderRadius:'50%', boxShadow: dancing ? '0 0 8px #fbbf24' : 'none' }}/>
+        <div style={{ position:'absolute', top: px(50), right: px(8), width: px(14), height: px(14), background:'radial-gradient(circle, #dc2626, #991b1b)', borderRadius:'50%', boxShadow: dancing ? '0 0 8px #fbbf24' : 'none' }}/>
+        {/* Oči */}
+        {sleeping ? (<><ClosedEye left={26}/><ClosedEye right={26}/><SleepZzz/></>) : (<><Eye left={26} color="#1a1530"/><Eye right={26} color="#1a1530"/></>)}
+        {/* Pusinka */}
+        <div style={{ position:'absolute', top: px(60), left:'50%', transform:'translateX(-50%)', width: px(10), height: px(6), borderBottom:`${Math.max(2,Math.round(3*scale))}px solid #1a1530`, borderRadius:'0 0 10px 10px' }}/>
+        {/* Blesky když tancuje */}
+        {dancing && (
+          <React.Fragment>
+            <div style={{ position:'absolute', top: px(-10), left: px(-12), fontSize: px(18), animation:'softPulse 0.3s ease-in-out infinite' }}>⚡</div>
+            <div style={{ position:'absolute', bottom: px(-10), right: px(-8), fontSize: px(16), animation:'softPulse 0.3s ease-in-out infinite .15s' }}>⚡</div>
+          </React.Fragment>
+        )}
+      </div>
+    );
+  }
+
+  // FOTBALISTA - sportovní postavička s míčem
+  if (kind === 'soccer') {
+    return (
+      <div onClick={onTap} style={{ width: s, height: s, position:'relative', animation: floatAnim, cursor: onTap ? 'pointer' : 'default' }}>
+        {/* Hlava */}
+        <div style={{ position:'absolute', top: px(-4), left: px(12), right: px(12), height: px(74), borderRadius:'50%', background:'linear-gradient(160deg, #fde68a, #d97706)', boxShadow:'inset 0 -8px 16px rgba(0,0,0,.12), 0 10px 22px -8px #d97706' }}/>
+        {/* Vlasy nahoře - tmavé */}
+        <div style={{ position:'absolute', top: px(-12), left: px(14), right: px(14), height: px(28), background:'#1a1530', borderRadius:'50% 50% 30% 30%' }}/>
+        {/* Oči */}
+        {sleeping ? (<><ClosedEye left={24}/><ClosedEye right={24}/><SleepZzz/></>) : (<><Eye left={24}/><Eye right={24}/></>)}
+        {/* Úsměv */}
+        <div style={{ position:'absolute', top: px(58), left:'50%', transform:'translateX(-50%)', width: px(18), height: px(10), borderBottom:`${Math.max(2,Math.round(3*scale))}px solid #2a2240`, borderRadius:'0 0 18px 18px' }}/>
+        {/* Míč v pravém spodním rohu */}
+        <div style={{ position:'absolute', bottom: px(-12), right: px(-8), width: px(34), height: px(34), borderRadius:'50%', background:'radial-gradient(circle at 35% 35%, #fff 0%, #fff 60%, #d1d5db 100%)', border:`${Math.max(2,Math.round(2*scale))}px solid #1a1530`, boxShadow:'0 4px 10px rgba(0,0,0,.2)', animation: dancing ? 'spin 0.8s linear infinite' : (sleeping ? 'none' : 'floatY 2.5s ease-in-out infinite .3s') }}>
+          {/* Šestiúhelníky vzoru */}
+          <div style={{ position:'absolute', top:'30%', left:'40%', width:'25%', height:'25%', background:'#1a1530', borderRadius:'30%' }}/>
+          <div style={{ position:'absolute', top:'12%', left:'18%', width:'18%', height:'18%', background:'#1a1530', borderRadius:'30%' }}/>
+          <div style={{ position:'absolute', bottom:'15%', right:'15%', width:'18%', height:'18%', background:'#1a1530', borderRadius:'30%' }}/>
+        </div>
+      </div>
+    );
+  }
+
+  // KOČIČKA - šedá s vousy
+  if (kind === 'cat') {
+    return (
+      <div onClick={onTap} style={{ width: s, height: s, position:'relative', animation: floatAnim, cursor: onTap ? 'pointer' : 'default' }}>
+        <div style={{ position:'absolute', inset:0, borderRadius:'50%', background:'linear-gradient(160deg, #cbd5e1, #64748b)', boxShadow:'inset 0 -10px 18px rgba(0,0,0,.12), 0 10px 22px -8px #475569' }}/>
+        {/* Pointy ears */}
+        <div style={{ position:'absolute', top: px(-14), left: px(12), width: 0, height: 0, borderLeft:`${px(14)} solid transparent`, borderRight:`${px(14)} solid transparent`, borderBottom:`${px(28)} solid #64748b`, transform: sleeping ? 'rotate(-30deg)' : 'rotate(-12deg)' }}/>
+        <div style={{ position:'absolute', top: px(-14), right: px(12), width: 0, height: 0, borderLeft:`${px(14)} solid transparent`, borderRight:`${px(14)} solid transparent`, borderBottom:`${px(28)} solid #64748b`, transform: sleeping ? 'rotate(30deg)' : 'rotate(12deg)' }}/>
+        {/* Inner ear pink */}
+        <div style={{ position:'absolute', top: px(-3), left: px(20), width: 0, height: 0, borderLeft:`${px(6)} solid transparent`, borderRight:`${px(6)} solid transparent`, borderBottom:`${px(12)} solid #fda4af`, transform: sleeping ? 'rotate(-30deg)' : 'rotate(-12deg)' }}/>
+        <div style={{ position:'absolute', top: px(-3), right: px(20), width: 0, height: 0, borderLeft:`${px(6)} solid transparent`, borderRight:`${px(6)} solid transparent`, borderBottom:`${px(12)} solid #fda4af`, transform: sleeping ? 'rotate(30deg)' : 'rotate(12deg)' }}/>
+        {/* Oči */}
+        {sleeping ? (<><ClosedEye left={24}/><ClosedEye right={24}/><SleepZzz/></>) : (<><Eye left={24} color="#16a34a"/><Eye right={24} color="#16a34a"/></>)}
+        {/* Růžový nosík */}
+        <div style={{ position:'absolute', top: px(55), left:'50%', transform:'translateX(-50%)', width: 0, height: 0, borderLeft:`${px(5)} solid transparent`, borderRight:`${px(5)} solid transparent`, borderTop:`${px(5)} solid #fda4af` }}/>
+        {/* Pusinka */}
+        <div style={{ position:'absolute', top: px(63), left:'50%', transform:'translateX(-50%)', width: px(12), height: px(5), borderTop:`${Math.max(2,Math.round(2*scale))}px solid #2a2240`, borderRadius:'0' }}/>
+        {/* Vousy */}
+        {!sleeping && (
+          <React.Fragment>
+            <div style={{ position:'absolute', top: px(58), left: px(-2), width: px(20), height: px(1), background:'#2a2240', transform:'rotate(-6deg)' }}/>
+            <div style={{ position:'absolute', top: px(63), left: px(-2), width: px(20), height: px(1), background:'#2a2240', transform:'rotate(2deg)' }}/>
+            <div style={{ position:'absolute', top: px(58), right: px(-2), width: px(20), height: px(1), background:'#2a2240', transform:'rotate(6deg)' }}/>
+            <div style={{ position:'absolute', top: px(63), right: px(-2), width: px(20), height: px(1), background:'#2a2240', transform:'rotate(-2deg)' }}/>
+          </React.Fragment>
+        )}
+      </div>
+    );
+  }
+
+  // DRÁČEK - zelený s rohy a křídly
+  if (kind === 'dragon') {
+    return (
+      <div onClick={onTap} style={{ width: s, height: s, position:'relative', animation: floatAnim, cursor: onTap ? 'pointer' : 'default' }}>
+        <div style={{ position:'absolute', inset:0, borderRadius:'50% 50% 45% 45%', background:'linear-gradient(160deg, #86efac, #16a34a)', boxShadow:'inset 0 -10px 18px rgba(0,0,0,.12), 0 10px 22px -8px #15803d' }}/>
+        {/* Křídla */}
+        <div style={{ position:'absolute', top: px(20), left: px(-12), width: px(22), height: px(28), background:'linear-gradient(135deg, #4ade80, #16a34a)', borderRadius:'50% 0 50% 0', transform: dancing ? 'rotate(-30deg)' : 'rotate(-15deg)', boxShadow:'0 4px 8px rgba(0,0,0,.15)', animation: !sleeping && !dancing ? 'wingFlap 1.2s ease-in-out infinite' : 'none' }}/>
+        <div style={{ position:'absolute', top: px(20), right: px(-12), width: px(22), height: px(28), background:'linear-gradient(225deg, #4ade80, #16a34a)', borderRadius:'0 50% 0 50%', transform: dancing ? 'rotate(30deg)' : 'rotate(15deg)', boxShadow:'0 4px 8px rgba(0,0,0,.15)', animation: !sleeping && !dancing ? 'wingFlap 1.2s ease-in-out infinite' : 'none' }}/>
+        {/* Rohy */}
+        <div style={{ position:'absolute', top: px(-10), left: px(28), width: 0, height: 0, borderLeft:`${px(5)} solid transparent`, borderRight:`${px(5)} solid transparent`, borderBottom:`${px(16)} solid #fbbf24`, transform:'rotate(-15deg)' }}/>
+        <div style={{ position:'absolute', top: px(-10), right: px(28), width: 0, height: 0, borderLeft:`${px(5)} solid transparent`, borderRight:`${px(5)} solid transparent`, borderBottom:`${px(16)} solid #fbbf24`, transform:'rotate(15deg)' }}/>
+        {/* Oči */}
+        {sleeping ? (<><ClosedEye left={24}/><ClosedEye right={24}/><SleepZzz/></>) : (<><Eye left={24} color="#dc2626"/><Eye right={24} color="#dc2626"/></>)}
+        {/* Tlama */}
+        <div style={{ position:'absolute', top: px(58), left:'50%', transform:'translateX(-50%)', width: px(20), height: px(12), background:'#1a1530', borderRadius:'0 0 50% 50%' }}>
+          <div style={{ position:'absolute', top:0, left:'25%', width: px(3), height: px(5), background:'#fff', borderRadius:'0 0 2px 2px' }}/>
+          <div style={{ position:'absolute', top:0, right:'25%', width: px(3), height: px(5), background:'#fff', borderRadius:'0 0 2px 2px' }}/>
+        </div>
+        {/* Šupinky */}
+        <div style={{ position:'absolute', bottom: px(8), left:'50%', transform:'translateX(-50%)', display:'flex', gap: px(3) }}>
+          <div style={{ width: px(6), height: px(6), background:'#15803d', borderRadius:'50%' }}/>
+          <div style={{ width: px(6), height: px(6), background:'#15803d', borderRadius:'50%' }}/>
+          <div style={{ width: px(6), height: px(6), background:'#15803d', borderRadius:'50%' }}/>
+        </div>
+        {/* Plameny když tancuje */}
+        {dancing && (
+          <div style={{ position:'absolute', top: px(58), left:'50%', transform:'translateX(-50%) translateY(8px)', fontSize: px(18), animation:'softPulse 0.4s ease-in-out infinite' }}>🔥</div>
+        )}
+      </div>
+    );
+  }
+
+  // Fallback - default fox
+  return null;
+}
+
+
+// v50: WalletForm - sub-komponenta pro formulář transakce pokladničky
+function WalletForm({ onSubmit }) {
+  const [amount, setAmount] = useState('');
+  const [reason, setReason] = useState('');
+  const [type, setType] = useState('income');
+
+  const submit = () => {
+    const n = parseInt(amount, 10);
+    if (!n || n < 1) return;
+    onSubmit(n, reason.trim(), type);
+    setAmount('');
+    setReason('');
+  };
+
+  return (
+    <React.Fragment>
+      {/* Type toggle */}
+      <div style={{ display:'flex', gap:6, marginBottom:10 }}>
+        <div onClick={() => setType('income')} style={{
+          flex:1, cursor:'pointer', padding:'10px', borderRadius:11, textAlign:'center',
+          background: type === 'income' ? 'linear-gradient(135deg, #16a34a, #15803d)' : '#f1f5f9',
+          color: type === 'income' ? '#fff' : '#5a566e',
+          fontWeight:800, fontSize:13
+        }}>💰 Přidat (+)</div>
+        <div onClick={() => setType('expense')} style={{
+          flex:1, cursor:'pointer', padding:'10px', borderRadius:11, textAlign:'center',
+          background: type === 'expense' ? 'linear-gradient(135deg, #dc2626, #991b1b)' : '#f1f5f9',
+          color: type === 'expense' ? '#fff' : '#5a566e',
+          fontWeight:800, fontSize:13
+        }}>💸 Odebrat (−)</div>
+      </div>
+      <div style={{ display:'flex', gap:8 }}>
+        <input value={amount} onChange={(e) => setAmount(e.target.value.replace(/[^\d]/g, ''))} placeholder="Kč" inputMode="numeric" style={{ width:90, border:'1px solid #e3e3ea', borderRadius:11, padding:'11px 10px', fontSize:18, fontWeight:700, textAlign:'center' }}/>
+        <input value={reason} onChange={(e) => setReason(e.target.value)} placeholder={type === 'income' ? 'Kapesné, dárek, ...' : 'Hračka, sladkost, ...'} style={{ flex:1, minWidth:0, border:'1px solid #e3e3ea', borderRadius:11, padding:'11px 12px', fontSize:14 }}/>
+      </div>
+      <div onClick={submit} style={{ cursor:'pointer', marginTop:9, background: type === 'income' ? '#16a34a' : '#dc2626', color:'#fff', fontFamily:'var(--display)', fontWeight:600, fontSize:15, padding:11, borderRadius:13, textAlign:'center' }}>
+        {type === 'income' ? '+ Přidat ' + (amount || '0') + ' Kč' : '− Odebrat ' + (amount || '0') + ' Kč'}
+      </div>
+    </React.Fragment>
   );
 }
 
@@ -1021,6 +1198,13 @@ function App() {
 
   // --- v2 state ---
   const [mascotName, setMascotName] = useState((persisted && persisted.mascotName) || 'Riki');
+  // v50: výběr maskota - 'fox' (default), 'mouse', 'soccer', 'cat', 'dragon'
+  const [mascotKind, setMascotKind] = useState((persisted && persisted.mascotKind) || 'fox');
+  // v50: POKLADNIČKA - reálné peníze (CZK), historie transakcí, volitelný cíl spoření
+  const [walletBalance, setWalletBalance] = useState((persisted && typeof persisted.walletBalance === 'number') ? persisted.walletBalance : 0);
+  const [walletHistory, setWalletHistory] = useState((persisted && Array.isArray(persisted.walletHistory)) ? persisted.walletHistory : []);
+  const [walletGoalAmount, setWalletGoalAmount] = useState((persisted && typeof persisted.walletGoalAmount === 'number') ? persisted.walletGoalAmount : 0);
+  const [walletGoalName, setWalletGoalName] = useState((persisted && persisted.walletGoalName) || '');
   const [soundOn, setSoundOn] = useState(persisted && persisted.soundOn !== undefined ? persisted.soundOn : true);
   const [ttsOn, setTtsOn] = useState(persisted && persisted.ttsOn !== undefined ? persisted.ttsOn : true);
   const [bedtime, setBedtime] = useState((persisted && persisted.bedtime) || '20:30');
@@ -1170,7 +1354,7 @@ function App() {
       theme, points, totalXp, streak, morning, evening, doneM, doneE, whoHome, departMin,
       shopItems, shopState, choreState, pendingApprovals, packState, packAwarded,
       weeklyDone, challenges, rozvrh, buttonConfig,
-      mascotName, soundOn, ttsOn, bedtime, wakeTime, praiseMessages,
+      mascotName, mascotKind, soundOn, ttsOn, bedtime, wakeTime, praiseMessages,
       streakDays, streakLastDate, eveningStreakDays, eveningStreakLast,
       moodLog, lastMoodDate, parentPin, childName,
       weekEvents, worryMessages, readingList, stickers, childPhoto, choresList, weeklyChores,
@@ -1183,11 +1367,12 @@ function App() {
       routineHistory, spinWheelLastDate,
       cursusUnlocked, morningAlertsFired,
       bombEnabled, bombFiredToday,
+      walletBalance, walletHistory, walletGoalAmount, walletGoalName,
     });
   }, [theme, points, totalXp, streak, morning, evening, doneM, doneE, whoHome, departMin,
       shopItems, shopState, choreState, pendingApprovals, packState, packAwarded,
       weeklyDone, challenges, rozvrh, buttonConfig,
-      mascotName, soundOn, ttsOn, bedtime, wakeTime, praiseMessages,
+      mascotName, mascotKind, soundOn, ttsOn, bedtime, wakeTime, praiseMessages,
       streakDays, streakLastDate, eveningStreakDays, eveningStreakLast,
       moodLog, lastMoodDate, parentPin, childName,
       weekEvents, worryMessages, readingList, stickers, childPhoto, choresList, weeklyChores,
@@ -2608,6 +2793,7 @@ function App() {
     { id:'rutiny',   icon:'✅', label:'Rutiny' },
     { id:'historie', icon:'📊', label:'Historie' },
     { id:'odmeny',   icon:'🎁', label:'Odměny' },
+    { id:'pokladna', icon:'💰', label:'Pokladnička' },
     { id:'kalendar', icon:'📅', label:'Kalendář' },
     { id:'nalada',   icon:'💜', label:'Nálada' },
     { id:'vzkazy',   icon:'💌', label:'Vzkazy' },
@@ -2804,7 +2990,7 @@ function App() {
     packState, packAwarded,
     weeklyDone, challenges,
     rozvrh, buttonConfig,
-    mascotName, soundOn, ttsOn, bedtime, wakeTime,
+    mascotName, mascotKind, soundOn, ttsOn, bedtime, wakeTime,
     praiseMessages,
     streakDays, streakLastDate, eveningStreakDays, eveningStreakLast,
     moodLog, lastMoodDate, parentPin, childName,
@@ -2814,7 +3000,7 @@ function App() {
     points, totalXp, morning, evening, doneM, doneE, whoHome, departMin,
     shopItems, shopState, choreState, pendingApprovals, packState, packAwarded,
     weeklyDone, challenges, rozvrh, buttonConfig,
-    mascotName, soundOn, ttsOn, bedtime, wakeTime, praiseMessages,
+    mascotName, mascotKind, soundOn, ttsOn, bedtime, wakeTime, praiseMessages,
     streakDays, streakLastDate, eveningStreakDays, eveningStreakLast,
     moodLog, lastMoodDate, parentPin, childName,
     weekEvents, worryMessages, readingList, stickers, childPhoto,
@@ -2863,6 +3049,7 @@ function App() {
     if (isObj(s.rozvrh)) setRozvrh(s.rozvrh);
     if (isArr(s.buttonConfig)) setButtonConfig(s.buttonConfig);
     if (isStr(s.mascotName)) setMascotName(s.mascotName);
+    if (isStr(s.mascotKind)) setMascotKind(s.mascotKind);
     if (isBool(s.soundOn)) setSoundOn(s.soundOn);
     if (isBool(s.ttsOn)) setTtsOn(s.ttsOn);
     if (isStr(s.bedtime)) setBedtime(s.bedtime);
@@ -2896,6 +3083,10 @@ function App() {
     if (Array.isArray(s.morningAlertsFired)) setMorningAlertsFired(s.morningAlertsFired);
     if (typeof s.bombEnabled === 'boolean') setBombEnabled(s.bombEnabled);
     if (typeof s.bombFiredToday === 'string') setBombFiredToday(s.bombFiredToday);
+    if (typeof s.walletBalance === 'number') setWalletBalance(s.walletBalance);
+    if (Array.isArray(s.walletHistory)) setWalletHistory(s.walletHistory);
+    if (typeof s.walletGoalAmount === 'number') setWalletGoalAmount(s.walletGoalAmount);
+    if (typeof s.walletGoalName === 'string') setWalletGoalName(s.walletGoalName);
     if (isStr(s.gcalUrl)) setGcalUrl(s.gcalUrl);
     if (isArr(s.gcalEvents)) setGcalEvents(s.gcalEvents);
     if (isNum(s.gcalLastFetch)) setGcalLastFetch(s.gcalLastFetch);
@@ -3450,7 +3641,7 @@ function App() {
             <div style={{ background:'var(--maskotCard)', border:'var(--hair)', borderRadius:24, padding:'16px 20px', boxShadow:'var(--shadow)', position:'relative', overflow:'hidden', animation: ent(2) }}>
               <div onClick={() => go('rewards')} style={{ cursor:'pointer', display:'flex', alignItems:'center', gap:14 }}>
                 <div style={{ flex:'none', position:'relative' }}>
-                  <Mascot size={78} dancing={rikiDancing} sleeping={petSleeping || isRikiSleeping}/>
+                  <Mascot size={78} kind={mascotKind} dancing={rikiDancing} sleeping={petSleeping || isRikiSleeping}/>
                   {/* mood emoji bubble */}
                   {!petSleeping && (
                     <div style={{ position:'absolute', top:-4, right:-6, background:'#fff', border:'2px solid '+petStatus.color, borderRadius:'50%', width:26, height:26, display:'flex', alignItems:'center', justifyContent:'center', fontSize:15 }}>{petStatus.emoji}</div>
@@ -4076,7 +4267,7 @@ function App() {
         <div style={{ display:'grid', gridTemplateColumns:'1fr 1.4fr', gap:18 }}>
           {/* maskot panel */}
           <div style={{ background:'var(--maskotCard)', border:'var(--hair)', borderRadius:26, padding:26, display:'flex', flexDirection:'column', alignItems:'center', gap:16, boxShadow:'var(--shadow)' }}>
-            <Mascot size={170} dancing={rikiDancing} sleeping={isRikiSleeping}/>
+            <Mascot size={170} kind={mascotKind} dancing={rikiDancing} sleeping={isRikiSleeping}/>
             <div style={{ textAlign:'center' }}>
               <div style={{ fontFamily:'var(--display)', fontSize:26, fontWeight:600, color:'var(--ink)' }}>Lišák {mascotName}</div>
               <div style={{ fontSize:15, fontWeight:800, color:'var(--muted)' }}>{child.levelLabel} · čím víc plníš, tím víc roste</div>
@@ -5386,6 +5577,109 @@ function App() {
                 </div>
                 )}
 
+                {/* TAB: pokladnička (v50) */}
+                {parentTab === 'pokladna' && (
+                <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
+                  {/* Hlavní stav */}
+                  <div style={{ background:'linear-gradient(135deg, #16a34a, #15803d)', borderRadius:24, padding:'22px 22px 18px', color:'#fff', boxShadow:'0 8px 24px rgba(22,163,74,.25)' }}>
+                    <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', gap:14 }}>
+                      <div>
+                        <div style={{ fontSize:13, fontWeight:900, color:'rgba(255,255,255,.85)', textTransform:'uppercase', letterSpacing:'.1em' }}>Stav pokladničky</div>
+                        <div style={{ fontFamily:'var(--display)', fontSize:54, fontWeight:700, lineHeight:1, marginTop:6 }}>{walletBalance.toLocaleString('cs-CZ')} <span style={{ fontSize:24, fontWeight:600, opacity:.85 }}>Kč</span></div>
+                      </div>
+                      <div style={{ fontSize:60, lineHeight:1 }}>🐷</div>
+                    </div>
+                    {/* Cíl spoření */}
+                    {walletGoalAmount > 0 && walletGoalName && (
+                      <div style={{ background:'rgba(255,255,255,.18)', borderRadius:14, padding:'12px 14px', marginTop:14, backdropFilter:'blur(4px)' }}>
+                        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:6 }}>
+                          <div style={{ fontSize:13, fontWeight:800 }}>🎯 Šetřím na: <b>{walletGoalName}</b></div>
+                          <div style={{ fontSize:13, fontWeight:800 }}>{walletBalance.toLocaleString('cs-CZ')} / {walletGoalAmount.toLocaleString('cs-CZ')} Kč</div>
+                        </div>
+                        <div style={{ background:'rgba(255,255,255,.25)', borderRadius:8, height:10, overflow:'hidden' }}>
+                          <div style={{ background:'linear-gradient(90deg, #fbbf24, #f59e0b)', height:'100%', width: Math.min(100, walletBalance / walletGoalAmount * 100) + '%', transition:'width .5s ease' }}/>
+                        </div>
+                        <div style={{ fontSize:11, fontWeight:700, marginTop:6, opacity:.9 }}>
+                          {walletBalance >= walletGoalAmount
+                            ? '🎉 Cíl splněný! Můžeš si koupit ' + walletGoalName + '.'
+                            : 'Zbývá ' + (walletGoalAmount - walletBalance).toLocaleString('cs-CZ') + ' Kč'}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Rychlé akce - přidat / odebrat */}
+                  <div style={{ background:'#fff', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
+                    <div style={{ fontFamily:'var(--display)', fontSize:18, fontWeight:600, color:'#1a1530', marginBottom:10 }}>Nová transakce</div>
+                    <WalletForm onSubmit={(amount, reason, type) => {
+                      const delta = type === 'income' ? amount : -amount;
+                      const entry = {
+                        id: 'w' + Date.now(),
+                        date: new Date().toISOString(),
+                        amount: amount,
+                        reason: reason || (type === 'income' ? 'Příjem' : 'Výdaj'),
+                        type: type
+                      };
+                      setWalletBalance(b => Math.max(0, b + delta));
+                      setWalletHistory(h => [entry, ...h].slice(0, 200));
+                      audio.coin();
+                      showToast(type === 'income' ? `+${amount} Kč` : `-${amount} Kč`, type === 'income' ? '💰' : '💸');
+                    }}/>
+                  </div>
+
+                  {/* Cíl spoření config */}
+                  <div style={{ background:'#fff', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
+                    <div style={{ fontFamily:'var(--display)', fontSize:18, fontWeight:600, color:'#1a1530', marginBottom:10 }}>🎯 Cíl spoření</div>
+                    <div style={{ fontSize:12, fontWeight:700, color:'#5a566e', marginBottom:8 }}>Na co Alex šetří? (Nech prázdné pro vypnutí cíle.)</div>
+                    <div style={{ display:'flex', gap:8 }}>
+                      <input value={walletGoalName} onChange={(e) => setWalletGoalName(e.target.value)} placeholder="Lego, kolo, hra..." style={{ flex:1, minWidth:0, border:'1px solid #e3e3ea', borderRadius:11, padding:'10px 12px', fontSize:14 }}/>
+                      <input value={walletGoalAmount || ''} onChange={(e) => setWalletGoalAmount(parseInt(e.target.value, 10) || 0)} placeholder="Kč" inputMode="numeric" style={{ width:90, border:'1px solid #e3e3ea', borderRadius:11, padding:'10px 10px', fontSize:14, textAlign:'center' }}/>
+                    </div>
+                  </div>
+
+                  {/* Historie */}
+                  <div style={{ background:'#fff', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
+                    <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:10 }}>
+                      <div style={{ fontFamily:'var(--display)', fontSize:18, fontWeight:600, color:'#1a1530' }}>Historie transakcí</div>
+                      <div style={{ fontSize:11, fontWeight:700, color:'#9a96ac' }}>{walletHistory.length} záznamů</div>
+                    </div>
+                    {walletHistory.length === 0 ? (
+                      <div style={{ background:'#f8fafc', borderRadius:12, padding:'20px 16px', textAlign:'center' }}>
+                        <div style={{ fontSize:32, marginBottom:6 }}>🐷</div>
+                        <div style={{ fontSize:13, fontWeight:700, color:'#6b7280' }}>Zatím žádné transakce</div>
+                        <div style={{ fontSize:11, color:'#9ca3af', marginTop:4 }}>Přidej první výše (kapesné, dárek, výdaj...)</div>
+                      </div>
+                    ) : (
+                      <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
+                        {walletHistory.slice(0, 30).map(entry => {
+                          const isIncome = entry.type === 'income';
+                          const d = new Date(entry.date);
+                          const dateStr = d.getDate() + '. ' + (d.getMonth()+1) + '.';
+                          return (
+                            <div key={entry.id} style={{ display:'flex', alignItems:'center', gap:10, padding:'9px 12px', background:'#f8fafc', borderRadius:10, borderLeft:'4px solid ' + (isIncome ? '#16a34a' : '#dc2626') }}>
+                              <div style={{ fontSize:20 }}>{isIncome ? '💰' : '💸'}</div>
+                              <div style={{ flex:1, minWidth:0 }}>
+                                <div style={{ fontSize:14, fontWeight:600, color:'#1a1530', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{entry.reason}</div>
+                                <div style={{ fontSize:11, fontWeight:700, color:'#9a96ac' }}>{dateStr}</div>
+                              </div>
+                              <div style={{ fontFamily:'var(--display)', fontSize:17, fontWeight:700, color: isIncome ? '#16a34a' : '#dc2626' }}>
+                                {isIncome ? '+' : '-'}{entry.amount.toLocaleString('cs-CZ')} Kč
+                              </div>
+                              <div onClick={() => {
+                                if (!window.confirm('Smazat tuto transakci? Tím se vrátí ' + entry.amount + ' Kč zpět.')) return;
+                                setWalletBalance(b => Math.max(0, b + (isIncome ? -entry.amount : entry.amount)));
+                                setWalletHistory(h => h.filter(x => x.id !== entry.id));
+                                audio.undo();
+                              }} style={{ cursor:'pointer', width:24, height:24, borderRadius:6, background:'#fee2e2', color:'#991b1b', display:'flex', alignItems:'center', justifyContent:'center', fontSize:14, fontWeight:800 }}>✕</div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                </div>
+                )}
+
                 {/* TAB: kalendar */}
                 {parentTab === 'kalendar' && (
                 <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
@@ -5921,9 +6215,38 @@ function App() {
 
                   {settingsSubTab === 'vzhled' && (<>
                   <div style={{ background:'#fff', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
-                    <div style={{ fontFamily:'var(--display)', fontSize:18, fontWeight:600, color:'#1a1530', marginBottom:10 }}>Maskot 🦊</div>
+                    <div style={{ fontFamily:'var(--display)', fontSize:18, fontWeight:600, color:'#1a1530', marginBottom:10 }}>Maskot</div>
                     <div style={{ fontSize:13, fontWeight:700, color:'#5a566e', marginBottom:8 }}>Jméno maskota</div>
-                    <input value={mascotName} onChange={(e) => setMascotName(e.target.value || 'Riki')} style={{ width:'100%', border:'1px solid #e6e6ec', borderRadius:12, padding:'10px 12px', fontSize:14 }} />
+                    <input value={mascotName} onChange={(e) => setMascotName(e.target.value || 'Riki')} style={{ width:'100%', border:'1px solid #e6e6ec', borderRadius:12, padding:'10px 12px', fontSize:14, marginBottom:16 }} />
+
+                    <div style={{ fontSize:13, fontWeight:700, color:'#5a566e', marginBottom:10 }}>Vyber postavičku</div>
+                    <div style={{ display:'grid', gridTemplateColumns:'repeat(5, 1fr)', gap:10 }}>
+                      {[
+                        { id:'fox',    label:'Lišák',     desc:'oranžový' },
+                        { id:'mouse',  label:'Bleskovec', desc:'žlutá myška' },
+                        { id:'soccer', label:'Fotbalista', desc:'s míčem' },
+                        { id:'cat',    label:'Kočička',   desc:'šedá' },
+                        { id:'dragon', label:'Dráček',    desc:'zelený' },
+                      ].map(opt => (
+                        <div key={opt.id} onClick={() => { setMascotKind(opt.id); audio.tap(); }} style={{
+                          cursor:'pointer',
+                          padding:'12px 8px 10px',
+                          borderRadius:14,
+                          background: mascotKind === opt.id ? 'linear-gradient(135deg, #fef3c7, #fde68a)' : '#f8fafc',
+                          border: mascotKind === opt.id ? '2px solid #f59e0b' : '2px solid transparent',
+                          display:'flex', flexDirection:'column', alignItems:'center', gap:6
+                        }}>
+                          <div style={{ width:72, height:72, position:'relative' }}>
+                            <Mascot size={72} kind={opt.id} />
+                          </div>
+                          <div style={{ fontFamily:'var(--display)', fontSize:13, fontWeight:600, color:'#1a1530', textAlign:'center', lineHeight:1.1 }}>{opt.label}</div>
+                          <div style={{ fontSize:10, fontWeight:700, color:'#9a96ac', textAlign:'center' }}>{opt.desc}</div>
+                        </div>
+                      ))}
+                    </div>
+                    <div style={{ fontSize:11, fontWeight:700, color:'#9a96ac', marginTop:10, lineHeight:1.4 }}>
+                      💡 Tip: Maskot se mění hned. Jméno (např. „Riki" pro lišáka, „Pikáček" pro myšku, „Yamala" pro fotbalistu) můžeš upravit nahoře.
+                    </div>
                   </div>
                   </>)}
 
@@ -6388,8 +6711,8 @@ function App() {
 
                   {/* Verze (vždy zobrazeno) */}
                   <div style={{ background:'#fff', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
-                    <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'#1a1530' }}>Verze: Domácí pomocník v49</div>
-                    <div style={{ fontSize:12, color:'#9a96ac', marginTop:4 }}>Build 2026-06-22 · 10:14</div>
+                    <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'#1a1530' }}>Verze: Domácí pomocník v50</div>
+                    <div style={{ fontSize:12, color:'#9a96ac', marginTop:4 }}>Build 2026-06-22 · 15:42</div>
                   </div>
                 </div>
                 )}
@@ -6647,7 +6970,7 @@ function App() {
           ))}
           <div style={{ position:'absolute', top:30, right:40, fontSize:46 }}>🌙</div>
           <div style={{ transform:'scale(1.4)', marginBottom:30 }}>
-            <Mascot size={180} sleeping={true}/>
+            <Mascot size={180} kind={mascotKind} sleeping={true}/>
           </div>
           <div style={{ fontFamily:'var(--display)', fontSize:46, fontWeight:700, textAlign:'center' }}>Dobrou noc</div>
           <div style={{ fontSize:18, fontWeight:700, opacity:.7, marginTop:8, textAlign:'center' }}>{mascotName} už spí. Spinkej krásně.</div>
