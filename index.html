@@ -1764,13 +1764,26 @@ function App() {
         } else if (line.startsWith('DTSTART')) {
           const colonIdx = line.indexOf(':');
           const val = colonIdx >= 0 ? line.slice(colonIdx + 1).trim() : '';
+          const params = colonIdx >= 0 ? line.slice(0, colonIdx) : '';
           if (val) {
             const allDay = !val.includes('T');
+            const isUTC = val.endsWith('Z'); // ends with Z = UTC time
+            const hasTZID = params.indexOf('TZID=') >= 0;
             ev.start = val;
             ev.allDay = allDay;
-            const y = val.slice(0, 4), m = val.slice(4, 6), d = val.slice(6, 8);
-            const hh = allDay ? '00' : val.slice(9, 11);
-            const mm = allDay ? '00' : val.slice(11, 13);
+            let y = val.slice(0, 4), m = val.slice(4, 6), d = val.slice(6, 8);
+            let hh = allDay ? '00' : val.slice(9, 11);
+            let mm = allDay ? '00' : val.slice(11, 13);
+            // v55: pokud je UTC (končí Z), zkonvertuj na lokální čas (Prague)
+            if (isUTC && !allDay) {
+              const utc = new Date(Date.UTC(parseInt(y), parseInt(m)-1, parseInt(d), parseInt(hh), parseInt(mm)));
+              y = String(utc.getFullYear());
+              m = pad2(utc.getMonth()+1);
+              d = pad2(utc.getDate());
+              hh = pad2(utc.getHours());
+              mm = pad2(utc.getMinutes());
+            }
+            // Pokud má TZID nebo je floating (bez Z), HH:MM bereme jako lokální Prague
             ev.iso = `${y}-${m}-${d}`;
             ev.time = allDay ? '' : `${hh}:${mm}`;
             ev.dateTime = `${y}-${m}-${d}T${hh}:${mm}:00`;
@@ -1779,7 +1792,22 @@ function App() {
         } else if (line.startsWith('DTEND')) {
           const colonIdx = line.indexOf(':');
           const val = colonIdx >= 0 ? line.slice(colonIdx + 1).trim() : '';
-          if (val) ev.end = val;
+          if (val) {
+            ev.end = val;
+            // v55: extrahuj end čas (s UTC konverzí pokud Z) - kvůli délce události
+            const isAllDay = !val.includes('T');
+            if (!isAllDay) {
+              const isUTC = val.endsWith('Z');
+              let hh = val.slice(9, 11), mm = val.slice(11, 13);
+              if (isUTC) {
+                const ey = val.slice(0,4), em = val.slice(4,6), ed = val.slice(6,8);
+                const utc = new Date(Date.UTC(parseInt(ey), parseInt(em)-1, parseInt(ed), parseInt(hh), parseInt(mm)));
+                hh = pad2(utc.getHours());
+                mm = pad2(utc.getMinutes());
+              }
+              ev.endTime = hh + ':' + mm;
+            }
+          }
         } else if (line.startsWith('LOCATION:')) {
           ev.location = line.slice(9).replace(/\\,/g, ',').trim();
         } else if (line.startsWith('UID:')) {
@@ -2773,16 +2801,25 @@ function App() {
     const plc = PLACES[who] || PLACES.mama;
     const wcol = tv[plc.cvar];
     // Spoj ruční události + Google Calendar
-    const gcalForDay = gcalEvents.filter(g => g.iso === ddISO).map(g => ({
-      id: 'gcal-' + (g.uid || g.iso + g.time),
-      title: g.summary || '(bez názvu)',
-      emoji: '📅',
-      time: g.time || '',
-      allDay: !g.time, // v49: celodenní událost (DTSTART bez času)
-      dur: 1,
-      type: 'gcal',
-      fromGcal: true
-    }));
+    const gcalForDay = gcalEvents.filter(g => g.iso === ddISO).map(g => {
+      // v55: spočítej délku události (dur v hodinách) ze start+end
+      let dur = 1;
+      if (g.time && g.endTime) {
+        const [sh, sm] = g.time.split(':').map(Number);
+        const [eh, em] = g.endTime.split(':').map(Number);
+        dur = Math.max(0.25, (eh + em/60) - (sh + sm/60));
+      }
+      return {
+        id: 'gcal-' + (g.uid || g.iso + g.time),
+        title: g.summary || '(bez názvu)',
+        emoji: '📅',
+        time: g.time || '',
+        allDay: !g.time,
+        dur: dur,
+        type: 'gcal',
+        fromGcal: true
+      };
+    });
     const manualEvents = []; // v44: ručně přidané události odstraněny
     const allEventsRaw = [...manualEvents, ...gcalForDay];
     // v49: oddělit celodenní od časových
@@ -3669,13 +3706,8 @@ function App() {
                 )}
               </div>
 
-              {/* C — TEACCH pictogram timeline (rovnoměrně full width pomocí grid) */}
-              <div style={{
-                display:'grid',
-                gridTemplateColumns: 'repeat(' + Math.max(1, blueprintMins.length) + ', 1fr)',
-                gap:4,
-                padding:'2px'
-              }}>
+              {/* C — TEACCH pictogram timeline (v55: skryto, je už v rutině) */}
+              <div style={{ display:'none' }}>
                 {blueprintMins.map((b, idx) => {
                   const isCurrent = idx === currentIdx;
                   const isDone = idx < currentIdx;
@@ -3847,97 +3879,47 @@ function App() {
           {/* COL 3 — Riki + odměny dlaždice */}
           <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
 
-            {/* maskot - tamagotchi verze */}
-            <div style={{ background:'var(--maskotCard)', border:'var(--hair)', borderRadius:24, padding:'16px 20px', boxShadow:'var(--shadow)', position:'relative', overflow:'hidden', animation: ent(2) }}>
-              <div onClick={() => go('rewards')} style={{ cursor:'pointer', display:'flex', alignItems:'center', gap:14 }}>
-                <div style={{ flex:'none', position:'relative' }}>
-                  <Mascot size={78} kind={mascotKind} dancing={rikiDancing} sleeping={petSleeping || isRikiSleeping}/>
-                  {/* mood emoji bubble */}
-                  {!petSleeping && (
-                    <div style={{ position:'absolute', top:-4, right:-6, background:'#fff', border:'2px solid '+petStatus.color, borderRadius:'50%', width:26, height:26, display:'flex', alignItems:'center', justifyContent:'center', fontSize:15 }}>{petStatus.emoji}</div>
-                  )}
-                </div>
+            {/* v55: mascot - zjednodušená verze */}
+            <div style={{ background:'var(--maskotCard)', border:'var(--hair)', borderRadius:20, padding:'14px 16px', boxShadow:'var(--shadow)', position:'relative', overflow:'hidden', animation: ent(2) }}>
+              <div onClick={() => go('rewards')} style={{ cursor:'pointer', display:'flex', alignItems:'center', gap:12 }}>
+                <Mascot size={64} kind={mascotKind} dancing={rikiDancing} sleeping={petSleeping || isRikiSleeping}/>
                 <div style={{ flex:1, minWidth:0 }}>
                   {(() => {
                     const tier = getTier(totalXp);
-                    const next = getNextTier(totalXp);
-                    const progressToNext = next ? Math.min(1, (totalXp - tier.min) / (next.min - tier.min)) : 1;
                     return (
-                      <React.Fragment>
-                        <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:4 }}>
-                          <div style={{ display:'flex', alignItems:'center', gap:6, background: tier.color, color:'#fff', padding:'3px 11px', borderRadius:999, fontSize:12, fontWeight:900, boxShadow:'0 4px 14px '+tier.glow, animation: tier.name === 'Legenda' ? 'rarityPulse 2s infinite' : 'none' }}>
-                            <span style={{ fontSize:14 }}>{tier.emoji}</span>
-                            <span style={{ textTransform:'uppercase', letterSpacing:'.06em' }}>{tier.name}</span>
-                          </div>
-                          {next && (
-                            <div style={{ fontSize:11, fontWeight:800, color:'var(--muted)' }}>→ {next.emoji} {next.name} za {next.min - totalXp} XP</div>
-                          )}
+                      <div style={{ display:'flex', alignItems:'center', gap:6, marginBottom:3 }}>
+                        <div style={{ display:'flex', alignItems:'center', gap:5, background: tier.color, color:'#fff', padding:'2px 9px', borderRadius:999, fontSize:11, fontWeight:900 }}>
+                          <span style={{ fontSize:12 }}>{tier.emoji}</span>
+                          <span style={{ textTransform:'uppercase', letterSpacing:'.06em' }}>{tier.name}</span>
                         </div>
-                        <div style={{ fontFamily:'var(--display)', fontSize:21, fontWeight:600, color:'var(--ink)' }}>{mascotName} · {petStatus.label}</div>
-                      </React.Fragment>
+                      </div>
                     );
                   })()}
-                  <div style={{ display:'flex', alignItems:'center', gap:14, margin:'9px 0' }}>
-                    <div style={{ display:'flex', alignItems:'baseline', gap:5 }}>
-                      <span style={{ fontFamily:'var(--display)', fontSize:34, fontWeight:600, color:'var(--accent)' }}>{child.points}</span>
-                      <span style={{ fontSize:15, fontWeight:800, color:'var(--muted)' }}>bodů</span>
+                  <div style={{ fontFamily:'var(--display)', fontSize:17, fontWeight:600, color:'var(--ink)', lineHeight:1.1 }}>{mascotName || 'Riki'}</div>
+                  <div style={{ display:'flex', alignItems:'center', gap:10, marginTop:6 }}>
+                    <div style={{ display:'flex', alignItems:'baseline', gap:3 }}>
+                      <span style={{ fontFamily:'var(--display)', fontSize:24, fontWeight:600, color:'var(--accent)' }}>{child.points}</span>
+                      <span style={{ fontSize:11, fontWeight:800, color:'var(--muted)' }}>bodů</span>
                     </div>
-                    <div style={{ display:'flex', alignItems:'center', gap:5, background:'var(--soft)', padding:'6px 11px', borderRadius:12 }}>
-                      <span style={{ fontSize:18 }}>🔥</span>
-                      <span style={{ fontFamily:'var(--display)', fontSize:18, fontWeight:600, color:'var(--ink)' }}>{streakDays || child.streak}</span>
+                    <div style={{ display:'flex', alignItems:'center', gap:4, background:'var(--soft)', padding:'3px 9px', borderRadius:10 }}>
+                      <span style={{ fontSize:14 }}>🔥</span>
+                      <span style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'var(--ink)' }}>{streakDays || child.streak}</span>
                     </div>
-                  </div>
-                  <div style={{ height:9, background:'var(--soft)', borderRadius:8, overflow:'hidden' }}>
-                    <div style={{ height:'100%', width: child.xpPct+'%', background:'linear-gradient(90deg,var(--accent2),var(--accent))', borderRadius:8, transition:'width .6s' }}/>
                   </div>
                 </div>
               </div>
-              {/* Tamagotchi pohoda + energie + sleep tlačítko */}
-              <div style={{ display:'flex', gap:10, marginTop:14, alignItems:'center' }}>
-                <div style={{ flex:1, minWidth:0 }}>
-                  <div style={{ display:'flex', justifyContent:'space-between', fontSize:11, fontWeight:800, marginBottom:3 }}>
-                    <span style={{ color:'var(--muted)' }}>💜 Pohoda</span>
-                    <span style={{ color:'var(--ink)' }}>{petMood}%</span>
-                  </div>
-                  <div style={{ height:8, background:'var(--soft)', borderRadius:5, overflow:'hidden' }}>
-                    <div style={{ height:'100%', width: petMood+'%', background: petMood < 30 ? '#dc2626' : petMood < 60 ? '#f59e0b' : '#a855f7', borderRadius:5, transition:'width .4s' }}/>
-                  </div>
-                </div>
-                <div style={{ flex:1, minWidth:0 }}>
-                  <div style={{ display:'flex', justifyContent:'space-between', fontSize:11, fontWeight:800, marginBottom:3 }}>
-                    <span style={{ color:'var(--muted)' }}>⚡ Energie</span>
-                    <span style={{ color:'var(--ink)' }}>{petEnergy}%</span>
-                  </div>
-                  <div style={{ height:8, background:'var(--soft)', borderRadius:5, overflow:'hidden' }}>
-                    <div style={{ height:'100%', width: petEnergy+'%', background: petEnergy < 30 ? '#dc2626' : petEnergy < 60 ? '#f59e0b' : '#16a34a', borderRadius:5, transition:'width .4s' }}/>
-                  </div>
-                </div>
-                <div onClick={(e) => { e.stopPropagation(); audio.tap(); togglePetSleep(); }} style={{ cursor:'pointer', flex:'none', background: petSleeping ? '#fef3c7' : 'var(--soft)', color: petSleeping ? '#92400e' : 'var(--ink)', borderRadius:10, padding:'7px 11px', fontSize:13, fontWeight:800 }}>
-                  {petSleeping ? '☀️ Vzbudit' : '💤 Uspat'}
-                </div>
+              <div style={{ height:6, background:'var(--soft)', borderRadius:5, overflow:'hidden', marginTop:10 }}>
+                <div style={{ height:'100%', width: child.xpPct+'%', background:'linear-gradient(90deg,var(--accent2),var(--accent))', borderRadius:5, transition:'width .6s' }}/>
               </div>
-              {petMood < 25 && !petSleeping && (
-                <div style={{ marginTop:8, fontSize:11, fontWeight:800, color:'#dc2626', textAlign:'center' }}>⚠ {mascotName} je smutný — udělej rutinu nebo přečti stránku!</div>
-              )}
-              {petSleeping && (
-                <div style={{ marginTop:8, fontSize:11, fontWeight:800, color:'#7c5cff', textAlign:'center' }}>{mascotName} klidně spí a čeká až se vrátíš 💤</div>
-              )}
             </div>
 
-            {/* tiles */}
+            {/* tiles - bez Extra úkoly */}
             <div style={{ display:'grid', gridTemplateColumns:'1fr', gap:8, animation: ent(5), flex:'none' }}>
               <div onClick={() => go('rozvrh')} style={{ cursor:'pointer', background:'linear-gradient(135deg,var(--accent2),var(--accent))', borderRadius:16, padding:'11px 14px', display:'flex', alignItems:'center', gap:10, boxShadow:'var(--shadow)' }}>
                 <div style={{ fontSize:22 }}>📚</div>
                 <div style={{ flex:1, minWidth:0 }}>
                   <div style={{ fontFamily:'var(--display)', fontSize:15, fontWeight:600, color:'#fff', lineHeight:1 }}>Rozvrh</div>
                   <div style={{ fontSize:11, fontWeight:800, color:'rgba(255,255,255,.85)' }}>Sbal se na zítřek</div>
-                </div>
-              </div>
-              <div onClick={() => go('chores')} style={{ cursor:'pointer', background:'var(--tile1)', borderRadius:16, padding:'11px 14px', display:'flex', alignItems:'center', gap:10, boxShadow:'var(--shadow)' }}>
-                <div style={{ fontSize:22 }}>✨</div>
-                <div style={{ flex:1, minWidth:0 }}>
-                  <div style={{ fontFamily:'var(--display)', fontSize:15, fontWeight:600, color:'#fff', lineHeight:1 }}>Extra úkoly</div>
-                  <div style={{ fontSize:11, fontWeight:800, color:'rgba(255,255,255,.85)' }}>Bodíky navíc</div>
                 </div>
               </div>
               <div onClick={() => go('rewards')} style={{ cursor:'pointer', background:'var(--tile2)', borderRadius:16, padding:'11px 14px', display:'flex', alignItems:'center', gap:10, boxShadow:'var(--shadow)' }}>
@@ -3955,7 +3937,6 @@ function App() {
                   <div style={{ fontSize:11, fontWeight:800, color:'rgba(255,255,255,.85)' }}>{cursusUnlocked.length}/{CURSUS_STAGES.length} oblastí</div>
                 </div>
                 {(() => {
-                  // Show pulsing dot if next stage is now affordable
                   const nextIdx = cursusUnlocked.length;
                   if (nextIdx < CURSUS_STAGES.length && totalXp >= CURSUS_STAGES[nextIdx].costXp) {
                     return <div style={{ position:'absolute', top:-4, right:-4, width:14, height:14, borderRadius:'50%', background:'#fbbf24', border:'2px solid #fff', animation:'softPulse 1.5s ease-in-out infinite' }}/>;
@@ -5149,35 +5130,7 @@ function App() {
       </React.Fragment>
       )}
 
-      {/* v6: Worry box - dítě napíše soukromý vzkaz mámě */}
-      {showWorryBox && !parentOpen && !isMobile && (
-        <div style={{ position:'absolute', inset:0, zIndex:78, background:'rgba(10,8,30,.55)', display:'flex', alignItems:'center', justifyContent:'center', backdropFilter:'blur(6px)' }}>
-          <div style={{ background:'var(--surface)', borderRadius:28, padding:'30px 34px', maxWidth:620, width:'90%', boxShadow:'var(--shadow)', animation:'popIn .4s ease' }}>
-            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'start', marginBottom:14 }}>
-              <div>
-                <div style={{ fontFamily:'var(--display)', fontSize:24, fontWeight:700, color:'var(--ink)' }}>Něco mě trápí 💜</div>
-                <div style={{ fontSize:14, color:'var(--muted)', fontWeight:700, marginTop:4 }}>Napiš to a máma si to přečte.</div>
-              </div>
-              <div onClick={() => { setShowWorryBox(false); setNewWorryText(''); }} style={{ cursor:'pointer', fontSize:24, color:'var(--muted)', padding:8 }}>✕</div>
-            </div>
-            <textarea value={newWorryText} onChange={(e) => setNewWorryText(e.target.value)} placeholder="Napiš tady, co tě trápí…" rows={5} style={{ width:'100%', border:'1px solid #e6e6ec', borderRadius:14, padding:'14px 16px', fontSize:16, fontFamily:'Nunito Sans', resize:'vertical', boxSizing:'border-box', outline:'none' }} autoFocus />
-            <div style={{ display:'flex', gap:10, marginTop:14 }}>
-              <div onClick={() => { setShowWorryBox(false); setNewWorryText(''); }} style={{ cursor:'pointer', flex:1, background:'#f0f0f7', color:'#6a6680', borderRadius:14, padding:'12px 14px', textAlign:'center', fontWeight:800, fontSize:15 }}>Zrušit</div>
-              <div onClick={() => {
-                const txt = newWorryText.trim();
-                if (!txt) return;
-                const msg = { id:'w'+Date.now(), text:txt, date: new Date().toISOString(), read:false };
-                setWorryMessages(m => [msg, ...m]);
-                setNewWorryText('');
-                setShowWorryBox(false);
-                audio.ding();
-                showToast('Posláno mámě 💜', '✉️');
-                if (playVoiceRef.current) playVoiceRef.current('worrySent', 'Posláno mámě.');
-              }} style={{ cursor:'pointer', flex:1, background:'linear-gradient(135deg, #c084fc, #a855f7)', color:'#fff', borderRadius:14, padding:'12px 14px', textAlign:'center', fontWeight:800, fontSize:15 }}>Poslat mámě 💜</div>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* v55: Worry box odstraněn - feature kompletně pryč */}
 
       {/* ===================== PARENT OVERLAY (fullscreen) ===================== */}
       {parentOpen && (
@@ -6538,7 +6491,7 @@ function App() {
                   <div style={{ background:'#fff', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
                     <div style={{ fontFamily:'var(--display)', fontSize:18, fontWeight:600, color:'#1a1530', marginBottom:10 }}>Maskot</div>
                     <div style={{ fontSize:13, fontWeight:700, color:'#5a566e', marginBottom:8 }}>Jméno maskota</div>
-                    <input value={mascotName} onChange={(e) => setMascotName(e.target.value || 'Riki')} style={{ width:'100%', border:'1px solid #e6e6ec', borderRadius:12, padding:'10px 12px', fontSize:14, marginBottom:16 }} />
+                    <input value={mascotName} onChange={(e) => setMascotName(e.target.value)} placeholder="Riki" style={{ width:'100%', border:'1px solid #e6e6ec', borderRadius:12, padding:'10px 12px', fontSize:14, marginBottom:16 }} />
 
                     <div style={{ fontSize:13, fontWeight:700, color:'#5a566e', marginBottom:10 }}>Vyber postavičku</div>
                     <div style={{ display:'grid', gridTemplateColumns:'repeat(5, 1fr)', gap:10 }}>
@@ -7032,8 +6985,8 @@ function App() {
 
                   {/* Verze (vždy zobrazeno) */}
                   <div style={{ background:'#fff', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
-                    <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'#1a1530' }}>Verze: Domácí pomocník v54</div>
-                    <div style={{ fontSize:12, color:'#9a96ac', marginTop:4 }}>Build 2026-06-22 · 16:10</div>
+                    <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'#1a1530' }}>Verze: Domácí pomocník v55</div>
+                    <div style={{ fontSize:12, color:'#9a96ac', marginTop:4 }}>Build 2026-06-22 · 16:37</div>
                   </div>
                 </div>
                 )}
