@@ -2437,14 +2437,18 @@ function App() {
       id: 'gcal-' + (g.uid || g.iso + g.time),
       title: g.summary || '(bez názvu)',
       emoji: '📅',
-      time: g.time || '9:00',
+      time: g.time || '',
+      allDay: !g.time, // v49: celodenní událost (DTSTART bez času)
       dur: 1,
       type: 'gcal',
       fromGcal: true
     }));
     const manualEvents = []; // v44: ručně přidané události odstraněny
-    const allEvents = [...manualEvents, ...gcalForDay];
-    const evs = allEvents.map(e => {
+    const allEventsRaw = [...manualEvents, ...gcalForDay];
+    // v49: oddělit celodenní od časových
+    const allDayEvents = allEventsRaw.filter(e => e.allDay);
+    const timedEvents = allEventsRaw.filter(e => !e.allDay);
+    const evs = timedEvents.map(e => {
       const col = e.fromGcal ? '#1e40af' : (TYPE_COLOR[e.type] || accent);
       const startDec = parseT(e.time);
       let top = (startDec - calStart) * pxH;
@@ -2462,6 +2466,7 @@ function App() {
       whoLabel: plc.short,
       colBg: isToday ? hexA(accent, 0.05) : 'transparent',
       events: evs,
+      allDayEvents, // v49
     };
   });
   const handover = 'Tento týden: Po–Út u mámy, St–Čt u táty, Pá u mámy, So u babičky, Ne u mámy. Předání ve středu ráno u školy.';
@@ -3758,6 +3763,26 @@ function App() {
                   <div style={{ width:8, height:8, borderRadius:'50%', background: day.whoColor }}/>
                   <span style={{ fontSize:11, fontWeight:900, color: day.whoInk }}>{day.whoLabel}</span>
                 </div>
+                {/* v49: celodenní události jako chipy */}
+                {day.allDayEvents && day.allDayEvents.length > 0 && (
+                  <div style={{ marginTop:6, display:'flex', flexDirection:'column', gap:3 }}>
+                    {day.allDayEvents.map((e, ei) => (
+                      <div key={ei} title={e.title} style={{
+                        background: day.isToday ? 'rgba(255,255,255,.25)' : 'rgba(30, 64, 175, .15)',
+                        color: day.isToday ? '#fff' : '#1e40af',
+                        borderRadius:7,
+                        padding:'3px 6px',
+                        fontSize:10, fontWeight:800,
+                        whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis',
+                        textAlign:'left',
+                        display:'flex', alignItems:'center', gap:4
+                      }}>
+                        <span style={{ fontSize:10 }}>📅</span>
+                        <span style={{ flex:1, minWidth:0, overflow:'hidden', textOverflow:'ellipsis' }}>{e.title}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             ))}
           </div>
@@ -6363,8 +6388,8 @@ function App() {
 
                   {/* Verze (vždy zobrazeno) */}
                   <div style={{ background:'#fff', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
-                    <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'#1a1530' }}>Verze: Domácí pomocník v48</div>
-                    <div style={{ fontSize:12, color:'#9a96ac', marginTop:4 }}>Build 2026-06-22 · 10:10</div>
+                    <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'#1a1530' }}>Verze: Domácí pomocník v49</div>
+                    <div style={{ fontSize:12, color:'#9a96ac', marginTop:4 }}>Build 2026-06-22 · 10:14</div>
                   </div>
                 </div>
                 )}
