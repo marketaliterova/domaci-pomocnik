@@ -699,6 +699,15 @@ function useAudio() {
     success:() => { [523,659,784,1047].forEach((f,i) => tone(f, 0.4, i*0.1, 'triangle', 0.16)); },
     undo:   () => { tone(300, 0.14, 0, 'sine', 0.12); },
     tap:    () => { tone(660, 0.06, 0, 'sine', 0.08); },
+    // v47: jemné pípnutí pro připomínku času (3 tóny stoupající)
+    softBeep: () => { tone(880, 0.12, 0, 'sine', 0.16); tone(1100, 0.12, 0.15, 'sine', 0.16); tone(1400, 0.14, 0.3, 'sine', 0.16); },
+    // v47: alarm pro urgentní (4 střídavé tóny)
+    urgentAlarm: () => {
+      for (let i = 0; i < 4; i++) {
+        tone(1200, 0.18, i * 0.25, 'square', 0.22);
+        tone(900, 0.18, i * 0.25 + 0.12, 'square', 0.22);
+      }
+    },
     ensure,
   }), [tone, ensure]);
 }
@@ -1048,6 +1057,8 @@ function App() {
   const [routineHistory, setRoutineHistory] = useState((persisted && Array.isArray(persisted.routineHistory)) ? persisted.routineHistory : []);
   // v43: Spin Wheel - dostupné jednou denně po dokončení ranní rutiny
   const [spinWheelLastDate, setSpinWheelLastDate] = useState((persisted && persisted.spinWheelLastDate) || '');
+  // v47: pole thresholdů (v minutách) které byly DNES odpáleny pro ranní alarm odchodu - reset s denním resetem
+  const [morningAlertsFired, setMorningAlertsFired] = useState((persisted && Array.isArray(persisted.morningAlertsFired)) ? persisted.morningAlertsFired : []);
   // v44: CURSUS - pole odemčených stage ID (např. ['forest', 'mountain'])
   const [cursusUnlocked, setCursusUnlocked] = useState((persisted && Array.isArray(persisted.cursusUnlocked)) ? persisted.cursusUnlocked : []);
   // Pro animaci právě odemčené - dočasně showovat modal
@@ -1165,7 +1176,7 @@ function App() {
       voiceMap, voiceBaseUrl, dayBlueprintByDay,
       hueWebhookUrl, hueButtons,
       routineHistory, spinWheelLastDate,
-      cursusUnlocked,
+      cursusUnlocked, morningAlertsFired,
     });
   }, [theme, points, totalXp, streak, morning, evening, doneM, doneE, whoHome, departMin,
       shopItems, shopState, choreState, pendingApprovals, packState, packAwarded,
@@ -1327,6 +1338,48 @@ function App() {
     console.log('[auto-heal] Vyčištěno', stuck.length, 'stuck pending chores:', stuck);
   }, []); // empty deps = pouze 1× při mountu
 
+  // v47: Ranní alarmy - pípne když se blíží odchod do školy
+  // Thresholdy v minutách před departMin: 30 (jemné), 15 (jemné), 5 (urgentní), 0 (BUDÍK)
+  useEffect(() => {
+    const check = () => {
+      const now = new Date();
+      const dow = now.getDay();
+      if (dow === 0 || dow === 6) return; // víkend - žádné alarmy
+      const nowMin = now.getHours() * 60 + now.getMinutes();
+      const remaining = departMin - nowMin;
+      // Mimo aktivní okno - od 1 hod před departMin do +2 min
+      if (remaining > 45 || remaining < -2) return;
+      // Pokud je ranní rutina už hotová, žádné pípání
+      const morningList = morning.filter(s => s.on);
+      const allMorningDone = morningList.length > 0 && morningList.every(s => doneM[s.id]);
+      if (allMorningDone) return;
+
+      const thresholds = [
+        { min: 30, sound: 'softBeep',    msg: 'Zbývá 30 minut do odchodu', voiceText: 'Zbývá 30 minut do školy' },
+        { min: 15, sound: 'softBeep',    msg: 'Zbývá 15 minut, pospěš si', voiceText: 'Patnáct minut, pospěš si' },
+        { min: 5,  sound: 'urgentAlarm', msg: 'Pozor, už jen 5 minut!',   voiceText: 'Pět minut, honem!' },
+        { min: 0,  sound: 'urgentAlarm', msg: 'Čas vyrazit! 🏃',            voiceText: 'Čas vyrazit do školy!' },
+      ];
+      for (const t of thresholds) {
+        // Trigger pokud nowMin překročil práh + ještě jsme ho dnes neodpálili
+        // remaining = departMin - nowMin → remaining <= t.min znamená že jsme prošli prahem
+        if (remaining <= t.min && morningAlertsFired.indexOf(t.min) < 0) {
+          // Odpal!
+          if (audio[t.sound]) audio[t.sound]();
+          showToast(t.msg, '⏰');
+          if (playVoiceRef.current) {
+            playVoiceRef.current(['alarm-' + t.min, 'alarm'], t.voiceText);
+          }
+          setMorningAlertsFired(arr => [...arr, t.min]);
+          break; // jeden threshold za check, ne všechny najednou
+        }
+      }
+    };
+    check();
+    const id = setInterval(check, 30 * 1000); // každých 30s
+    return () => clearInterval(id);
+  }, [departMin, morning, doneM, morningAlertsFired, audio, showToast]);
+
   // v41: Denní snapshot - když se změní den, ulož včerejší rutinu do historie
   useEffect(() => {
     const checkDay = () => {
@@ -1360,6 +1413,7 @@ function App() {
       setChoreState({});
       setPackState({});
       setPackAwarded(false);
+      setMorningAlertsFired([]); // v47: reset ranních alarmů pro nový den
       setLastDayKey(today);
     };
     checkDay();
@@ -2811,6 +2865,7 @@ function App() {
     if (Array.isArray(s.routineHistory)) setRoutineHistory(s.routineHistory);
     if (typeof s.spinWheelLastDate === 'string') setSpinWheelLastDate(s.spinWheelLastDate);
     if (Array.isArray(s.cursusUnlocked)) setCursusUnlocked(s.cursusUnlocked);
+    if (Array.isArray(s.morningAlertsFired)) setMorningAlertsFired(s.morningAlertsFired);
     if (isStr(s.gcalUrl)) setGcalUrl(s.gcalUrl);
     if (isArr(s.gcalEvents)) setGcalEvents(s.gcalEvents);
     if (isNum(s.gcalLastFetch)) setGcalLastFetch(s.gcalLastFetch);
@@ -6252,8 +6307,8 @@ function App() {
 
                   {/* Verze (vždy zobrazeno) */}
                   <div style={{ background:'#fff', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
-                    <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'#1a1530' }}>Verze: Domácí pomocník v46</div>
-                    <div style={{ fontSize:12, color:'#9a96ac', marginTop:4 }}>Build 2026-06-22 · 07:30</div>
+                    <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'#1a1530' }}>Verze: Domácí pomocník v47</div>
+                    <div style={{ fontSize:12, color:'#9a96ac', marginTop:4 }}>Build 2026-06-22 · 07:33</div>
                   </div>
                 </div>
                 )}
