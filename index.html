@@ -610,7 +610,7 @@ const saveState = (s) => {
       // v14 hero quest
       inventory: s.inventory,
       // v15
-      lastDayKey: s.lastDayKey, gcalUrl: s.gcalUrl, gcalEvents: s.gcalEvents, gcalLastFetch: s.gcalLastFetch,
+      lastDayKey: s.lastDayKey, gcalUrl: s.gcalUrl, gcalEvents: s.gcalEvents, gcalLastFetch: s.gcalLastFetch, gcalHourOffset: s.gcalHourOffset,
       whoHomeSchedule: s.whoHomeSchedule,
       // v17
       voiceMap: s.voiceMap, voiceBaseUrl: s.voiceBaseUrl,
@@ -1345,6 +1345,8 @@ function App() {
   const [gcalUrl, setGcalUrl] = useState((persisted && persisted.gcalUrl) || '');
   const [gcalEvents, setGcalEvents] = useState((persisted && Array.isArray(persisted.gcalEvents)) ? persisted.gcalEvents : []);
   const [gcalLastFetch, setGcalLastFetch] = useState((persisted && persisted.gcalLastFetch) || 0);
+  // v63: Manuální fix odchylky času — pokud auto-parsing nepřesně, parent může nastavit ±N hodin
+  const [gcalHourOffset, setGcalHourOffset] = useState((persisted && persisted.gcalHourOffset) || 0);
   // whoHomeSchedule: 7 položek (0=Pondělí ... 6=Neděle), hodnoty 'mama'|'tata'|'oba'|'sam'|'babi'|'deda'
   const [whoHomeSchedule, setWhoHomeSchedule] = useState((persisted && Array.isArray(persisted.whoHomeSchedule) && persisted.whoHomeSchedule.length === 7) ? persisted.whoHomeSchedule : ['mama','mama','mama','mama','mama','mama','mama']);
   // v17: hlasové vzkazy (mapování event id → URL na MP3)
@@ -1444,7 +1446,7 @@ function App() {
       syncUrl, lastSyncTime,
       petSleeping,
       inventory,
-      lastDayKey, gcalUrl, gcalEvents, gcalLastFetch, whoHomeSchedule,
+      lastDayKey, gcalUrl, gcalEvents, gcalLastFetch, gcalHourOffset, whoHomeSchedule,
       voiceMap, voiceBaseUrl, dayBlueprintByDay,
       hueWebhookUrl, hueButtons,
       routineHistory, spinWheelLastDate,
@@ -1462,7 +1464,7 @@ function App() {
       syncUrl, lastSyncTime,
       petSleeping,
       inventory,
-      lastDayKey, gcalUrl, gcalEvents, gcalLastFetch, whoHomeSchedule,
+      lastDayKey, gcalUrl, gcalEvents, gcalLastFetch, gcalHourOffset, whoHomeSchedule,
       voiceMap, voiceBaseUrl, dayBlueprintByDay,
       hueWebhookUrl, hueButtons,
       routineHistory, spinWheelLastDate,
@@ -1685,13 +1687,36 @@ function App() {
 
   // ---------------------- v15: Google Calendar fetch ----------------------
   const parseICal = useCallback((text) => {
-    // v41: Robustnější iCal parser
-    // - Filtruje STATUS:CANCELLED
-    // - Podporuje opakující se události (RRULE FREQ=DAILY/WEEKLY)
-    // - DTSTART s TZID i UTC i all-day
-    // - SUMMARY se escapováním + fallback na "(bez názvu)"
-    // - Filtruje EXDATE (vyjímky z opakování)
+    // v63: Robustnější parser - používá Intl.DateTimeFormat s explicitní TZ Europe/Prague
+    // místo getHours() (které závisí na timezone prohlížeče)
     if (!text || typeof text !== 'string') return [];
+
+    // Helper: UTC datetime → Europe/Prague local hours/minutes (explicitní TZ)
+    function utcToPrague(year, month, day, hour, minute) {
+      try {
+        const utc = new Date(Date.UTC(year, month-1, day, hour, minute));
+        const fmt = new Intl.DateTimeFormat('en-GB', {
+          timeZone: 'Europe/Prague',
+          year: 'numeric', month: '2-digit', day: '2-digit',
+          hour: '2-digit', minute: '2-digit', hour12: false
+        });
+        const parts = fmt.formatToParts(utc);
+        const o = {};
+        parts.forEach(p => { o[p.type] = p.value; });
+        return { y: o.year, m: o.month, d: o.day, hh: o.hour === '24' ? '00' : o.hour, mm: o.minute };
+      } catch (e) {
+        // Fallback - browser conversion
+        const utc = new Date(Date.UTC(year, month-1, day, hour, minute));
+        return {
+          y: String(utc.getFullYear()),
+          m: pad2(utc.getMonth()+1),
+          d: pad2(utc.getDate()),
+          hh: pad2(utc.getHours()),
+          mm: pad2(utc.getMinutes())
+        };
+      }
+    }
+
     const rawBlocks = text.split('BEGIN:VEVENT');
     const parsedEvents = [];
 
@@ -1706,7 +1731,6 @@ function App() {
         if (line.startsWith('STATUS:')) {
           if (line.slice(7).trim().toUpperCase() === 'CANCELLED') cancelled = true;
         } else if (line.startsWith('SUMMARY')) {
-          // SUMMARY:Foo nebo SUMMARY;LANGUAGE=cs:Foo
           const colonIdx = line.indexOf(':');
           if (colonIdx >= 0) {
             ev.summary = line.slice(colonIdx + 1).replace(/\\,/g, ',').replace(/\\;/g, ';').replace(/\\n/gi, ' ').replace(/\\\\/g, '\\').trim();
@@ -1715,54 +1739,62 @@ function App() {
           const colonIdx = line.indexOf(':');
           const val = colonIdx >= 0 ? line.slice(colonIdx + 1).trim() : '';
           const params = colonIdx >= 0 ? line.slice(0, colonIdx) : '';
-          // v57: DEBUG log pro každý DTSTART - uvidíme co posílá Google
-          try { console.log('[gcal] DTSTART line:', line, '| val:', val, '| params:', params); } catch(e) {}
+          try { console.log('[gcal v63] DTSTART:', line); } catch(e) {}
           if (val) {
             const allDay = !val.includes('T');
-            const isUTC = val.endsWith('Z'); // ends with Z = UTC time
-            const hasTZID = params.indexOf('TZID=') >= 0;
+            const isUTC = val.endsWith('Z');
             ev.start = val;
             ev.allDay = allDay;
             let y = val.slice(0, 4), m = val.slice(4, 6), d = val.slice(6, 8);
             let hh = allDay ? '00' : val.slice(9, 11);
             let mm = allDay ? '00' : val.slice(11, 13);
-            // v55: pokud je UTC (končí Z), zkonvertuj na lokální čas (Prague)
+            // v63: Pokud je UTC (Z), zkonvertuj přes Intl s explicitní Europe/Prague
             if (isUTC && !allDay) {
-              const utc = new Date(Date.UTC(parseInt(y), parseInt(m)-1, parseInt(d), parseInt(hh), parseInt(mm)));
-              y = String(utc.getFullYear());
-              m = pad2(utc.getMonth()+1);
-              d = pad2(utc.getDate());
-              hh = pad2(utc.getHours());
-              mm = pad2(utc.getMinutes());
+              const conv = utcToPrague(parseInt(y), parseInt(m), parseInt(d), parseInt(hh), parseInt(mm));
+              y = conv.y; m = conv.m; d = conv.d; hh = conv.hh; mm = conv.mm;
             }
-            // Pokud má TZID nebo je floating (bez Z), HH:MM bereme jako lokální Prague
+            // Apply manual offset (user-set v admin pro fix odchylky)
+            if (!allDay && gcalHourOffset !== 0) {
+              const totalMins = parseInt(hh) * 60 + parseInt(mm) + gcalHourOffset * 60;
+              let newH = Math.floor(totalMins / 60), newM = ((totalMins % 60) + 60) % 60;
+              if (newH < 0) { newH += 24; /* simplistic - same day pro jednoduchost */ }
+              if (newH >= 24) newH -= 24;
+              hh = pad2(newH); mm = pad2(newM);
+            }
             ev.iso = `${y}-${m}-${d}`;
             ev.time = allDay ? '' : `${hh}:${mm}`;
             ev.dateTime = `${y}-${m}-${d}T${hh}:${mm}:00`;
             ev.startDate = new Date(parseInt(y), parseInt(m)-1, parseInt(d), parseInt(hh), parseInt(mm));
-            try { console.log('[gcal] parsed:', ev.iso, ev.time, '| isUTC:', isUTC, '| hasTZID:', hasTZID, '| browserTZ offset:', new Date().getTimezoneOffset()); } catch(e) {}
+            ev._raw_dtstart = val;
+            try { console.log('[gcal v63] parsed:', ev.iso, ev.time, '| raw:', val, '| isUTC:', isUTC); } catch(e) {}
           }
         } else if (line.startsWith('DTEND')) {
           const colonIdx = line.indexOf(':');
           const val = colonIdx >= 0 ? line.slice(colonIdx + 1).trim() : '';
           if (val) {
             ev.end = val;
-            // v55: extrahuj end čas (s UTC konverzí pokud Z) - kvůli délce události
             const isAllDay = !val.includes('T');
             if (!isAllDay) {
               const isUTC = val.endsWith('Z');
               let hh = val.slice(9, 11), mm = val.slice(11, 13);
               if (isUTC) {
                 const ey = val.slice(0,4), em = val.slice(4,6), ed = val.slice(6,8);
-                const utc = new Date(Date.UTC(parseInt(ey), parseInt(em)-1, parseInt(ed), parseInt(hh), parseInt(mm)));
-                hh = pad2(utc.getHours());
-                mm = pad2(utc.getMinutes());
+                const conv = utcToPrague(parseInt(ey), parseInt(em), parseInt(ed), parseInt(hh), parseInt(mm));
+                hh = conv.hh; mm = conv.mm;
+              }
+              // Apply same offset
+              if (gcalHourOffset !== 0) {
+                const totalMins = parseInt(hh) * 60 + parseInt(mm) + gcalHourOffset * 60;
+                let newH = Math.floor(totalMins / 60), newM = ((totalMins % 60) + 60) % 60;
+                if (newH < 0) newH += 24;
+                if (newH >= 24) newH -= 24;
+                hh = pad2(newH); mm = pad2(newM);
               }
               ev.endTime = hh + ':' + mm;
+              ev._raw_dtend = val;
             }
           }
         } else if (line.startsWith('DURATION:')) {
-          // v61: Parse DURATION (např. PT8H, PT45M, PT1H30M) — alternativa k DTEND
           const dur = line.slice(9).trim();
           const m = dur.match(/PT(?:(\d+)H)?(?:(\d+)M)?/);
           if (m) {
@@ -2033,10 +2065,7 @@ function App() {
     if (!force && Date.now() - gcalLastFetch < 15 * 60 * 1000) return;
     setGcalFetchStatus('fetching');
     setGcalFetchError('');
-    // v61: anti-cache - přidej unikátní query param k původnímu URL, aby proxy nemohl vrátit stale data
-    const cacheBuster = '_cb=' + Date.now();
-    const sep = gcalUrl.indexOf('?') >= 0 ? '&' : '?';
-    const targetUrl = gcalUrl + sep + cacheBuster;
+    // v63: cache buster ODSTRANĚN - některé proxy/Google ho nezvládá konzistentně
     // v51: zkusit více proxies postupně - allorigins občas selhává
     const proxies = [
       (u) => 'https://api.allorigins.win/raw?url=' + encodeURIComponent(u),
@@ -2045,7 +2074,7 @@ function App() {
     ];
     let lastErr = '';
     for (let pi = 0; pi < proxies.length; pi++) {
-      const proxyUrl = proxies[pi](targetUrl);
+      const proxyUrl = proxies[pi](gcalUrl);
       try {
         const r = await fetch(proxyUrl);
         if (!r.ok) { lastErr = 'HTTP ' + r.status + ' z proxy #' + (pi+1); continue; }
@@ -5975,18 +6004,61 @@ function App() {
                     )}
                     {gcalEvents.length > 0 && (
                       <div style={{ marginTop:10, background:'#fff', borderRadius:10, padding:'8px 10px', maxHeight:240, overflowY:'auto' }}>
-                        <div style={{ fontSize:10, fontWeight:900, color:'#64748b', textTransform:'uppercase', letterSpacing:'.08em', marginBottom:6 }}>Náhled prvních 12 událostí:</div>
+                        <div style={{ fontSize:10, fontWeight:900, color:'#64748b', textTransform:'uppercase', letterSpacing:'.08em', marginBottom:6 }}>Náhled · raw vs. parsed:</div>
                         {gcalEvents.slice(0, 12).map((ev, i) => (
-                          <div key={i} style={{ padding:'6px 0', borderBottom: i < 11 ? '1px solid #f0f0f5' : 'none', fontSize:12, display:'flex', gap:6, alignItems:'baseline' }}>
+                          <div key={i} style={{ padding:'6px 0', borderBottom: i < 11 ? '1px solid #f0f0f5' : 'none', fontSize:11, display:'flex', gap:6, alignItems:'baseline', flexWrap:'wrap' }}>
                             <span style={{ fontWeight:800, color:'#1e40af', minWidth:55 }}>{ev.iso.slice(5).replace('-','/')}</span>
                             <span style={{ fontWeight:700, color:'#0f172a', fontFamily:'monospace', minWidth:90 }}>
                               {ev.allDay ? 'celý den' : (ev.time + (ev.endTime ? '–' + ev.endTime : ''))}
                             </span>
-                            <span style={{ color:'#1a1530', flex:1, minWidth:0, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{ev.summary}</span>
+                            {ev._raw_dtstart && (
+                              <span style={{ fontSize:10, color:'#94a3b8', fontFamily:'monospace' }}>(raw: {ev._raw_dtstart}{ev._raw_dtend ? '→' + ev._raw_dtend : ''})</span>
+                            )}
+                            <span style={{ color:'#1a1530', flex:'1 1 100%', minWidth:0, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{ev.summary}</span>
                           </div>
                         ))}
                       </div>
                     )}
+
+                    {/* v63: MANUAL HOUR OFFSET — pokud auto-parsing nepřesný, parent posune */}
+                    {gcalEvents.length > 0 && (
+                      <div style={{ marginTop:10, background:'#fff3e0', borderRadius:10, padding:'10px 12px', border:'2px solid #fb923c' }}>
+                        <div style={{ fontSize:12, fontWeight:900, color:'#9a3412', marginBottom:8 }}>⏰ Posun času (fallback fix)</div>
+                        <div style={{ fontSize:11, fontWeight:700, color:'#7c2d12', lineHeight:1.4, marginBottom:8 }}>
+                          Pokud časy událostí nesedí (např. místo 8:00 vidíš 6:00), nastav posun. <b>{gcalHourOffset > 0 ? '+' + gcalHourOffset : gcalHourOffset}h</b>
+                        </div>
+                        <div style={{ display:'flex', gap:6, alignItems:'center', flexWrap:'wrap' }}>
+                          {[-3, -2, -1, 0, 1, 2, 3].map(h => (
+                            <div key={h} onClick={() => {
+                              audio.tap();
+                              setGcalHourOffset(h);
+                              // Re-parse with new offset
+                              if (gcalRawText) {
+                                setTimeout(() => {
+                                  try {
+                                    const reparsed = parseICal(gcalRawText);
+                                    setGcalEvents(reparsed);
+                                  } catch(e) {}
+                                }, 50);
+                              }
+                            }} style={{
+                              cursor:'pointer',
+                              padding:'6px 12px',
+                              borderRadius:8,
+                              background: gcalHourOffset === h ? '#9a3412' : '#fff',
+                              color: gcalHourOffset === h ? '#fff' : '#9a3412',
+                              border: '2px solid #9a3412',
+                              fontWeight:800,
+                              fontSize:13
+                            }}>{h > 0 ? '+' + h : h}h</div>
+                          ))}
+                        </div>
+                        <div style={{ fontSize:10, fontWeight:700, color:'#9a3412', marginTop:6, lineHeight:1.4 }}>
+                          Tip: pokud událost je v Google v 8:00, ale tady vidíš 6:00 → nastav <b>+2h</b>. Pak změny zůstanou trvale.
+                        </div>
+                      </div>
+                    )}
+
                     {/* v61: Debug & re-parse */}
                     {(gcalRawText || gcalEvents.length > 0) && (
                       <div style={{ marginTop:10, display:'flex', gap:6, flexWrap:'wrap' }}>
@@ -6014,7 +6086,6 @@ function App() {
                         </div>
                         {gcalRawText && (
                           <div onClick={() => {
-                            // Find first event with weird time and show its raw block
                             const blocks = gcalRawText.split('BEGIN:VEVENT').slice(1, 4);
                             const dump = blocks.map((b, idx) => 'EVENT #' + (idx+1) + ':\n' + b.split('END:VEVENT')[0].slice(0, 500)).join('\n\n---\n\n');
                             window.alert('První 3 raw VEVENT bloky (zkráceno):\n\n' + dump);
@@ -6961,8 +7032,8 @@ function App() {
 
                   {/* Verze (vždy zobrazeno) */}
                   <div style={{ background:'#fff', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
-                    <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'#1a1530' }}>Verze: Domácí pomocník v62</div>
-                    <div style={{ fontSize:12, color:'#9a96ac', marginTop:4 }}>Build 2026-06-22 · 18:42 · obchod fits 1 page</div>
+                    <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'#1a1530' }}>Verze: Domácí pomocník v63</div>
+                    <div style={{ fontSize:12, color:'#9a96ac', marginTop:4 }}>Build 2026-06-22 · 18:53 · kal Intl+offset</div>
                   </div>
                 </div>
                 )}
