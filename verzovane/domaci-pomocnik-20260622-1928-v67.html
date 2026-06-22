@@ -6,6 +6,21 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
+<!-- v67: AGRESIVNÍ cache-bust auto redirect (jen jednou per session) -->
+<script>
+(function(){
+  try {
+    var url = location.href;
+    var hasParam = url.indexOf('v=') >= 0 || url.indexOf('_cb=') >= 0;
+    var sessionKey = '_dompomocnik_cb_v67';
+    if (!hasParam && !sessionStorage.getItem(sessionKey)) {
+      sessionStorage.setItem(sessionKey, '1');
+      var sep = url.indexOf('?') >= 0 ? '&' : '?';
+      location.replace(url + sep + 'v=67_' + Date.now());
+    }
+  } catch(e) {}
+})();
+</script>
 <title>Domácí pomocník</title>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#2f6bff">
@@ -7494,7 +7509,7 @@ function App() {
                     <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:12, flexWrap:'wrap' }}>
                       <div style={{ flex:1, minWidth:0 }}>
                         <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'#1a1530' }}>Verze: Domácí pomocník v67</div>
-                        <div style={{ fontSize:12, color:'#9a96ac', marginTop:4 }}>Build 2026-06-22 · 19:28 · AAA neon HUD + juice</div>
+                        <div style={{ fontSize:12, color:'#9a96ac', marginTop:4 }}>Build 2026-06-22 · 19:42 · v67 cache-bust force</div>
                       </div>
                       <div onClick={() => {
                         audio.tap();
