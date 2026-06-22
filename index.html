@@ -2657,11 +2657,23 @@ function App() {
     }),
   };
 
-  // today events
-  const todayEvents = (weekEvents[wd] || []).map(e => ({
-    ...e, color: TYPE_COLOR[e.type] || accent,
-    sub: ({skola:'Vyučování', sport:'Nezapomeň věci', hudba:'Kroužek', vylet:'Celý den', rodina:'Společný čas'})[e.type] || ''
-  }));
+  // v60: today + tomorrow events z gcalEvents (manuální weekEvents jsou legacy)
+  const _today = new Date();
+  const _todayISO = _today.getFullYear() + '-' + pad2(_today.getMonth()+1) + '-' + pad2(_today.getDate());
+  const _tomorrow = new Date(_today); _tomorrow.setDate(_today.getDate() + 1);
+  const _tomorrowISO = _tomorrow.getFullYear() + '-' + pad2(_tomorrow.getMonth()+1) + '-' + pad2(_tomorrow.getDate());
+  const _mkEvent = (g) => ({
+    id: 'gcal-' + (g.uid || g.iso + g.time),
+    emoji: '📅',
+    time: g.time || (g.allDay ? 'celý den' : ''),
+    title: g.summary || '(bez názvu)',
+    color: '#1e40af',
+    sub: g.allDay ? 'Celý den' : (g.endTime ? 'do ' + g.endTime : '')
+  });
+  const todayEvents = gcalEvents.filter(g => g.iso === _todayISO).map(_mkEvent)
+    .sort((a, b) => (a.time || '').localeCompare(b.time || ''));
+  const tomorrowEvents = gcalEvents.filter(g => g.iso === _tomorrowISO).map(_mkEvent)
+    .sort((a, b) => (a.time || '').localeCompare(b.time || ''));
 
   // child (v56: streak používá aktuální streakDays, ne legacy streak bez setteru)
   const level = Math.floor(totalXp / 100) + 1;
@@ -3504,6 +3516,19 @@ function App() {
               syncStatus === 'error' ? '#dc2626' : '#9ca3af',
               boxShadow: syncStatus === 'ok' ? '0 0 8px rgba(22,163,74,.5)' : 'none', flex:'none' }}/>
           )}
+          {/* v60: Hodiny vpravo nahoře (re-renderuje se každou vteřinu via nowTick) */}
+          {(() => {
+            const _t = new Date(nowTick);
+            const hh = pad2(_t.getHours());
+            const mm = pad2(_t.getMinutes());
+            return (
+              <div style={{ background:'var(--surface)', border:'var(--hair)', borderRadius:16, padding:'10px 18px', boxShadow:'var(--shadow)', display:'flex', alignItems:'center', gap:4, flex:'none' }}>
+                <span style={{ fontFamily:'var(--display)', fontSize:30, fontWeight:600, color:'var(--ink)', letterSpacing:'.03em', lineHeight:1 }}>{hh}</span>
+                <span style={{ fontFamily:'var(--display)', fontSize:30, fontWeight:600, color:'var(--accent)', lineHeight:1, animation: 'softPulse 1s ease-in-out infinite' }}>:</span>
+                <span style={{ fontFamily:'var(--display)', fontSize:30, fontWeight:600, color:'var(--ink)', letterSpacing:'.03em', lineHeight:1 }}>{mm}</span>
+              </div>
+            );
+          })()}
           {/* v53: 💬 vzkazy a 🔘 tlačítka odstraněny z dashboardu - jsou v admin nastavení */}
           <div onClick={openParent} style={{ cursor:'pointer', width:54, height:54, borderRadius:18, background:'var(--surface)', border:'var(--hair)', boxShadow:'var(--shadow)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:24, position:'relative' }} title="Rodičovský režim">
             🔒
@@ -3598,14 +3623,6 @@ function App() {
                           <div style={{ fontSize:14, fontWeight:700, opacity:.85, marginTop:4 }}>{currentBp.hint}</div>
                         )}
                       </div>
-                      {upcoming && (
-                        <div style={{ background:'rgba(255,255,255,.18)', borderRadius:14, padding:'10px 14px', textAlign:'center', flex:'none', backdropFilter:'blur(6px)' }}>
-                          <div style={{ fontSize:10, fontWeight:900, opacity:.8, letterSpacing:'.1em', textTransform:'uppercase' }}>Pak</div>
-                          <div style={{ fontSize:24, lineHeight:1, marginTop:2 }}>{upcoming.emoji}</div>
-                          <div style={{ fontFamily:'var(--display)', fontSize:15, fontWeight:600, marginTop:3, lineHeight:1 }}>{upcoming.label}</div>
-                          <div style={{ fontSize:11, fontWeight:800, opacity:.9, marginTop:1 }}>{upcoming.time}</div>
-                        </div>
-                      )}
                     </React.Fragment>
                   ) : (
                     <div style={{ flex:1, textAlign:'center', padding:'10px 0' }}>
@@ -3738,29 +3755,42 @@ function App() {
                   </div>
 
                   <div style={{ background:'var(--surface)', border:'var(--hair)', borderRadius:20, padding:'16px 18px', boxShadow:'var(--shadow)' }}>
-                    <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:10 }}>
-                      <div style={{ fontFamily:'var(--display)', fontSize:18, fontWeight:600, color:'var(--ink)' }}>Dnes tě čeká</div>
-                      <div onClick={() => go('calendar')} style={{ cursor:'pointer', fontSize:12, fontWeight:800, color:'var(--accent)' }}>Kalendář →</div>
-                    </div>
-                    {todayEvents.length === 0 ? (
-                      <div style={{ background:'var(--soft)', borderRadius:12, padding:'16px 14px', textAlign:'center', fontSize:13, fontWeight:700, color:'var(--muted)', lineHeight:1.4 }}>
-                        Žádné události 🎉<br/>
-                        <span style={{ fontSize:11, fontWeight:600 }}>Užij si volný čas!</span>
-                      </div>
-                    ) : (
-                      <div style={{ display:'flex', flexDirection:'column', gap:7 }}>
-                        {todayEvents.map((e, i) => (
-                          <div key={i} style={{ display:'flex', alignItems:'center', gap:10, padding:'8px 11px', background:'var(--soft)', borderRadius:11, borderLeft:`3px solid ${e.color}` }}>
-                            <div style={{ fontSize:18 }}>{e.emoji}</div>
-                            <div style={{ flex:1, minWidth:0 }}>
-                              <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'var(--ink)', lineHeight:1.1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{e.title}</div>
-                              <div style={{ fontSize:11, fontWeight:700, color:'var(--muted)' }}>{e.sub}</div>
-                            </div>
-                            <div style={{ fontFamily:'var(--display)', fontSize:13, fontWeight:700, color:'var(--ink)' }}>{e.time}</div>
+                    {(() => {
+                      // v60: po 17h ukáže zítřejší události (večer dítě zajímá zítřek)
+                      const showTomorrow = h >= 17;
+                      const events = showTomorrow ? tomorrowEvents : todayEvents;
+                      const dayLabel = showTomorrow ? 'Zítra (' + dayNamesShort[tomorrowDayIdx] + ') tě čeká' : 'Dnes tě čeká';
+                      return (
+                        <React.Fragment>
+                          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:10 }}>
+                            <div style={{ fontFamily:'var(--display)', fontSize:18, fontWeight:600, color:'var(--ink)' }}>{dayLabel}</div>
+                            <div onClick={() => go('calendar')} style={{ cursor:'pointer', fontSize:12, fontWeight:800, color:'var(--accent)' }}>Kalendář →</div>
                           </div>
-                        ))}
-                      </div>
-                    )}
+                          {events.length === 0 ? (
+                            <div style={{ background:'var(--soft)', borderRadius:12, padding:'16px 14px', textAlign:'center', fontSize:13, fontWeight:700, color:'var(--muted)', lineHeight:1.4 }}>
+                              Žádné události 🎉<br/>
+                              <span style={{ fontSize:11, fontWeight:600 }}>{showTomorrow ? 'Volný den!' : 'Užij si volný čas!'}</span>
+                            </div>
+                          ) : (
+                            <div style={{ display:'flex', flexDirection:'column', gap:7 }}>
+                              {events.slice(0, 5).map((e, i) => (
+                                <div key={i} style={{ display:'flex', alignItems:'center', gap:10, padding:'8px 11px', background:'var(--soft)', borderRadius:11, borderLeft:`3px solid ${e.color}` }}>
+                                  <div style={{ fontSize:18 }}>{e.emoji}</div>
+                                  <div style={{ flex:1, minWidth:0 }}>
+                                    <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'var(--ink)', lineHeight:1.1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{e.title}</div>
+                                    {e.sub && <div style={{ fontSize:11, fontWeight:700, color:'var(--muted)' }}>{e.sub}</div>}
+                                  </div>
+                                  <div style={{ fontFamily:'var(--display)', fontSize:13, fontWeight:700, color:'var(--ink)' }}>{e.time}</div>
+                                </div>
+                              ))}
+                              {events.length > 5 && (
+                                <div style={{ fontSize:11, fontWeight:700, color:'var(--muted)', textAlign:'center', marginTop:2 }}>... a dalších {events.length - 5}</div>
+                              )}
+                            </div>
+                          )}
+                        </React.Fragment>
+                      );
+                    })()}
                   </div>
                 </div>
 
@@ -3877,12 +3907,12 @@ function App() {
                       <div style={{ display:'flex', alignItems:'center', gap:11, padding:'9px 12px', background:'var(--soft)', borderRadius:11 }}>
                         <div style={{ width:12, height:12, borderRadius:'50%', background: whoHomeToday.color, boxShadow:`0 0 0 3px ${whoHomeToday.ring}`, flex:'none' }}/>
                         <div style={{ flex:1, minWidth:0, fontSize:13, fontWeight:800, color:'var(--muted)' }}>Dnes</div>
-                        <div style={{ fontFamily:'var(--display)', fontSize:16, fontWeight:600, color:'var(--ink)' }}>u {whoHomeToday.label.toLowerCase()}</div>
+                        <div style={{ fontFamily:'var(--display)', fontSize:16, fontWeight:600, color:'var(--ink)' }}>{whoHomeToday.label}</div>
                       </div>
                       <div style={{ display:'flex', alignItems:'center', gap:11, padding:'9px 12px', background:'var(--soft)', borderRadius:11 }}>
                         <div style={{ width:11, height:11, borderRadius:'50%', background: whoHomeTomorrow.color, boxShadow:`0 0 0 2px ${whoHomeTomorrow.ring}`, flex:'none' }}/>
                         <div style={{ flex:1, minWidth:0, fontSize:13, fontWeight:800, color:'var(--muted)' }}>Zítra ({dayNamesShort[tomorrowDayIdx]})</div>
-                        <div style={{ fontFamily:'var(--display)', fontSize:15, fontWeight:600, color:'var(--ink)' }}>u {whoHomeTomorrow.label.toLowerCase()}</div>
+                        <div style={{ fontFamily:'var(--display)', fontSize:15, fontWeight:600, color:'var(--ink)' }}>{whoHomeTomorrow.label}</div>
                       </div>
                       <div style={{ display:'flex', alignItems:'center', gap:11, padding:'9px 12px', background:'var(--soft)', borderRadius:11, opacity:.7 }}>
                         <div style={{ width:10, height:10, borderRadius:'50%', background: whoDayAfterColor, flex:'none' }}/>
@@ -5996,12 +6026,7 @@ function App() {
                   </div>
 
                   {/* v44: Ručně přidané události odstraněny - používá se jen Google Calendar */}
-
-                  {/* Střídavá péče info (zachováno) */}
-                  <div style={{ background:'#fff', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
-                    <div style={{ fontFamily:'var(--display)', fontSize:16, fontWeight:600, color:'#1a1530', marginBottom:9 }}>Kdo je dnes doma</div>
-                    <div style={{ fontSize:13, fontWeight:700, color:'#5a566e', lineHeight:1.5 }}>Nastavuje se v tabu „Dnes". Barevný štítek na hlavní obrazovce dítěti jasně řekne kdo je doma.</div>
-                  </div>
+                  {/* v60: "Kdo je dnes doma" info karta odstraněna - zbytečné, nastavuje se v tabu Dnes */}
 
                   {/* Rozvrh hodin - zachováno */}
                   <div style={{ background:'#fff', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
@@ -6935,21 +6960,21 @@ function App() {
 
                   {/* Verze (vždy zobrazeno) */}
                   <div style={{ background:'#fff', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
-                    <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'#1a1530' }}>Verze: Domácí pomocník v59</div>
-                    <div style={{ fontSize:12, color:'#9a96ac', marginTop:4 }}>Build 2026-06-22 · 17:47 · nove home</div>
+                    <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'#1a1530' }}>Verze: Domácí pomocník v60</div>
+                    <div style={{ fontSize:12, color:'#9a96ac', marginTop:4 }}>Build 2026-06-22 · 18:13</div>
                   </div>
                 </div>
                 )}
               </div>
 
-              {/* bottom nav - na mobilu jako grid 3x3 (všechny taby viditelné), na desktop horizontální */}
+              {/* v60: bottom nav přehlednější — větší taby s active stavem na desktopu */}
               <div style={{
                 display: isMobile ? 'grid' : 'flex',
                 gridTemplateColumns: isMobile ? 'repeat(3, 1fr)' : 'none',
                 background:'#fff',
                 borderTop:'1px solid #ececf2',
-                padding: isMobile ? '8px 6px 16px' : '9px 6px 14px',
-                gap: isMobile ? 2 : 0,
+                padding: isMobile ? '8px 6px 16px' : '10px 12px 14px',
+                gap: isMobile ? 2 : 4,
                 overflowX: isMobile ? 'visible' : 'auto',
                 WebkitOverflowScrolling:'touch'
               }}>
@@ -6959,21 +6984,23 @@ function App() {
                   return (
                     <div key={t.id} onClick={() => { audio.tap(); setParentTab(t.id); }} style={{
                       cursor:'pointer',
-                      flex: isMobile ? 'none' : '0 0 auto',
-                      minWidth: isMobile ? 'auto' : 64,
+                      flex: isMobile ? 'none' : '1 1 0',
+                      minWidth: isMobile ? 'auto' : 70,
                       textAlign:'center',
-                      padding: isMobile ? '8px 4px' : '5px 4px',
+                      padding: isMobile ? '8px 4px' : '10px 6px',
                       position:'relative',
-                      background: isMobile && active ? hexA(accent, 0.08) : 'transparent',
-                      borderRadius: isMobile ? 10 : 0
+                      background: active ? hexA(accent, 0.10) : 'transparent',
+                      borderRadius: 12,
+                      borderTop: active && !isMobile ? `3px solid ${accent}` : '3px solid transparent',
+                      transition:'all .2s'
                     }}>
-                      <div style={{ fontSize: isMobile ? 24 : 21, opacity: t.op, position:'relative', display:'inline-block' }}>
+                      <div style={{ fontSize: isMobile ? 24 : 24, opacity: active ? 1 : 0.55, position:'relative', display:'inline-block' }}>
                         {t.icon}
                         {showBadge && (
                           <div style={{ position:'absolute', top:-4, right:-10, background:'#dc2626', color:'#fff', fontSize:10, fontWeight:900, borderRadius:8, minWidth:16, height:16, lineHeight:'16px', padding:'0 4px', boxShadow:'0 2px 4px rgba(0,0,0,.2)' }}>{pendingList.length}</div>
                         )}
                       </div>
-                      <div style={{ fontSize: isMobile ? 12 : 11, fontWeight:800, color: t.ink, marginTop:3, whiteSpace:'nowrap' }}>{t.label}</div>
+                      <div style={{ fontSize: isMobile ? 12 : 12, fontWeight:active ? 900 : 700, color: active ? accent : '#9a96ac', marginTop:4, whiteSpace:'nowrap' }}>{t.label}</div>
                     </div>
                   );
                 })}
