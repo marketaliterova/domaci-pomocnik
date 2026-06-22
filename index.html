@@ -578,13 +578,19 @@ const THEMES = {
 // ====================================================================
 
 const pad2 = (n) => (n < 10 ? '0' + n : '' + n);
-const parseT = (t) => { const p = t.split(':'); return +p[0] + (+p[1])/60; };
+const parseT = (t) => {
+  // v56: ochrana proti prázdné nebo neplatné hodnotě
+  if (!t || typeof t !== 'string') return 0;
+  const p = t.split(':');
+  const h = +p[0] || 0;
+  const m = +p[1] || 0;
+  return h + m/60;
+};
 const hexA = (hex, a) => {
   const h = hex.replace('#','');
   const r = parseInt(h.slice(0,2),16), g = parseInt(h.slice(2,4),16), b = parseInt(h.slice(4,6),16);
   return `rgba(${r},${g},${b},${a})`;
 };
-const makeSim = (h, m) => { const d = new Date(); d.setHours(h, m, 0, 0); return d.getTime(); };
 
 // localStorage helpers
 const LS_KEY = 'dompomocnik_v1';
@@ -1425,16 +1431,13 @@ function App() {
   const [choresList, setChoresList] = useState((persisted && persisted.choresList) || CHORES_LIST.map(x => ({...x})));
   const [weeklyChores, setWeeklyChores] = useState((persisted && persisted.weeklyChores) || WEEKLY_CHORES.map(x => ({...x})));
 
-  // form-fields v6
-  const [newWorryText, setNewWorryText] = useState('');
+  // form-fields v6 (v56: dead state removed - newWorryText, newEvent, showWorryBox)
   const [newBookTitle, setNewBookTitle] = useState('');
   const [newBookPages, setNewBookPages] = useState('');
   const [newChoreText, setNewChoreText] = useState('');
   const [newChorePoints, setNewChorePoints] = useState('5');
   const [newStepText, setNewStepText] = useState('');
   const [moodSliderValue, setMoodSliderValue] = useState(50);
-  const [newEvent, setNewEvent] = useState({ day:0, time:'15:00', emoji:'⚽', title:'', type:'sport' });
-  const [showWorryBox, setShowWorryBox] = useState(false);
 
   const weather = useWeather(soundOn);
   const tts = useTTS(ttsOn);
@@ -1489,7 +1492,10 @@ function App() {
       lastDayKey, gcalUrl, gcalEvents, gcalLastFetch, whoHomeSchedule,
       voiceMap, voiceBaseUrl, dayBlueprintByDay,
       hueWebhookUrl, hueButtons,
-      routineHistory]);
+      routineHistory, spinWheelLastDate,
+      cursusUnlocked, morningAlertsFired,
+      bombEnabled, bombFiredToday,
+      walletBalance, walletHistory, walletGoalAmount, walletGoalName]);
 
   // --- helpers
   const tv = useMemo(() => THEMES[theme] || THEMES.cisto, [theme]);
@@ -2488,7 +2494,8 @@ function App() {
 
   // --- parent
   const openParent = () => { audio.tap(); setParentOpen(true); };
-  const closeParent = () => setParentOpen(false);
+  // v56: BUGFIX - při zavření vždy zamknout PIN znovu (jinak je rodičovský režim navždy odemčený!)
+  const closeParent = () => { setParentOpen(false); setParentLocked(true); setPin(''); };
   const pinPress = (d) => {
     audio.tap();
     if (d === 'del') { setPin(p => p.slice(0,-1)); return; }
@@ -2501,7 +2508,6 @@ function App() {
       }, 150);
     }
   };
-  const skipPin = () => { audio.tap(); setParentLocked(false); };
   const parentAddPoints = (n) => { audio.coin(); addPoints(n, null, true); };
   const parentReason = (t) => { audio.coin(); addPoints(10, t, true); };
   const changeDepart = (delta) => { audio.tap(); setDepartMin(d => Math.max(360, Math.min(600, d + delta))); };
@@ -2737,10 +2743,10 @@ function App() {
     sub: ({skola:'Vyučování', sport:'Nezapomeň věci', hudba:'Kroužek', vylet:'Celý den', rodina:'Společný čas'})[e.type] || ''
   }));
 
-  // child
+  // child (v56: streak používá aktuální streakDays, ne legacy streak bez setteru)
   const level = Math.floor(totalXp / 100) + 1;
   const xpPct = totalXp % 100;
-  const child = { name: childName, points, streak, levelLabel: 'Level ' + level, xpPct };
+  const child = { name: childName, points, streak: streakDays, levelLabel: 'Level ' + level, xpPct };
 
   // routine screen data
   const rKind = activeRoutine || todayKind;
@@ -3006,10 +3012,7 @@ function App() {
     fontFamily: "'Nunito Sans', system-ui, sans-serif", color:'var(--ink)', background:'var(--bg)',
   };
 
-  const placeButtons = PLACE_ORDER.map(k => {
-    const pl = PLACES[k]; const active = whoHome === k; const col = tv[pl.cvar];
-    return { k, label: pl.short, bg: active ? col : '#f0f0f7', ink: active ? '#fff' : '#6a6680' };
-  });
+  // v56: placeButtons odstraněn - byl deklarovaný ale nepoužívaný
   const pendingList = pendingApprovals;
   const shopAdmin = shopItems;
 
@@ -3019,10 +3022,11 @@ function App() {
   const realMin = realH * 60 + realM;
   const bedMin = parseT(bedtime) * 60;
   const wakeMin = parseT(wakeTime) * 60;
-  // okno noci: od bedMin do wakeMin (přes půlnoc)
+  // v56: BUGFIX - prohozené větve! Standardní noc přes půlnoc (bed 21:00, wake 07:00)
+  // má wakeMin < bedMin, takže potřebuje OR (rán|večer), ne AND.
   const isNightMode = wakeMin > bedMin
-    ? (realMin >= bedMin || realMin < wakeMin)
-    : (realMin >= bedMin && realMin < wakeMin);
+    ? (realMin >= bedMin && realMin < wakeMin)  // same-day okno (např. polední šlofík)
+    : (realMin >= bedMin || realMin < wakeMin); // overnight (normální noc přes půlnoc)
   const isRikiSleeping = isNightMode;
 
   // --- streak text
@@ -3173,8 +3177,10 @@ function App() {
   }, [screen]);
 
   // Hesla a funkce které ze stavu sestavují snapshot na server.
+  // v56: BUGFIX - chyběly nové state (mascotKind, wallet, cursus, gcal, hue, pet, atd.)
+  // Bez toho se mezi zařízeními nesynchronizovaly. TEĎ kompletní.
   const buildSnapshot = useCallback(() => ({
-    points, totalXp,
+    theme, points, totalXp, streak,
     morning, evening, doneM, doneE,
     whoHome, departMin,
     shopItems, shopState,
@@ -3188,8 +3194,19 @@ function App() {
     moodLog, lastMoodDate, parentPin, childName,
     weekEvents, worryMessages, readingList, stickers, childPhoto,
     choresList, weeklyChores,
+    // v56 přidáno:
+    petMood, petEnergy, petSleeping, petLastDecay,
+    inventory, bossState,
+    lastDayKey, gcalUrl, gcalEvents, gcalLastFetch, whoHomeSchedule,
+    voiceMap, voiceBaseUrl, dayBlueprintByDay,
+    hueWebhookUrl, hueButtons,
+    routineHistory, spinWheelLastDate,
+    cursusUnlocked, morningAlertsFired,
+    bombEnabled, bombFiredToday,
+    walletBalance, walletHistory, walletGoalAmount, walletGoalName,
   }), [
-    points, totalXp, morning, evening, doneM, doneE, whoHome, departMin,
+    theme, points, totalXp, streak,
+    morning, evening, doneM, doneE, whoHome, departMin,
     shopItems, shopState, choreState, pendingApprovals, packState, packAwarded,
     weeklyDone, challenges, rozvrh, buttonConfig,
     mascotName, mascotKind, soundOn, ttsOn, bedtime, wakeTime, praiseMessages,
@@ -3197,6 +3214,15 @@ function App() {
     moodLog, lastMoodDate, parentPin, childName,
     weekEvents, worryMessages, readingList, stickers, childPhoto,
     choresList, weeklyChores,
+    petMood, petEnergy, petSleeping, petLastDecay,
+    inventory, bossState,
+    lastDayKey, gcalUrl, gcalEvents, gcalLastFetch, whoHomeSchedule,
+    voiceMap, voiceBaseUrl, dayBlueprintByDay,
+    hueWebhookUrl, hueButtons,
+    routineHistory, spinWheelLastDate,
+    cursusUnlocked, morningAlertsFired,
+    bombEnabled, bombFiredToday,
+    walletBalance, walletHistory, walletGoalAmount, walletGoalName,
   ]);
 
   const applySnapshot = useCallback((s) => {
@@ -3852,7 +3878,7 @@ function App() {
               </div>
               <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginTop:12 }}>
                 <div style={{ fontFamily:'var(--display)', fontSize:17, fontWeight:600, color:'var(--ink)' }}>Dnes tě čeká</div>
-                <div onClick={() => go('kalendar')} style={{ cursor:'pointer', fontSize:13, fontWeight:800, color:'var(--accent)' }}>Kalendář →</div>
+                <div onClick={() => go('calendar')} style={{ cursor:'pointer', fontSize:13, fontWeight:800, color:'var(--accent)' }}>Kalendář →</div>
               </div>
               {todayEvents.length === 0 ? (
                 <div style={{ marginTop:8, background:'var(--soft)', borderRadius:14, padding:'14px 16px', textAlign:'center', fontSize:13, fontWeight:700, color:'var(--muted)', lineHeight:1.4 }}>
@@ -6985,8 +7011,8 @@ function App() {
 
                   {/* Verze (vždy zobrazeno) */}
                   <div style={{ background:'#fff', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
-                    <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'#1a1530' }}>Verze: Domácí pomocník v55</div>
-                    <div style={{ fontSize:12, color:'#9a96ac', marginTop:4 }}>Build 2026-06-22 · 16:37</div>
+                    <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'#1a1530' }}>Verze: Domácí pomocník v56</div>
+                    <div style={{ fontSize:12, color:'#9a96ac', marginTop:4 }}>Build 2026-06-22 · 17:00 · audit</div>
                   </div>
                 </div>
                 )}
