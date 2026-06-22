@@ -1357,6 +1357,8 @@ function App() {
   const [gcalLastFetch, setGcalLastFetch] = useState((persisted && persisted.gcalLastFetch) || 0);
   // v63: Manuální fix odchylky času — pokud auto-parsing nepřesně, parent může nastavit ±N hodin
   const [gcalHourOffset, setGcalHourOffset] = useState((persisted && persisted.gcalHourOffset) || 0);
+  // v65: Auto-refresh přepínač (default OFF aby se kalendář nepřepisoval sám)
+  const [gcalAutoRefresh, setGcalAutoRefresh] = useState((persisted && persisted.gcalAutoRefresh) || false);
   // v66: Mystery Box — rodič nastaví úkol + odměnu, dítě má 24h na splnění
   const [mysteryBox, setMysteryBox] = useState((persisted && persisted.mysteryBox) || null);
   // v66: Nabídka dne — automatická 1 odměna ze sety EPICKÁ/LEGENDÁRNÍ se slevou -25%, denně rotuje
@@ -2163,7 +2165,7 @@ function App() {
   // v65: VYPNUTO auto-fetch a 15min interval - kalendář se NIKDY nepřepisuje sám.
   // Megy chce 100% kontrolu — fetch jen kliknutím tlačítka "Stáhnout teď".
   // Pokud chce auto-refresh, může si ho zapnout přes přepínač níže.
-  const [gcalAutoRefresh, setGcalAutoRefresh] = useState((persisted && persisted.gcalAutoRefresh) || false);
+  // (state gcalAutoRefresh deklarován výše s ostatními gcal stavy)
   useEffect(() => {
     if (!gcalUrl) return;
     if (!gcalAutoRefresh) return; // OFF default
@@ -7307,7 +7309,7 @@ function App() {
                     <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:12, flexWrap:'wrap' }}>
                       <div style={{ flex:1, minWidth:0 }}>
                         <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'#1a1530' }}>Verze: Domácí pomocník v66</div>
-                        <div style={{ fontSize:12, color:'#9a96ac', marginTop:4 }}>Build 2026-06-22 · 19:10 · obchod redesign + mystery box</div>
+                        <div style={{ fontSize:12, color:'#9a96ac', marginTop:4 }}>Build 2026-06-22 · 19:21 · hotfix gcalAutoRefresh order</div>
                       </div>
                       <div onClick={() => {
                         audio.tap();
