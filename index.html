@@ -2636,10 +2636,21 @@ function App() {
     wmoIcon: wmoIcon,
   };
 
-  // who-home today
+  // who-home today + tomorrow (v53: zobrazit alespoň zítřek)
   const plToday = PLACES[whoHomeTodayKey] || PLACES.mama;
   const whoTodayColor = tv[plToday.cvar];
   const whoHomeToday = { label: plToday.label, short: plToday.short, color: whoTodayColor, ring: hexA(whoTodayColor, 0.18), bg: tv['--surface'] };
+  // v53: zítra
+  const tomorrowDayIdx = (todayDayIdx + 1) % 7;
+  const whoTomorrowKey = whoHomeSchedule[tomorrowDayIdx] || 'mama';
+  const plTomorrow = PLACES[whoTomorrowKey] || PLACES.mama;
+  const whoTomorrowColor = tv[plTomorrow.cvar];
+  const whoHomeTomorrow = { label: plTomorrow.label, short: plTomorrow.short, color: whoTomorrowColor, ring: hexA(whoTomorrowColor, 0.18) };
+  const dayAfterIdx = (todayDayIdx + 2) % 7;
+  const whoDayAfterKey = whoHomeSchedule[dayAfterIdx] || 'mama';
+  const plDayAfter = PLACES[whoDayAfterKey] || PLACES.mama;
+  const whoDayAfterColor = tv[plDayAfter.cvar];
+  const dayNamesShort = ['Po','Út','St','Čt','Pá','So','Ne'];
 
   // semafor
   const nowMinFloat = h*60 + m + now.getSeconds()/60;
@@ -3506,13 +3517,12 @@ function App() {
               syncStatus === 'error' ? '#dc2626' : '#9ca3af',
               boxShadow: syncStatus === 'ok' ? '0 0 8px rgba(22,163,74,.5)' : 'none', flex:'none' }}/>
           )}
-          <div onClick={() => { audio.tap(); setShowWorryBox(true); }} style={{ cursor:'pointer', width:54, height:54, borderRadius:18, background:'var(--surface)', border:'var(--hair)', boxShadow:'var(--shadow)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:24 }} title="Něco mě trápí">💬</div>
-          <div onClick={() => go('tlacitka')} style={{ cursor:'pointer', width:54, height:54, borderRadius:18, background:'var(--surface)', border:'var(--hair)', boxShadow:'var(--shadow)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:24 }} title="Chytrá tlačítka">🔘</div>
+          {/* v53: 💬 vzkazy a 🔘 tlačítka odstraněny z dashboardu - jsou v admin nastavení */}
           <div onClick={openParent} style={{ cursor:'pointer', width:54, height:54, borderRadius:18, background:'var(--surface)', border:'var(--hair)', boxShadow:'var(--shadow)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:24, position:'relative' }} title="Rodičovský režim">
             🔒
-            {(pendingApprovals.length + worryMessages.filter(m => !m.read).length) > 0 && (
+            {pendingApprovals.length > 0 && (
               <div style={{ position:'absolute', top:-4, right:-4, background:'#dc2626', color:'#fff', fontSize:12, fontWeight:900, borderRadius:11, minWidth:22, height:22, lineHeight:'22px', padding:'0 6px', boxShadow:'0 2px 6px rgba(0,0,0,.25)', border:'2px solid #fff' }}>
-                {pendingApprovals.length + worryMessages.filter(m => !m.read).length}
+                {pendingApprovals.length}
               </div>
             )}
           </div>
@@ -3774,10 +3784,30 @@ function App() {
                     ))}
                   </div>
                 )}
-                <div style={{ display:'flex', alignItems:'center', gap:11, background:'var(--soft)', borderRadius:14, padding:'10px 14px' }}>
-                  <div style={{ width:14, height:14, borderRadius:'50%', background: whoHomeToday.color, boxShadow:`0 0 0 3px ${whoHomeToday.ring}` }}/>
-                  <div style={{ fontSize:11, fontWeight:800, textTransform:'uppercase', letterSpacing:'.06em', color:'var(--muted)' }}>Dnes jsi</div>
-                  <div style={{ fontFamily:'var(--display)', fontSize:20, fontWeight:600, color:'var(--ink)' }}>{whoHomeToday.label}</div>
+                <div style={{ display:'flex', gap:6, background:'var(--soft)', borderRadius:14, padding:'10px 14px', alignItems:'center' }}>
+                  <div style={{ flex:1, display:'flex', alignItems:'center', gap:8 }}>
+                    <div style={{ width:14, height:14, borderRadius:'50%', background: whoHomeToday.color, boxShadow:`0 0 0 3px ${whoHomeToday.ring}`, flex:'none' }}/>
+                    <div>
+                      <div style={{ fontSize:10, fontWeight:800, textTransform:'uppercase', letterSpacing:'.06em', color:'var(--muted)', lineHeight:1 }}>Dnes</div>
+                      <div style={{ fontFamily:'var(--display)', fontSize:17, fontWeight:600, color:'var(--ink)', lineHeight:1.1 }}>{whoHomeToday.label}</div>
+                    </div>
+                  </div>
+                  <div style={{ width:1, alignSelf:'stretch', background:'rgba(0,0,0,.08)', margin:'4px 0' }}/>
+                  <div style={{ flex:1, display:'flex', alignItems:'center', gap:8 }}>
+                    <div style={{ width:10, height:10, borderRadius:'50%', background: whoHomeTomorrow.color, boxShadow:`0 0 0 2px ${whoHomeTomorrow.ring}`, flex:'none' }}/>
+                    <div>
+                      <div style={{ fontSize:10, fontWeight:800, textTransform:'uppercase', letterSpacing:'.06em', color:'var(--muted)', lineHeight:1 }}>Zítra ({dayNamesShort[tomorrowDayIdx]})</div>
+                      <div style={{ fontFamily:'var(--display)', fontSize:15, fontWeight:600, color:'var(--ink)', lineHeight:1.1 }}>{whoHomeTomorrow.label}</div>
+                    </div>
+                  </div>
+                  <div style={{ width:1, alignSelf:'stretch', background:'rgba(0,0,0,.08)', margin:'4px 0' }}/>
+                  <div style={{ display:'flex', alignItems:'center', gap:6, opacity:.65 }}>
+                    <div style={{ width:8, height:8, borderRadius:'50%', background: whoDayAfterColor, flex:'none' }}/>
+                    <div style={{ fontSize:11, fontWeight:700, color:'var(--muted)', lineHeight:1.1 }}>
+                      <div style={{ fontWeight:900, color:'var(--muted)', fontSize:9, textTransform:'uppercase' }}>{dayNamesShort[dayAfterIdx]}</div>
+                      <div>{plDayAfter.short}</div>
+                    </div>
+                  </div>
                 </div>
               </div>
               <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginTop:12 }}>
@@ -4970,15 +5000,51 @@ function App() {
                   return lowerTeeth;
                 })()}
 
-                {/* Animated brush */}
-                {brushRunning && (() => {
-                  const elapsedPct = Math.min(1, brushElapsed / 120);
-                  // Brush moves across all teeth
-                  const t = (brushElapsed % 6) / 6; // cycles every 6s
-                  const brushX = 100 + Math.sin(t * Math.PI * 2) * 110 + 110;
-                  const brushY = elapsedPct < 0.5 ? 78 : 312;
+                {/* v53: ŠIPKA na aktuální zub - která se má teď čistit */}
+                {brushRunning && brushElapsed < 120 && (() => {
+                  // Quadrant: 0=horní pravá (z pohledu dítěte = vlevo z naší strany),
+                  //           1=horní levá, 2=dolní levá, 3=dolní pravá
+                  const bQuad = Math.min(3, Math.floor(brushElapsed / 30));
+                  const secInQuad = brushElapsed % 30;
+                  // 4 zuby v kvadrantu × 7.5s = 30s
+                  const toothInQuad = Math.min(3, Math.floor(secInQuad / 7.5));
+                  const isUpper = bQuad < 2;
+                  // Mapování quadrant → indexy zubů v řadě (z naší strany pohledu)
+                  // Q0 horní pravá dítěte = naše vlevo = indexy 0..3
+                  // Q1 horní levá dítěte = naše vpravo = indexy 4..7
+                  // Q2 dolní levá dítěte = naše vpravo = indexy 4..7 (ale projdeme zprava doleva)
+                  // Q3 dolní pravá dítěte = naše vlevo = indexy 0..3 (zprava doleva)
+                  let baseIdx, toothIdx;
+                  if (bQuad === 0) { baseIdx = 0; toothIdx = baseIdx + toothInQuad; }
+                  else if (bQuad === 1) { baseIdx = 4; toothIdx = baseIdx + toothInQuad; }
+                  else if (bQuad === 2) { baseIdx = 4; toothIdx = baseIdx + toothInQuad; }
+                  else { baseIdx = 0; toothIdx = baseIdx + toothInQuad; }
+                  // Pozice zubu v SVG: x = 110 + i*38, šířka 30, takže střed = 110 + i*38 + 15
+                  const toothCenterX = 110 + toothIdx * 38 + 15;
+                  // Y pozice šipky
+                  const arrowY = isUpper ? 88 : 320;
+                  const arrowChar = isUpper ? '⬇️' : '⬆️';
+                  // Glow ring kolem aktivního zubu
+                  const toothY = isUpper ? 108 : 232;
                   return (
-                    <text x={brushX} y={brushY} fontSize="44" textAnchor="middle" style={{ transition:'y .8s ease' }}>🪥</text>
+                    <React.Fragment>
+                      {/* Zlatý ring kolem aktivního zubu - pulzuje */}
+                      <rect
+                        x={110 + toothIdx * 38 - 4}
+                        y={toothY - 4}
+                        width={38}
+                        height={56}
+                        rx={10}
+                        fill="none"
+                        stroke="#fbbf24"
+                        strokeWidth="3"
+                        style={{ filter:'drop-shadow(0 0 8px #fbbf24)', animation:'softPulse 1s ease-in-out infinite' }}
+                      />
+                      {/* Šipka */}
+                      <text x={toothCenterX} y={arrowY} fontSize="34" textAnchor="middle" style={{ animation:'softPulse 0.8s ease-in-out infinite' }}>{arrowChar}</text>
+                      {/* Kartáček blízko šipky */}
+                      <text x={toothCenterX} y={isUpper ? 58 : 365} fontSize="38" textAnchor="middle" style={{ transition:'x .8s ease, y .8s ease' }}>🪥</text>
+                    </React.Fragment>
                   );
                 })()}
 
@@ -6142,38 +6208,7 @@ function App() {
                     </div>
                   </div>
 
-                  {/* Worry box messages - co dítě poslalo */}
-                  <div style={{ background:'#fff', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
-                    <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:8 }}>
-                      <div style={{ fontFamily:'var(--display)', fontSize:18, fontWeight:600, color:'#1a1530' }}>Vzkazy od dítěte 💜</div>
-                      {worryMessages.filter(m => !m.read).length > 0 && (
-                        <div style={{ background:'#dc2626', color:'#fff', fontSize:11, fontWeight:900, borderRadius:8, padding:'2px 8px' }}>{worryMessages.filter(m => !m.read).length} nové</div>
-                      )}
-                    </div>
-                    <div style={{ fontSize:12, fontWeight:700, color:'#9a96ac', marginBottom:10 }}>Pokud dítě klepne na 💬 na hlavní obrazovce, může ti napsat soukromý vzkaz.</div>
-                    {worryMessages.length === 0 ? (
-                      <div style={{ fontSize:13, fontWeight:700, color:'#9a96ac', fontStyle:'italic' }}>Zatím nic. 🤍</div>
-                    ) : (
-                      <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
-                        {worryMessages.map((m) => {
-                          const dt = new Date(m.date);
-                          const dtStr = dt.getDate() + '.' + (dt.getMonth()+1) + '. ' + pad2(dt.getHours()) + ':' + pad2(dt.getMinutes());
-                          return (
-                            <div key={m.id} style={{ background: m.read ? '#f7f7fb' : '#fef3f3', borderRadius:14, padding:'12px 14px', borderLeft: m.read ? 'none' : '3px solid #dc2626' }}>
-                              <div style={{ fontSize:11, fontWeight:800, color:'#9a96ac', marginBottom:4 }}>{dtStr}{!m.read && ' · NOVÉ'}</div>
-                              <div style={{ fontSize:14, color:'#1a1530', whiteSpace:'pre-wrap', lineHeight:1.4 }}>{m.text}</div>
-                              <div style={{ display:'flex', gap:6, marginTop:8 }}>
-                                {!m.read && (
-                                  <div onClick={() => setWorryMessages(arr => arr.map(x => x.id === m.id ? {...x, read:true} : x))} style={{ cursor:'pointer', background:'#dcfce7', color:'#166534', fontSize:11, fontWeight:800, padding:'4px 9px', borderRadius:6 }}>✓ Přečteno</div>
-                                )}
-                                <div onClick={() => setWorryMessages(arr => arr.filter(x => x.id !== m.id))} style={{ cursor:'pointer', background:'#fef2f2', color:'#991b1b', fontSize:11, fontWeight:800, padding:'4px 9px', borderRadius:6 }}>Smazat</div>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
+                  {/* v53: Vzkazy od dítěte odstraněny - feature pryč */}
 
                   {/* Reading log */}
                   <div style={{ background:'#fff', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
@@ -6990,8 +7025,8 @@ function App() {
 
                   {/* Verze (vždy zobrazeno) */}
                   <div style={{ background:'#fff', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
-                    <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'#1a1530' }}>Verze: Domácí pomocník v52</div>
-                    <div style={{ fontSize:12, color:'#9a96ac', marginTop:4 }}>Build 2026-06-22 · 15:54</div>
+                    <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'#1a1530' }}>Verze: Domácí pomocník v53</div>
+                    <div style={{ fontSize:12, color:'#9a96ac', marginTop:4 }}>Build 2026-06-22 · 16:03</div>
                   </div>
                 </div>
                 )}
