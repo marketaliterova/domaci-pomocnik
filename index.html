@@ -12,11 +12,11 @@
   try {
     var url = location.href;
     var hasParam = url.indexOf('v=') >= 0 || url.indexOf('_cb=') >= 0;
-    var sessionKey = '_dompomocnik_cb_v67';
+    var sessionKey = '_dompomocnik_cb_v68';
     if (!hasParam && !sessionStorage.getItem(sessionKey)) {
       sessionStorage.setItem(sessionKey, '1');
       var sep = url.indexOf('?') >= 0 ? '&' : '?';
-      location.replace(url + sep + 'v=67_' + Date.now());
+      location.replace(url + sep + 'v=68_' + Date.now());
     }
   } catch(e) {}
 })();
@@ -702,6 +702,8 @@ const saveState = (s) => {
       // v15
       lastDayKey: s.lastDayKey, gcalUrl: s.gcalUrl, gcalEvents: s.gcalEvents, gcalLastFetch: s.gcalLastFetch, gcalHourOffset: s.gcalHourOffset, gcalAutoRefresh: s.gcalAutoRefresh,
       mysteryBox: s.mysteryBox, dailyDeal: s.dailyDeal,
+      noiseMeterEnabled: s.noiseMeterEnabled, noiseThreshold: s.noiseThreshold,
+      noiseQuietRewardMins: s.noiseQuietRewardMins, noiseQuietRewardPts: s.noiseQuietRewardPts,
       whoHomeSchedule: s.whoHomeSchedule,
       // v17
       voiceMap: s.voiceMap, voiceBaseUrl: s.voiceBaseUrl,
@@ -1451,6 +1453,22 @@ function App() {
   const [screenFlash, setScreenFlash] = useState(0); // 0 = off, increment to trigger animation
   const [levelUpOverlay, setLevelUpOverlay] = useState(null); // { newLevel, bonus } or null
   const prevLevelRef = useRef(Math.floor(totalXp/100) + 1);
+
+  // v68: HLUKOMĚR — Web Audio mikrofon
+  const [noiseMeterEnabled, setNoiseMeterEnabled] = useState((persisted && persisted.noiseMeterEnabled) || false);
+  const [noiseThreshold, setNoiseThreshold] = useState((persisted && persisted.noiseThreshold) || 65); // dB
+  const [noiseQuietRewardMins, setNoiseQuietRewardMins] = useState((persisted && persisted.noiseQuietRewardMins) || 5);
+  const [noiseQuietRewardPts, setNoiseQuietRewardPts] = useState((persisted && persisted.noiseQuietRewardPts) || 20);
+  const [currentDB, setCurrentDB] = useState(0); // live
+  const [noiseAlerts, setNoiseAlerts] = useState(0); // celkem překročení
+  const [quietStreakSecs, setQuietStreakSecs] = useState(0); // sekund tichosti
+  const [noiseMicError, setNoiseMicError] = useState(''); // error msg pokud mic selhal
+  const audioCtxRef = useRef(null);
+  const analyserRef = useRef(null);
+  const noiseAnimRef = useRef(null);
+  const noiseStreamRef = useRef(null);
+  const lastNoiseBeepRef = useRef(0);
+  const lastQuietRewardRef = useRef(0);
   // whoHomeSchedule: 7 položek (0=Pondělí ... 6=Neděle), hodnoty 'mama'|'tata'|'oba'|'sam'|'babi'|'deda'
   const [whoHomeSchedule, setWhoHomeSchedule] = useState((persisted && Array.isArray(persisted.whoHomeSchedule) && persisted.whoHomeSchedule.length === 7) ? persisted.whoHomeSchedule : ['mama','mama','mama','mama','mama','mama','mama']);
   // v17: hlasové vzkazy (mapování event id → URL na MP3)
@@ -1558,6 +1576,7 @@ function App() {
       bombEnabled, bombFiredToday,
       walletBalance, walletHistory, walletGoalAmount, walletGoalName,
       mysteryBox, dailyDeal,
+      noiseMeterEnabled, noiseThreshold, noiseQuietRewardMins, noiseQuietRewardPts,
     });
   }, [theme, points, totalXp, streak, morning, evening, doneM, doneE, whoHome, departMin,
       shopItems, shopState, choreState, pendingApprovals, packState, packAwarded,
@@ -1576,7 +1595,8 @@ function App() {
       cursusUnlocked, morningAlertsFired,
       bombEnabled, bombFiredToday,
       walletBalance, walletHistory, walletGoalAmount, walletGoalName,
-      mysteryBox, dailyDeal]);
+      mysteryBox, dailyDeal,
+      noiseMeterEnabled, noiseThreshold, noiseQuietRewardMins, noiseQuietRewardPts]);
 
   // --- helpers
   const tv = useMemo(() => THEMES[theme] || THEMES.cisto, [theme]);
@@ -1627,6 +1647,118 @@ function App() {
   const cancelMysteryBox = useCallback(() => {
     setMysteryBox(null);
   }, []);
+
+  // v68: HLUKOMĚR — Web Audio API mikrofon
+  const startNoiseMeter = useCallback(async () => {
+    try {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        setNoiseMicError('Prohlížeč nepodporuje přístup k mikrofonu');
+        return false;
+      }
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+      noiseStreamRef.current = stream;
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) { setNoiseMicError('AudioContext není podporován'); return false; }
+      const audioCtx = new AC();
+      audioCtxRef.current = audioCtx;
+      const source = audioCtx.createMediaStreamSource(stream);
+      const analyser = audioCtx.createAnalyser();
+      analyser.fftSize = 256;
+      source.connect(analyser);
+      analyserRef.current = analyser;
+      setNoiseMicError('');
+
+      const buffer = new Uint8Array(analyser.frequencyBinCount);
+      const tick = () => {
+        if (!analyserRef.current) return;
+        analyser.getByteFrequencyData(buffer);
+        let sum = 0;
+        for (var i = 0; i < buffer.length; i++) sum += buffer[i];
+        const avg = sum / buffer.length;
+        // avg 0-255 → přibližně 30-90 dB (hrubá kalibrace pro běžné mic)
+        const db = Math.round(Math.min(100, Math.max(30, 30 + avg * 0.32)));
+        setCurrentDB(db);
+        noiseAnimRef.current = requestAnimationFrame(tick);
+      };
+      tick();
+      return true;
+    } catch (e) {
+      console.error('[noise] mic error', e);
+      setNoiseMicError(e && e.name === 'NotAllowedError' ? 'Mikrofon zakázán — povol v nastavení prohlížeče' : ('Chyba: ' + (e && e.message ? e.message : 'neznámá')));
+      return false;
+    }
+  }, []);
+
+  const stopNoiseMeter = useCallback(() => {
+    if (noiseAnimRef.current) {
+      cancelAnimationFrame(noiseAnimRef.current);
+      noiseAnimRef.current = null;
+    }
+    if (noiseStreamRef.current) {
+      noiseStreamRef.current.getTracks().forEach(t => t.stop());
+      noiseStreamRef.current = null;
+    }
+    if (audioCtxRef.current) {
+      try { audioCtxRef.current.close(); } catch(e) {}
+      audioCtxRef.current = null;
+    }
+    analyserRef.current = null;
+    setCurrentDB(0);
+  }, []);
+
+  // Auto-start/stop podle noiseMeterEnabled
+  useEffect(() => {
+    if (noiseMeterEnabled) {
+      startNoiseMeter();
+    } else {
+      stopNoiseMeter();
+      setQuietStreakSecs(0);
+      setNoiseAlerts(0);
+    }
+    return () => { stopNoiseMeter(); };
+  // eslint-disable-next-line
+  }, [noiseMeterEnabled]);
+
+  // Detekce překročení prahu: pípne + zvýší counter (debounced 3s mezi pípnutími)
+  useEffect(() => {
+    if (!noiseMeterEnabled || currentDB === 0) return;
+    if (currentDB > noiseThreshold) {
+      const now = Date.now();
+      if (now - lastNoiseBeepRef.current > 3000) {
+        lastNoiseBeepRef.current = now;
+        if (audio && audio.undo) audio.undo();
+        setNoiseAlerts(n => n + 1);
+        setQuietStreakSecs(0); // reset tichá streak
+        lastQuietRewardRef.current = now; // reset reward timer
+      }
+    }
+  // eslint-disable-next-line
+  }, [currentDB, noiseThreshold, noiseMeterEnabled]);
+
+  // Tichá streak counter — každou vteřinu pokud pod prahem
+  useEffect(() => {
+    if (!noiseMeterEnabled) return;
+    const id = setInterval(() => {
+      if (currentDB > 0 && currentDB <= noiseThreshold) {
+        setQuietStreakSecs(s => {
+          const ns = s + 1;
+          // Odměna za X minut tichosti
+          const targetSecs = noiseQuietRewardMins * 60;
+          if (ns >= targetSecs) {
+            const now = Date.now();
+            if (now - lastQuietRewardRef.current > targetSecs * 1000 * 0.9) {
+              lastQuietRewardRef.current = now;
+              addPoints(noiseQuietRewardPts, `Tichá mise (${noiseQuietRewardMins} min)`, true);
+              return 0; // reset streak po odměně
+            }
+          }
+          return ns;
+        });
+      }
+    }, 1000);
+    return () => clearInterval(id);
+  // eslint-disable-next-line
+  }, [noiseMeterEnabled, currentDB, noiseThreshold, noiseQuietRewardMins, noiseQuietRewardPts]);
 
   // navigation
   const go = useCallback((s) => { audio.tap(); setScreen(s); }, [audio]);
@@ -4168,34 +4300,34 @@ function App() {
                 </div>
               </div>
 
-              {/* === ŘÁDEK 5: 5 tiles row === */}
-              <div style={{ display:'grid', gridTemplateColumns:'repeat(5, 1fr)', gap:10, animation: ent(3) }}>
-                <div onClick={() => go('rozvrh')} style={{ cursor:'pointer', background:'linear-gradient(135deg,var(--accent2),var(--accent))', borderRadius:16, padding:'14px 16px', display:'flex', alignItems:'center', gap:11, boxShadow:'var(--shadow)' }}>
-                  <div style={{ fontSize:26 }}>📚</div>
+              {/* === ŘÁDEK 5: 6 tiles row (přidán Hlukoměr) === */}
+              <div style={{ display:'grid', gridTemplateColumns:'repeat(6, 1fr)', gap:9, animation: ent(3) }}>
+                <div onClick={() => go('rozvrh')} style={{ cursor:'pointer', background:'linear-gradient(135deg,var(--accent2),var(--accent))', borderRadius:16, padding:'12px 14px', display:'flex', alignItems:'center', gap:9, boxShadow:'var(--shadow)' }}>
+                  <div style={{ fontSize:22 }}>📚</div>
                   <div style={{ flex:1, minWidth:0 }}>
-                    <div style={{ fontFamily:'var(--display)', fontSize:16, fontWeight:600, color:'#fff', lineHeight:1 }}>Rozvrh</div>
-                    <div style={{ fontSize:11, fontWeight:800, color:'rgba(255,255,255,.85)', marginTop:2 }}>Sbal se na zítřek</div>
+                    <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'#fff', lineHeight:1 }}>Rozvrh</div>
+                    <div style={{ fontSize:10, fontWeight:800, color:'rgba(255,255,255,.85)', marginTop:2 }}>Sbal se</div>
                   </div>
                 </div>
-                <div onClick={() => go('chores')} style={{ cursor:'pointer', background:'linear-gradient(135deg, #60a5fa, #3b82f6)', borderRadius:16, padding:'14px 16px', display:'flex', alignItems:'center', gap:11, boxShadow:'var(--shadow)' }}>
-                  <div style={{ fontSize:26 }}>✨</div>
+                <div onClick={() => go('chores')} style={{ cursor:'pointer', background:'linear-gradient(135deg, #60a5fa, #3b82f6)', borderRadius:16, padding:'12px 14px', display:'flex', alignItems:'center', gap:9, boxShadow:'var(--shadow)' }}>
+                  <div style={{ fontSize:22 }}>✨</div>
                   <div style={{ flex:1, minWidth:0 }}>
-                    <div style={{ fontFamily:'var(--display)', fontSize:16, fontWeight:600, color:'#fff', lineHeight:1 }}>Extra úkoly</div>
-                    <div style={{ fontSize:11, fontWeight:800, color:'rgba(255,255,255,.85)', marginTop:2 }}>Bodíky navíc</div>
+                    <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'#fff', lineHeight:1 }}>Extra úkoly</div>
+                    <div style={{ fontSize:10, fontWeight:800, color:'rgba(255,255,255,.85)', marginTop:2 }}>Bodíky</div>
                   </div>
                 </div>
-                <div onClick={() => go('rewards')} style={{ cursor:'pointer', background:'linear-gradient(135deg, #f87171, #ef4444)', borderRadius:16, padding:'14px 16px', display:'flex', alignItems:'center', gap:11, boxShadow:'var(--shadow)' }}>
-                  <div style={{ fontSize:26 }}>🎁</div>
+                <div onClick={() => go('rewards')} style={{ cursor:'pointer', background:'linear-gradient(135deg, #f87171, #ef4444)', borderRadius:16, padding:'12px 14px', display:'flex', alignItems:'center', gap:9, boxShadow:'var(--shadow)' }}>
+                  <div style={{ fontSize:22 }}>🎁</div>
                   <div style={{ flex:1, minWidth:0 }}>
-                    <div style={{ fontFamily:'var(--display)', fontSize:16, fontWeight:600, color:'#fff', lineHeight:1 }}>Odměny</div>
-                    <div style={{ fontSize:11, fontWeight:800, color:'rgba(255,255,255,.85)', marginTop:2 }}>Tvá přání</div>
+                    <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'#fff', lineHeight:1 }}>Odměny</div>
+                    <div style={{ fontSize:10, fontWeight:800, color:'rgba(255,255,255,.85)', marginTop:2 }}>Tvá přání</div>
                   </div>
                 </div>
-                <div onClick={() => go('cursus')} style={{ cursor:'pointer', background:'linear-gradient(135deg, #818cf8, #4f46e5)', borderRadius:16, padding:'14px 16px', display:'flex', alignItems:'center', gap:11, boxShadow:'var(--shadow)', position:'relative' }}>
-                  <div style={{ fontSize:26 }}>🗺</div>
+                <div onClick={() => go('cursus')} style={{ cursor:'pointer', background:'linear-gradient(135deg, #818cf8, #4f46e5)', borderRadius:16, padding:'12px 14px', display:'flex', alignItems:'center', gap:9, boxShadow:'var(--shadow)', position:'relative' }}>
+                  <div style={{ fontSize:22 }}>🗺</div>
                   <div style={{ flex:1, minWidth:0 }}>
-                    <div style={{ fontFamily:'var(--display)', fontSize:16, fontWeight:600, color:'#fff', lineHeight:1 }}>Cursus</div>
-                    <div style={{ fontSize:11, fontWeight:800, color:'rgba(255,255,255,.85)', marginTop:2 }}>{cursusUnlocked.length}/{CURSUS_STAGES.length} oblastí</div>
+                    <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'#fff', lineHeight:1 }}>Cursus</div>
+                    <div style={{ fontSize:10, fontWeight:800, color:'rgba(255,255,255,.85)', marginTop:2 }}>{cursusUnlocked.length}/{CURSUS_STAGES.length}</div>
                   </div>
                   {(() => {
                     const nextIdx = cursusUnlocked.length;
@@ -4205,11 +4337,21 @@ function App() {
                     return null;
                   })()}
                 </div>
-                <div onClick={() => go('wallet')} style={{ cursor:'pointer', background:'linear-gradient(135deg, #34d399, #16a34a)', borderRadius:16, padding:'14px 16px', display:'flex', alignItems:'center', gap:11, boxShadow:'var(--shadow)' }}>
-                  <div style={{ fontSize:28 }}>🐷</div>
+                <div onClick={() => go('noise')} style={{ cursor:'pointer', background: noiseMeterEnabled ? 'linear-gradient(135deg, '+(currentDB > noiseThreshold ? '#f87171, #dc2626' : '#a78bfa, #7c3aed')+')' : 'linear-gradient(135deg, #6b7280, #4b5563)', borderRadius:16, padding:'12px 14px', display:'flex', alignItems:'center', gap:9, boxShadow:'var(--shadow)', position:'relative' }}>
+                  <div style={{ fontSize:22 }}>{currentDB > noiseThreshold && noiseMeterEnabled ? '🔊' : '🤫'}</div>
                   <div style={{ flex:1, minWidth:0 }}>
-                    <div style={{ fontFamily:'var(--display)', fontSize:16, fontWeight:600, color:'#fff', lineHeight:1 }}>Moje peníze</div>
-                    <div style={{ fontSize:11, fontWeight:800, color:'rgba(255,255,255,.85)', marginTop:2 }}>{walletBalance.toLocaleString('cs-CZ')} Kč</div>
+                    <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'#fff', lineHeight:1 }}>Hlukoměr</div>
+                    <div style={{ fontSize:10, fontWeight:800, color:'rgba(255,255,255,.85)', marginTop:2 }}>{noiseMeterEnabled ? currentDB + ' dB' : 'Vypnuto'}</div>
+                  </div>
+                  {noiseMeterEnabled && (
+                    <div style={{ position:'absolute', top:-4, right:-4, width:10, height:10, borderRadius:'50%', background: currentDB > noiseThreshold ? '#ef4444' : '#22c55e', border:'2px solid #fff', animation:'softPulse 1.4s ease-in-out infinite' }}/>
+                  )}
+                </div>
+                <div onClick={() => go('wallet')} style={{ cursor:'pointer', background:'linear-gradient(135deg, #34d399, #16a34a)', borderRadius:16, padding:'12px 14px', display:'flex', alignItems:'center', gap:9, boxShadow:'var(--shadow)' }}>
+                  <div style={{ fontSize:22 }}>🐷</div>
+                  <div style={{ flex:1, minWidth:0 }}>
+                    <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'#fff', lineHeight:1 }}>Peníze</div>
+                    <div style={{ fontSize:10, fontWeight:800, color:'rgba(255,255,255,.85)', marginTop:2 }}>{walletBalance.toLocaleString('cs-CZ')} Kč</div>
                   </div>
                 </div>
               </div>
@@ -4253,8 +4395,178 @@ function App() {
             </div>
           </div>
         )}
+
+        {/* v68: HLUKOMĚR floating widget — vpravo dole, jen pokud aktivní */}
+        {noiseMeterEnabled && (
+          <div onClick={() => go('noise')} style={{
+            cursor:'pointer',
+            position:'absolute',
+            bottom: 20,
+            right: 20,
+            zIndex: 30,
+            background:'linear-gradient(135deg, #0c0a26 0%, #1a1240 100%)',
+            borderRadius:18,
+            padding:'12px 16px',
+            display:'flex',
+            alignItems:'center',
+            gap:11,
+            boxShadow:'0 10px 28px rgba(12,10,38,.6), 0 0 22px '+(currentDB > noiseThreshold ? 'rgba(239,68,68,.5)' : 'rgba(34,197,94,.3)'),
+            border:'2px solid '+(currentDB > noiseThreshold ? '#ef4444' : currentDB > noiseThreshold - 10 ? '#f59e0b' : '#22c55e'),
+            color:'#fff',
+            minWidth:180,
+            transition:'border-color .3s'
+          }}>
+            <div style={{ fontSize:32, lineHeight:1, animation: currentDB > noiseThreshold ? 'shake .4s infinite' : 'none' }}>{currentDB > noiseThreshold ? '🔊' : '🤫'}</div>
+            <div style={{ flex:1, minWidth:0 }}>
+              <div style={{ display:'flex', alignItems:'center', gap:6, marginBottom:2 }}>
+                <span style={{ background: currentDB > noiseThreshold ? '#ef4444' : '#22c55e', color:'#fff', padding:'2px 8px', borderRadius:6, fontSize:9, fontWeight:900, letterSpacing:'.06em' }}>{currentDB > noiseThreshold ? 'TIŠEJI!' : 'TICHO'}</span>
+                <span style={{ fontSize:10, fontWeight:800, color:'#a78bfa', fontFamily:'monospace' }}>{currentDB} dB</span>
+              </div>
+              <div style={{ background:'rgba(0,0,0,.4)', borderRadius:5, height:6, overflow:'hidden', marginTop:4 }}>
+                <div style={{ height:'100%', width:Math.min(100, ((currentDB-30)/70)*100)+'%', background: currentDB > noiseThreshold ? '#ef4444' : currentDB > noiseThreshold - 10 ? '#f59e0b' : '#22c55e', transition:'width .2s, background .3s' }}/>
+              </div>
+              <div style={{ fontSize:10, fontWeight:700, color:'#cbd5e1', marginTop:4 }}>
+                {quietStreakSecs > 0 ? `🎯 ${Math.floor(quietStreakSecs/60)}:${(quietStreakSecs%60).toString().padStart(2,'0')} tichá mise` : `Limit ${noiseThreshold} dB`}
+              </div>
+            </div>
+          </div>
+        )}
       </div>
       )}
+      {/* ===================== v68: HLUKOMĚR ===================== */}
+      {screen === 'noise' && (
+      <div data-screen-label="Hlukoměr" style={{ position:'absolute', inset:0, padding:'18px 24px', display:'flex', flexDirection:'column', gap:14, overflow:'hidden', background:'linear-gradient(180deg, #0c0a26 0%, #1a1240 100%)', color:'#fff' }}>
+        {/* Header */}
+        <div style={{ display:'flex', alignItems:'center', gap:14, flex:'none' }}>
+          <div onClick={() => go('home')} style={{ cursor:'pointer', width:48, height:48, borderRadius:14, background:'rgba(255,255,255,.08)', border:'1px solid rgba(255,255,255,.15)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:22, color:'#fff' }}>←</div>
+          <div style={{ flex:1 }}>
+            <div style={{ fontFamily:'var(--display)', fontSize:30, fontWeight:600, color:'#fff', lineHeight:1 }}>🤫 Hlukoměr</div>
+            <div style={{ fontSize:13, fontWeight:700, color:'#a78bfa', marginTop:3 }}>{noiseMeterEnabled ? 'Měřím hluk · cíl udržet pod ' + noiseThreshold + ' dB' : 'Vypnutý — zapni v admin'}</div>
+          </div>
+          {noiseMeterEnabled && (
+            <div style={{ background:'rgba(34,197,94,.2)', border:'1px solid rgba(34,197,94,.4)', color:'#86efac', padding:'8px 14px', borderRadius:12, fontSize:13, fontWeight:800, display:'flex', alignItems:'center', gap:6 }}>
+              <span style={{ width:10, height:10, borderRadius:'50%', background:'#22c55e', boxShadow:'0 0 8px #22c55e', animation:'softPulse 1.4s ease-in-out infinite' }}/>
+              LIVE
+            </div>
+          )}
+        </div>
+
+        {noiseMicError ? (
+          <div style={{ background:'rgba(239,68,68,.15)', border:'2px solid rgba(239,68,68,.4)', borderRadius:16, padding:'28px 24px', textAlign:'center', color:'#fca5a5' }}>
+            <div style={{ fontSize:54, marginBottom:10 }}>🎙️</div>
+            <div style={{ fontFamily:'var(--display)', fontSize:18, fontWeight:600, color:'#fff', marginBottom:6 }}>Mikrofon nedostupný</div>
+            <div style={{ fontSize:13, fontWeight:700, color:'#fca5a5' }}>{noiseMicError}</div>
+          </div>
+        ) : !noiseMeterEnabled ? (
+          <div style={{ background:'rgba(167,139,250,.1)', border:'2px dashed rgba(167,139,250,.3)', borderRadius:16, padding:'40px 24px', textAlign:'center', color:'#cbd5e1' }}>
+            <div style={{ fontSize:60, marginBottom:14 }}>🤫</div>
+            <div style={{ fontFamily:'var(--display)', fontSize:20, fontWeight:600, color:'#fff', marginBottom:8 }}>Hlukoměr je vypnutý</div>
+            <div style={{ fontSize:13, fontWeight:700, color:'#cbd5e1', maxWidth:420, margin:'0 auto' }}>Rodič ho zapne v <b>Admin → Nastavení → Hlukoměr</b>. Pak ti app pípne, když budeš mít moc hlasitě, a dostaneš body za tichá mise!</div>
+          </div>
+        ) : (() => {
+          // Live mode
+          const overThreshold = currentDB > noiseThreshold;
+          const pct = Math.min(100, Math.max(0, ((currentDB - 30) / 70) * 100));
+          const thresholdPct = Math.min(100, Math.max(0, ((noiseThreshold - 30) / 70) * 100));
+          const color = overThreshold ? '#ef4444' : (currentDB > noiseThreshold - 10 ? '#f59e0b' : '#22c55e');
+          const targetSecs = noiseQuietRewardMins * 60;
+          const streakPct = Math.min(100, (quietStreakSecs / targetSecs) * 100);
+          const remainMins = Math.max(0, Math.floor((targetSecs - quietStreakSecs) / 60));
+          const remainSecs = Math.max(0, (targetSecs - quietStreakSecs) % 60);
+
+          return (
+            <div style={{ flex:1, minHeight:0, display:'grid', gridTemplateColumns:'1.4fr 1fr', gap:18 }}>
+
+              {/* Velký radial gauge */}
+              <div style={{ background:'linear-gradient(135deg, rgba(99,102,241,.12), rgba(76,29,149,.08))', borderRadius:24, padding:'24px', border:'1px solid rgba(167,139,250,.25)', display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:18, position:'relative', overflow:'hidden' }}>
+                {overThreshold && (
+                  <div key={'noise-flash-'+noiseAlerts} style={{ position:'absolute', inset:0, background:'radial-gradient(circle, rgba(239,68,68,.3) 0%, transparent 70%)', animation:'screenFlash .6s ease-out', pointerEvents:'none' }}/>
+                )}
+                <svg width="280" height="280" viewBox="0 0 280 280">
+                  <defs>
+                    <linearGradient id="gaugeGrad" x1="0" y1="0" x2="1" y2="1">
+                      <stop offset="0%" stopColor="#22c55e"/>
+                      <stop offset="60%" stopColor="#f59e0b"/>
+                      <stop offset="100%" stopColor="#ef4444"/>
+                    </linearGradient>
+                  </defs>
+                  {/* Background arc */}
+                  <circle cx="140" cy="140" r="110" fill="none" stroke="rgba(255,255,255,.08)" strokeWidth="22" strokeDasharray={Math.PI * 220 * 0.75 + ' ' + Math.PI * 220} strokeLinecap="round" transform="rotate(135 140 140)"/>
+                  {/* Threshold marker */}
+                  <circle cx="140" cy="140" r="110" fill="none" stroke="rgba(239,68,68,.4)" strokeWidth="22"
+                    strokeDasharray={(Math.PI * 220 * 0.75) * (thresholdPct/100) + ' ' + Math.PI * 220 * 2}
+                    strokeLinecap="butt"
+                    transform="rotate(135 140 140)"
+                    style={{ opacity: 0.18 }}/>
+                  {/* Active arc */}
+                  <circle cx="140" cy="140" r="110" fill="none" stroke="url(#gaugeGrad)" strokeWidth="22"
+                    strokeDasharray={(Math.PI * 220 * 0.75) * (pct/100) + ' ' + Math.PI * 220 * 2}
+                    strokeLinecap="round"
+                    transform="rotate(135 140 140)"
+                    style={{ transition:'stroke-dasharray .3s ease-out', filter:'drop-shadow(0 0 12px '+color+')' }}/>
+                  {/* Center text */}
+                  <text x="140" y="138" textAnchor="middle" fill={color} style={{ fontFamily:'var(--display)', fontSize:'72px', fontWeight:700 }}>{currentDB}</text>
+                  <text x="140" y="172" textAnchor="middle" fill="#cbd5e1" style={{ fontSize:'18px', fontWeight:700, letterSpacing:'.08em' }}>dB</text>
+                </svg>
+                <div style={{ textAlign:'center' }}>
+                  {overThreshold ? (
+                    <div style={{ background:'rgba(239,68,68,.25)', border:'2px solid #ef4444', borderRadius:14, padding:'12px 24px', color:'#fff', boxShadow:'0 0 24px rgba(239,68,68,.5)', animation:'shake .4s' }}>
+                      <div style={{ fontSize:30, marginBottom:4 }}>🔊⚠️</div>
+                      <div style={{ fontFamily:'var(--display)', fontSize:18, fontWeight:700 }}>Příliš hlasitě!</div>
+                      <div style={{ fontSize:12, fontWeight:700, color:'#fca5a5', marginTop:3 }}>Ztlum se prosím</div>
+                    </div>
+                  ) : currentDB > noiseThreshold - 10 ? (
+                    <div style={{ color:'#fbbf24', fontSize:15, fontWeight:800 }}>⚠️ Pozor, blížíš se k limitu</div>
+                  ) : (
+                    <div style={{ color:'#86efac', fontSize:15, fontWeight:800 }}>✓ Super, jsi v klidu</div>
+                  )}
+                </div>
+              </div>
+
+              {/* Pravý sloupec: tichá mise progress + stats */}
+              <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
+                {/* Tichá mise card */}
+                <div style={{ background:'linear-gradient(135deg, #1e3a8a, #1e1b4b)', borderRadius:18, padding:18, border:'1px solid rgba(167,139,250,.3)' }}>
+                  <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:10 }}>
+                    <span style={{ fontSize:24 }}>🎯</span>
+                    <span style={{ fontFamily:'var(--display)', fontSize:16, fontWeight:600, color:'#fff' }}>Tichá mise</span>
+                  </div>
+                  <div style={{ fontSize:13, fontWeight:700, color:'#cbd5e1', marginBottom:10, lineHeight:1.4 }}>Udrž hluk pod limitem {noiseQuietRewardMins} min v kuse a získáš <b style={{ color:'#fbbf24' }}>{noiseQuietRewardPts} 🌕</b></div>
+                  <div style={{ background:'rgba(0,0,0,.4)', borderRadius:8, height:12, overflow:'hidden', marginBottom:6, boxShadow:'inset 0 2px 4px rgba(0,0,0,.4)' }}>
+                    <div style={{ height:'100%', width:streakPct+'%', background:'linear-gradient(90deg, #22c55e, #86efac)', borderRadius:8, boxShadow:'0 0 10px rgba(34,197,94,.6)', transition:'width .4s ease-out' }}/>
+                  </div>
+                  <div style={{ display:'flex', justifyContent:'space-between', fontSize:12, fontWeight:800, color:'#a78bfa' }}>
+                    <span>{Math.floor(quietStreakSecs/60)}:{(quietStreakSecs%60).toString().padStart(2,'0')}</span>
+                    <span>zbývá {remainMins}:{remainSecs.toString().padStart(2,'0')}</span>
+                  </div>
+                </div>
+
+                {/* Threshold info */}
+                <div style={{ background:'rgba(255,255,255,.04)', borderRadius:14, padding:'14px 16px', border:'1px solid rgba(255,255,255,.08)' }}>
+                  <div style={{ fontSize:11, fontWeight:800, color:'#94a3b8', letterSpacing:'.06em', textTransform:'uppercase', marginBottom:5 }}>Aktuální limit</div>
+                  <div style={{ fontFamily:'var(--display)', fontSize:32, fontWeight:700, color:'#fbbf24' }}>{noiseThreshold} <span style={{ fontSize:16, fontWeight:600, color:'#cbd5e1' }}>dB</span></div>
+                </div>
+
+                {/* Statistika alertů */}
+                <div style={{ background:'rgba(239,68,68,.08)', borderRadius:14, padding:'14px 16px', border:'1px solid rgba(239,68,68,.2)' }}>
+                  <div style={{ fontSize:11, fontWeight:800, color:'#fca5a5', letterSpacing:'.06em', textTransform:'uppercase', marginBottom:5 }}>Překročení dnes</div>
+                  <div style={{ display:'flex', alignItems:'baseline', gap:8 }}>
+                    <span style={{ fontFamily:'var(--display)', fontSize:32, fontWeight:700, color:'#ef4444' }}>{noiseAlerts}×</span>
+                    {noiseAlerts > 0 && <span style={{ fontSize:13, fontWeight:700, color:'#fca5a5' }}>(zkus to lépe!)</span>}
+                  </div>
+                </div>
+
+                {/* Tip pro děti */}
+                <div style={{ background:'rgba(167,139,250,.08)', borderRadius:14, padding:'12px 16px', border:'1px solid rgba(167,139,250,.2)', fontSize:12, fontWeight:700, color:'#c4b5fd', lineHeight:1.5 }}>
+                  💡 Tip: zkus mluvit šeptem, dýchat klidně. Kdykoliv zakřičíš nebo zapípá → reset počítadla.
+                </div>
+              </div>
+            </div>
+          );
+        })()}
+      </div>
+      )}
+
       {screen === 'wallet' && (
       <div data-screen-label="Pokladnička" style={{ position:'absolute', inset:0, background:'linear-gradient(180deg, #f0fdf4 0%, #dcfce7 100%)', display:'flex', flexDirection:'column', overflow:'hidden' }}>
         {/* Header */}
@@ -6803,6 +7115,73 @@ function App() {
                   </div>
 
                   {settingsSubTab === 'hlavni' && (<>
+                  {/* v68: HLUKOMĚR — admin nastavení */}
+                  <div style={{ background:'linear-gradient(135deg, #1e3a8a, #4c1d95)', borderRadius:20, padding:18, boxShadow:'0 6px 20px rgba(30,58,138,.3)', color:'#fff' }}>
+                    <div style={{ display:'flex', alignItems:'center', gap:12, marginBottom:14 }}>
+                      <div style={{ fontSize:32 }}>🤫</div>
+                      <div style={{ flex:1 }}>
+                        <div style={{ fontFamily:'var(--display)', fontSize:18, fontWeight:600 }}>Hlukoměr</div>
+                        <div style={{ fontSize:11, fontWeight:700, color:'#cbd5e1', lineHeight:1.4 }}>Pípne když Alex překročí limit. Body za tichou misi (X minut pod limitem).</div>
+                      </div>
+                      <div onClick={() => { audio.tap(); setNoiseMeterEnabled(!noiseMeterEnabled); }} style={{
+                        cursor:'pointer', width:46, height:26, borderRadius:13,
+                        background: noiseMeterEnabled ? '#22c55e' : 'rgba(255,255,255,.15)',
+                        position:'relative', transition:'background .2s', flex:'none'
+                      }}>
+                        <div style={{ position:'absolute', top:2, left: noiseMeterEnabled ? 22 : 2, width:22, height:22, borderRadius:'50%', background:'#fff', transition:'left .2s', boxShadow:'0 2px 4px rgba(0,0,0,.3)' }}/>
+                      </div>
+                    </div>
+                    {noiseMicError && (
+                      <div style={{ background:'rgba(239,68,68,.2)', border:'1px solid rgba(239,68,68,.4)', borderRadius:10, padding:'10px 14px', marginBottom:12, color:'#fca5a5', fontSize:12, fontWeight:700 }}>
+                        ⚠️ {noiseMicError}
+                      </div>
+                    )}
+                    {noiseMeterEnabled && (
+                      <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
+                        {/* Threshold slider */}
+                        <div>
+                          <div style={{ display:'flex', justifyContent:'space-between', alignItems:'baseline', marginBottom:6 }}>
+                            <span style={{ fontSize:12, fontWeight:800, color:'#cbd5e1' }}>Limit hluku</span>
+                            <span style={{ fontFamily:'var(--display)', fontSize:20, fontWeight:700, color:'#fbbf24' }}>{noiseThreshold} dB</span>
+                          </div>
+                          <input type="range" min="50" max="90" step="5" value={noiseThreshold} onChange={(e) => setNoiseThreshold(parseInt(e.target.value, 10))} style={{ width:'100%', accentColor:'#fbbf24' }}/>
+                          <div style={{ display:'flex', justifyContent:'space-between', fontSize:9, fontWeight:700, color:'#94a3b8', marginTop:2 }}>
+                            <span>tichý šepot (50)</span>
+                            <span>normální (65)</span>
+                            <span>křik (90)</span>
+                          </div>
+                        </div>
+                        {/* Reward minutes */}
+                        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
+                          <div style={{ background:'rgba(0,0,0,.25)', borderRadius:10, padding:'10px 12px' }}>
+                            <div style={{ fontSize:10, fontWeight:800, color:'#94a3b8', textTransform:'uppercase', letterSpacing:'.05em' }}>Tichá mise (min)</div>
+                            <div style={{ display:'flex', alignItems:'center', gap:6, marginTop:6 }}>
+                              <div onClick={() => setNoiseQuietRewardMins(Math.max(1, noiseQuietRewardMins - 1))} style={{ cursor:'pointer', width:26, height:26, borderRadius:8, background:'rgba(255,255,255,.1)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:16, fontWeight:900 }}>−</div>
+                              <div style={{ flex:1, textAlign:'center', fontFamily:'var(--display)', fontSize:20, fontWeight:700, color:'#fff' }}>{noiseQuietRewardMins}</div>
+                              <div onClick={() => setNoiseQuietRewardMins(Math.min(30, noiseQuietRewardMins + 1))} style={{ cursor:'pointer', width:26, height:26, borderRadius:8, background:'rgba(255,255,255,.1)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:16, fontWeight:900 }}>+</div>
+                            </div>
+                          </div>
+                          <div style={{ background:'rgba(0,0,0,.25)', borderRadius:10, padding:'10px 12px' }}>
+                            <div style={{ fontSize:10, fontWeight:800, color:'#94a3b8', textTransform:'uppercase', letterSpacing:'.05em' }}>Odměna (🌕)</div>
+                            <div style={{ display:'flex', alignItems:'center', gap:6, marginTop:6 }}>
+                              <div onClick={() => setNoiseQuietRewardPts(Math.max(5, noiseQuietRewardPts - 5))} style={{ cursor:'pointer', width:26, height:26, borderRadius:8, background:'rgba(255,255,255,.1)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:16, fontWeight:900 }}>−</div>
+                              <div style={{ flex:1, textAlign:'center', fontFamily:'var(--display)', fontSize:20, fontWeight:700, color:'#fbbf24' }}>{noiseQuietRewardPts}</div>
+                              <div onClick={() => setNoiseQuietRewardPts(Math.min(100, noiseQuietRewardPts + 5))} style={{ cursor:'pointer', width:26, height:26, borderRadius:8, background:'rgba(255,255,255,.1)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:16, fontWeight:900 }}>+</div>
+                            </div>
+                          </div>
+                        </div>
+                        {/* Live preview */}
+                        <div style={{ background:'rgba(0,0,0,.3)', borderRadius:10, padding:'10px 14px', display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+                          <div style={{ fontSize:11, fontWeight:800, color:'#94a3b8' }}>Aktuální měření</div>
+                          <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+                            <span style={{ fontFamily:'monospace', fontSize:14, fontWeight:800, color: currentDB > noiseThreshold ? '#ef4444' : '#22c55e' }}>{currentDB} dB</span>
+                            <span style={{ width:8, height:8, borderRadius:'50%', background: currentDB > noiseThreshold ? '#ef4444' : '#22c55e', boxShadow:'0 0 6px currentColor' }}/>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
                   {/* v40: Záloha dat - export do JSON / import zpět */}
                   <div style={{ background:'linear-gradient(135deg, #dbeafe, #bfdbfe)', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)', border:'2px solid #3b82f6' }}>
                     <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:10 }}>
@@ -7508,8 +7887,8 @@ function App() {
                   <div style={{ background:'#fff', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
                     <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:12, flexWrap:'wrap' }}>
                       <div style={{ flex:1, minWidth:0 }}>
-                        <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'#1a1530' }}>Verze: Domácí pomocník v67</div>
-                        <div style={{ fontSize:12, color:'#9a96ac', marginTop:4 }}>Build 2026-06-22 · 19:42 · v67 cache-bust force</div>
+                        <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'#1a1530' }}>Verze: Domácí pomocník v68</div>
+                        <div style={{ fontSize:12, color:'#9a96ac', marginTop:4 }}>Build 2026-06-22 · 19:52 · v68 hlukoměr</div>
                       </div>
                       <div onClick={() => {
                         audio.tap();
