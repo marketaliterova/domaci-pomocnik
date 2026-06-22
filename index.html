@@ -1926,29 +1926,45 @@ function App() {
     if (!force && Date.now() - gcalLastFetch < 15 * 60 * 1000) return;
     setGcalFetchStatus('fetching');
     setGcalFetchError('');
-    try {
-      // CORS proxy - allorigins.win je veřejný, kdyby přestal, můžeme změnit
-      const proxyUrl = 'https://api.allorigins.win/raw?url=' + encodeURIComponent(gcalUrl);
-      const r = await fetch(proxyUrl);
-      if (!r.ok) throw new Error('Calendar fetch HTTP ' + r.status);
-      const text = await r.text();
-      if (!text || text.length < 50) throw new Error('Prázdná odpověď (proxy možná spadla)');
-      let events = [];
+    // v51: zkusit více proxies postupně - allorigins občas selhává
+    const proxies = [
+      (u) => 'https://api.allorigins.win/raw?url=' + encodeURIComponent(u),
+      (u) => 'https://corsproxy.io/?' + encodeURIComponent(u),
+      (u) => 'https://api.codetabs.com/v1/proxy?quest=' + encodeURIComponent(u),
+    ];
+    let lastErr = '';
+    for (let pi = 0; pi < proxies.length; pi++) {
+      const proxyUrl = proxies[pi](gcalUrl);
       try {
-        events = parseICal(text);
-      } catch (parseErr) {
-        throw new Error('Chyba parsování iCal: ' + parseErr.message);
+        const r = await fetch(proxyUrl);
+        if (!r.ok) { lastErr = 'HTTP ' + r.status + ' z proxy #' + (pi+1); continue; }
+        const text = await r.text();
+        if (!text || text.length < 50) { lastErr = 'Prázdná odpověď z proxy #' + (pi+1); continue; }
+        if (text.indexOf('BEGIN:VCALENDAR') < 0 && text.indexOf('BEGIN:VEVENT') < 0) {
+          lastErr = 'Proxy #' + (pi+1) + ' nevrátil iCal data (možná HTML chyba)';
+          continue;
+        }
+        let events = [];
+        try {
+          events = parseICal(text);
+        } catch (parseErr) {
+          lastErr = 'Chyba parsování iCal: ' + parseErr.message;
+          continue;
+        }
+        setGcalEvents(events);
+        setGcalLastFetch(Date.now());
+        setGcalFetchStatus('ok');
+        if (force) showToast('Načteno ' + events.length + ' událostí (proxy #' + (pi+1) + ')', '📅');
+        return;
+      } catch (e) {
+        lastErr = 'Proxy #' + (pi+1) + ' selhal: ' + (e.message || e);
+        console.warn(lastErr);
       }
-      setGcalEvents(events);
-      setGcalLastFetch(Date.now());
-      setGcalFetchStatus('ok');
-      if (force) showToast('Načteno ' + events.length + ' událostí', '📅');
-    } catch (e) {
-      console.warn('GCal fetch error:', e);
-      setGcalFetchError(e.message || String(e));
-      setGcalFetchStatus('error');
-      if (force) showToast('Chyba: ' + (e.message || 'fetch selhal'), '⚠');
     }
+    // Všechny proxies selhaly
+    setGcalFetchError(lastErr + '. Zkus to za chvíli znovu — proxy servery občas mají výpadek.');
+    setGcalFetchStatus('error');
+    if (force) showToast('Všechny proxies selhaly', '⚠');
   }, [gcalUrl, gcalLastFetch, parseICal, showToast]);
 
   useEffect(() => {
@@ -3388,14 +3404,17 @@ function App() {
           const totalMins = nowD.getHours() * 60 + nowD.getMinutes();
           const dayProgress = totalMins / (24 * 60);
           const h = nowD.getHours();
-          let phase, phaseColor, phaseEmoji;
-          if (h < 6)       { phase = 'NOC';       phaseColor = '#1e1b4b'; phaseEmoji = '🌙'; }
-          else if (h < 9)  { phase = 'RÁNO';      phaseColor = '#fb923c'; phaseEmoji = '🌅'; }
-          else if (h < 12) { phase = 'DOPOLEDNE'; phaseColor = '#facc15'; phaseEmoji = '☀️'; }
-          else if (h < 14) { phase = 'OBĚD';      phaseColor = '#dc2626'; phaseEmoji = '🍽️'; }
-          else if (h < 18) { phase = 'ODPOLEDNE'; phaseColor = '#16a34a'; phaseEmoji = '🌳'; }
-          else if (h < 21) { phase = 'VEČER';     phaseColor = '#7c3aed'; phaseEmoji = '🌆'; }
-          else             { phase = 'NOC';       phaseColor = '#1e3a8a'; phaseEmoji = '🌙'; }
+          // v51: české hranice fází
+          let phase, phaseColor, phaseEmoji, phaseStartH, phaseEndH;
+          if (h < 5)       { phase = 'NOC';       phaseColor = '#1e1b4b'; phaseEmoji = '🌙'; phaseStartH = 0;  phaseEndH = 5; }
+          else if (h < 9)  { phase = 'RÁNO';      phaseColor = '#fb923c'; phaseEmoji = '🌅'; phaseStartH = 5;  phaseEndH = 9; }
+          else if (h < 12) { phase = 'DOPOLEDNE'; phaseColor = '#facc15'; phaseEmoji = '☀️'; phaseStartH = 9;  phaseEndH = 12; }
+          else if (h < 13) { phase = 'OBĚD';      phaseColor = '#dc2626'; phaseEmoji = '🍽️'; phaseStartH = 12; phaseEndH = 13; }
+          else if (h < 17) { phase = 'ODPOLEDNE'; phaseColor = '#16a34a'; phaseEmoji = '🌳'; phaseStartH = 13; phaseEndH = 17; }
+          else if (h < 22) { phase = 'VEČER';     phaseColor = '#7c3aed'; phaseEmoji = '🌆'; phaseStartH = 17; phaseEndH = 22; }
+          else             { phase = 'NOC';       phaseColor = '#1e3a8a'; phaseEmoji = '🌙'; phaseStartH = 22; phaseEndH = 24; }
+          // Střed segmentu fáze v % (0-100)
+          const phaseMidPct = ((phaseStartH + phaseEndH) / 2 / 24) * 100;
 
           const todaysBp = (dayBlueprintByDay && dayBlueprintByDay[todayDayIdx]) || DAY_BLUEPRINT;
           const blueprintMins = todaysBp.map(b => ({ ...b, mins: (function(){ const p = String(b.time||'0:0').split(':'); return parseInt(p[0])*60+parseInt(p[1]); })() }));
@@ -3441,7 +3460,7 @@ function App() {
               {/* A — barevný pruh + integrovaný phase badge + countdown v JEDNOM ROW */}
               <div style={{ display:'grid', gridTemplateColumns: upcoming ? '1fr auto' : '1fr', gap:14, alignItems:'center' }}>
                 <div style={{ position:'relative' }}>
-                  <div style={{ position:'relative', height: 36, borderRadius: 18, background: 'linear-gradient(90deg, #1e1b4b 0%, #1e1b4b 25%, #fb923c 25%, #fb923c 37.5%, #facc15 37.5%, #facc15 50%, #dc2626 50%, #dc2626 58.3%, #16a34a 58.3%, #16a34a 75%, #7c3aed 75%, #7c3aed 87.5%, #1e3a8a 87.5%)', overflow:'visible', boxShadow:'0 4px 14px rgba(0,0,0,.18)', border:'2px solid #fff' }}>
+                  <div style={{ position:'relative', height: 36, borderRadius: 18, background: 'linear-gradient(90deg, #1e1b4b 0%, #1e1b4b 20.8%, #fb923c 20.8%, #fb923c 37.5%, #facc15 37.5%, #facc15 50%, #dc2626 50%, #dc2626 54.2%, #16a34a 54.2%, #16a34a 70.8%, #7c3aed 70.8%, #7c3aed 91.6%, #1e3a8a 91.6%)', overflow:'visible', boxShadow:'0 4px 14px rgba(0,0,0,.18)', border:'2px solid #fff' }}>
                     {/* Slunce/měsíc */}
                     <div style={{
                       position:'absolute',
@@ -3462,8 +3481,26 @@ function App() {
                     }}>
                       {phaseEmoji}
                     </div>
-                    {/* Phase badge překryje pruh vlevo */}
-                    <div style={{ position:'absolute', left:8, top:'50%', transform:'translateY(-50%)', background:'rgba(0,0,0,.45)', color:'#fff', borderRadius:12, padding:'4px 10px', fontWeight:800, fontSize:13, letterSpacing:'.06em', zIndex:1, backdropFilter:'blur(4px)' }}>
+                    {/* v51: Phase badge nad středem aktuálního segmentu (ne pevně vlevo) */}
+                    <div style={{
+                      position:'absolute',
+                      left: 'calc(' + phaseMidPct + '% - 50px)',
+                      top:'50%',
+                      transform:'translateY(-50%)',
+                      width: 100,
+                      textAlign:'center',
+                      background:'rgba(0,0,0,.45)',
+                      color:'#fff',
+                      borderRadius:12,
+                      padding:'4px 10px',
+                      fontWeight:800,
+                      fontSize:13,
+                      letterSpacing:'.06em',
+                      zIndex:1,
+                      backdropFilter:'blur(4px)',
+                      transition:'left .5s ease',
+                      pointerEvents:'none'
+                    }}>
                       {phase}
                     </div>
                   </div>
@@ -6711,8 +6748,8 @@ function App() {
 
                   {/* Verze (vždy zobrazeno) */}
                   <div style={{ background:'#fff', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
-                    <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'#1a1530' }}>Verze: Domácí pomocník v50</div>
-                    <div style={{ fontSize:12, color:'#9a96ac', marginTop:4 }}>Build 2026-06-22 · 15:42</div>
+                    <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'#1a1530' }}>Verze: Domácí pomocník v51</div>
+                    <div style={{ fontSize:12, color:'#9a96ac', marginTop:4 }}>Build 2026-06-22 · 15:50</div>
                   </div>
                 </div>
                 )}
