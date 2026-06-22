@@ -1761,6 +1761,15 @@ function App() {
               ev.endTime = hh + ':' + mm;
             }
           }
+        } else if (line.startsWith('DURATION:')) {
+          // v61: Parse DURATION (např. PT8H, PT45M, PT1H30M) — alternativa k DTEND
+          const dur = line.slice(9).trim();
+          const m = dur.match(/PT(?:(\d+)H)?(?:(\d+)M)?/);
+          if (m) {
+            const dh = parseInt(m[1] || '0');
+            const dm = parseInt(m[2] || '0');
+            ev._durationMins = dh * 60 + dm;
+          }
         } else if (line.startsWith('LOCATION:')) {
           ev.location = line.slice(9).replace(/\\,/g, ',').trim();
         } else if (line.startsWith('UID:')) {
@@ -1788,6 +1797,15 @@ function App() {
       if (!ev.iso) continue;
       // Default summary pokud chybí
       if (!ev.summary) ev.summary = '(bez názvu)';
+
+      // v61: pokud event má DURATION ale nemá endTime, dopočti endTime z DTSTART + DURATION
+      if (!ev.endTime && ev._durationMins != null && ev.time) {
+        const [sh, sm] = ev.time.split(':').map(Number);
+        const endMins = sh * 60 + sm + ev._durationMins;
+        const eh = Math.floor(endMins / 60) % 24;
+        const em = endMins % 60;
+        ev.endTime = pad2(eh) + ':' + pad2(em);
+      }
 
       parsedEvents.push(ev);
     }
@@ -2003,6 +2021,7 @@ function App() {
   // v44: stav posledního fetche GCal - aby user viděl co se děje
   const [gcalFetchStatus, setGcalFetchStatus] = useState('idle'); // idle | fetching | ok | error
   const [gcalFetchError, setGcalFetchError] = useState('');
+  const [gcalRawText, setGcalRawText] = useState(''); // v61: poslední fetched iCal pro re-parsing
 
   const fetchGcal = useCallback(async (force) => {
     if (!gcalUrl || !gcalUrl.startsWith('http')) {
@@ -2014,6 +2033,10 @@ function App() {
     if (!force && Date.now() - gcalLastFetch < 15 * 60 * 1000) return;
     setGcalFetchStatus('fetching');
     setGcalFetchError('');
+    // v61: anti-cache - přidej unikátní query param k původnímu URL, aby proxy nemohl vrátit stale data
+    const cacheBuster = '_cb=' + Date.now();
+    const sep = gcalUrl.indexOf('?') >= 0 ? '&' : '?';
+    const targetUrl = gcalUrl + sep + cacheBuster;
     // v51: zkusit více proxies postupně - allorigins občas selhává
     const proxies = [
       (u) => 'https://api.allorigins.win/raw?url=' + encodeURIComponent(u),
@@ -2022,7 +2045,7 @@ function App() {
     ];
     let lastErr = '';
     for (let pi = 0; pi < proxies.length; pi++) {
-      const proxyUrl = proxies[pi](gcalUrl);
+      const proxyUrl = proxies[pi](targetUrl);
       try {
         const r = await fetch(proxyUrl);
         if (!r.ok) { lastErr = 'HTTP ' + r.status + ' z proxy #' + (pi+1); continue; }
@@ -2039,6 +2062,7 @@ function App() {
           lastErr = 'Chyba parsování iCal: ' + parseErr.message;
           continue;
         }
+        setGcalRawText(text); // v61: ulož raw text pro debug a re-parse
         setGcalEvents(events);
         setGcalLastFetch(Date.now());
         setGcalFetchStatus('ok');
@@ -4476,236 +4500,353 @@ function App() {
 
       {/* ===================== REWARDS ===================== */}
       {screen === 'rewards' && (
-      <div data-screen-label="Odměny" style={{ position:'absolute', inset:0, padding:'28px 36px', display:'flex', flexDirection:'column', gap:20, overflow:'auto' }}>
+      <div data-screen-label="Odměny" style={{ position:'absolute', inset:0, padding:'28px 36px', display:'flex', flexDirection:'column', gap:18, overflow:'auto', background:'linear-gradient(180deg, #faf7ff 0%, #f3eafe 100%)' }}>
+        {/* v61: Header s back tlačítkem */}
         <div style={{ display:'flex', alignItems:'center', gap:18 }}>
           <div onClick={() => go('home')} style={{ cursor:'pointer', width:56, height:56, borderRadius:18, background:'var(--surface)', border:'var(--hair)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:26, boxShadow:'var(--shadow)' }}>←</div>
-          <div style={{ fontFamily:'var(--display)', fontSize:34, fontWeight:600, color:'var(--ink)', flex:1 }}>Body a odměny</div>
-        </div>
-
-        {/* v58: HERO panel — body, level, streak, XP progress */}
-        <div style={{ background:'var(--maskotCard)', border:'var(--hair)', borderRadius:24, padding:'22px 26px', boxShadow:'var(--shadow)', display:'flex', alignItems:'center', gap:24 }}>
-          <div style={{ display:'flex', alignItems:'baseline', gap:6 }}>
-            <span style={{ fontFamily:'var(--display)', fontSize:64, fontWeight:700, color:'var(--accent)', lineHeight:1 }}>{child.points}</span>
-            <span style={{ fontSize:18, fontWeight:800, color:'var(--muted)' }}>bodů</span>
-          </div>
-          <div style={{ flex:1, minWidth:0 }}>
-            <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:8 }}>
-              <div style={{ fontFamily:'var(--display)', fontSize:18, fontWeight:600, color:'var(--ink)' }}>{child.levelLabel}</div>
-              <div style={{ background:'var(--soft)', padding:'4px 11px', borderRadius:11, fontFamily:'var(--display)', fontSize:15, fontWeight:600, color:'var(--ink)' }}>🔥 {child.streak} {child.streak === 1 ? 'den' : 'dní'}</div>
-            </div>
-            <div style={{ height:14, background:'var(--soft)', borderRadius:9, overflow:'hidden' }}>
-              <div style={{ height:'100%', width: child.xpPct+'%', background:'linear-gradient(90deg,var(--accent2),var(--accent))', transition:'width .6s' }}/>
-            </div>
-            <div style={{ fontSize:12, fontWeight:800, color:'var(--muted)', marginTop:5 }}>{child.xpPct}% do dalšího levelu</div>
+          <div style={{ flex:1 }}>
+            <div style={{ fontFamily:'var(--display)', fontSize:36, fontWeight:600, color:'#1a1530', lineHeight:1 }}>🛍️ Obchůdek</div>
+            <div style={{ fontSize:14, fontWeight:800, color:'#7c3aed', marginTop:3 }}>Splň úkoly → získej body → kup si odměnu</div>
           </div>
         </div>
 
-        {/* v58: SHOP — full width, hlavní obsah */}
-        <div style={{ background:'linear-gradient(135deg, #fef9c3 0%, #fef3c7 100%)', borderRadius:24, padding:'24px 28px', boxShadow:'var(--shadow)' }}>
-          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:18 }}>
+        {/* v61: KOMPAKTNÍ HERO - jen body + streak + nejbližší tier progress */}
+        <div style={{ background:'linear-gradient(135deg, #fef3c7 0%, #fde68a 50%, #f59e0b 100%)', borderRadius:22, padding:'18px 24px', boxShadow:'0 8px 24px rgba(245,158,11,.25)', display:'flex', alignItems:'center', gap:20, position:'relative', overflow:'hidden' }}>
+          {/* Velký počet bodů s hvězdou */}
+          <div style={{ display:'flex', alignItems:'center', gap:10, flex:'none' }}>
+            <div style={{ fontSize:54, lineHeight:1, filter:'drop-shadow(0 4px 8px rgba(245,158,11,.4))' }}>⭐</div>
             <div>
-              <div style={{ fontFamily:'var(--display)', fontSize:28, fontWeight:600, color:'#854d0e' }}>🛍️ Obchůdek odměn</div>
-              <div style={{ fontSize:14, fontWeight:800, color:'#a16207', marginTop:3 }}>
-                {child.points > 0
-                  ? `Máš ${child.points} bodů — co si koupíš?`
-                  : 'Posbírej body a něco si kup'}
-              </div>
+              <div style={{ fontFamily:'var(--display)', fontSize:54, fontWeight:700, color:'#7c2d12', lineHeight:1 }}>{child.points}</div>
+              <div style={{ fontSize:12, fontWeight:900, color:'#92400e', textTransform:'uppercase', letterSpacing:'.08em' }}>tvých bodů</div>
             </div>
           </div>
-
-          {shop.length === 0 ? (
-            <div style={{ background:'#fff', borderRadius:14, padding:'22px 16px', textAlign:'center', color:'#a16207', fontSize:13, fontWeight:700 }}>
-              Obchod je prázdný. Rodič může přidat odměny v admin.
-            </div>
-          ) : (
-            <div style={{ display:'grid', gridTemplateColumns:'repeat(4, 1fr)', gap:16 }}>
-              {shop.map((r) => {
-                const st = shopState[r.id];
-                const afford = points >= r.cost;
-                const pending = st === 'requested';
-                const unlocked = st === 'unlocked';
-                const locked = !afford && !st;
-                return (
-                  <div key={r.id} style={{
-                    background:'#fff',
-                    border: unlocked ? '3px solid #16a34a' : pending ? '2px solid #f59e0b' : (afford ? '2px solid #16a34a' : '2px solid #e5e7eb'),
-                    borderRadius:18,
-                    padding:'16px 14px',
-                    position:'relative',
-                    boxShadow: unlocked ? '0 6px 18px rgba(22,163,74,.22)' : '0 4px 12px rgba(0,0,0,.05)',
-                    opacity: locked ? 0.7 : 1,
-                    animation: unlocked ? 'softPulse 2s ease-in-out infinite' : 'none'
-                  }}>
-                    {/* Cenovka v rohu */}
-                    <div style={{
-                      position:'absolute',
-                      top:-8, right:12,
-                      background: unlocked ? '#16a34a' : pending ? '#fbbf24' : (afford ? '#16a34a' : '#9ca3af'),
-                      color:'#fff',
-                      borderRadius:10,
-                      padding:'4px 11px',
-                      fontFamily:'var(--display)',
-                      fontWeight:600,
-                      fontSize:14,
-                      boxShadow:'0 3px 8px rgba(0,0,0,.18)',
-                      display:'flex', alignItems:'center', gap:4
-                    }}>
-                      <span style={{ fontSize:13 }}>{unlocked ? '✓' : '⭐'}</span>
-                      <span>{unlocked ? 'TVOJE' : r.cost}</span>
-                    </div>
-
-                    {r.photo ? (
-                      <div style={{
-                        width: 92, height: 92, borderRadius: 16,
-                        background: `url(${r.photo}) center/cover`,
-                        margin:'14px auto 10px',
-                        boxShadow: '0 4px 12px rgba(0,0,0,.15)',
-                        filter: locked ? 'grayscale(0.6)' : 'none'
-                      }}/>
-                    ) : (
-                      <div style={{
-                        fontSize: 60,
-                        textAlign:'center',
-                        margin:'14px 0 10px',
-                        lineHeight: 1,
-                        filter: locked ? 'grayscale(0.6)' : 'none'
-                      }}>{r.emoji}</div>
-                    )}
-
-                    <div style={{
-                      textAlign:'center',
-                      fontFamily:'var(--display)',
-                      fontSize:16,
-                      fontWeight:600,
-                      color:'var(--ink)',
-                      lineHeight:1.15,
-                      minHeight:38,
-                      marginBottom:11
-                    }}>{r.t}</div>
-
-                    <div onClick={() => redeem(r)} style={{
-                      cursor: (locked || pending) ? 'default' : 'pointer',
-                      width:'100%',
-                      background: unlocked
-                        ? 'linear-gradient(135deg, #f59e0b, #ea580c)'
-                        : pending
-                          ? '#fef3c7'
-                          : afford
-                            ? 'linear-gradient(135deg, #16a34a, #15803d)'
-                            : '#f0f0f7',
-                      color: unlocked ? '#fff' : pending ? '#92400e' : afford ? '#fff' : '#9ca3af',
-                      borderRadius:12,
-                      padding:'10px 6px',
-                      textAlign:'center',
-                      fontFamily:'var(--display)',
-                      fontWeight:600,
-                      fontSize:14,
-                      boxShadow: (afford && !pending) || unlocked ? '0 3px 8px rgba(0,0,0,.15)' : 'none',
-                      boxSizing:'border-box'
-                    }}>
-                      {unlocked ? '🎁 Vyzvednout!' : pending ? '⏳ Čeká' : afford ? '🛒 Koupit' : `🔒 chybí ${r.cost - points}`}
-                    </div>
-                  </div>
-                );
-              })}
+          {/* Streak */}
+          {child.streak > 0 && (
+            <div style={{ background:'rgba(255,255,255,.5)', backdropFilter:'blur(6px)', borderRadius:14, padding:'10px 14px', display:'flex', alignItems:'center', gap:8 }}>
+              <div style={{ fontSize:32 }}>🔥</div>
+              <div>
+                <div style={{ fontFamily:'var(--display)', fontSize:26, fontWeight:700, color:'#7c2d12', lineHeight:1 }}>{child.streak}</div>
+                <div style={{ fontSize:10, fontWeight:900, color:'#92400e', textTransform:'uppercase', letterSpacing:'.05em' }}>{child.streak === 1 ? 'den' : child.streak < 5 ? 'dny' : 'dní'} v řadě</div>
+              </div>
             </div>
           )}
+          {/* Spacer + tier text */}
+          <div style={{ flex:1 }}/>
+          {(() => {
+            const tier = getTier(totalXp);
+            const nextTier = getNextTier(totalXp);
+            return (
+              <div style={{ textAlign:'right' }}>
+                <div style={{ display:'inline-flex', alignItems:'center', gap:6, background: tier.color, color:'#fff', padding:'6px 12px', borderRadius:999, fontSize:12, fontWeight:900 }}>
+                  <span style={{ fontSize:14 }}>{tier.emoji}</span>
+                  <span style={{ textTransform:'uppercase', letterSpacing:'.06em' }}>{tier.name}</span>
+                </div>
+                {nextTier && (
+                  <div style={{ fontSize:11, fontWeight:800, color:'#7c2d12', marginTop:4 }}>
+                    → {nextTier.emoji} {nextTier.name}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
         </div>
 
-        {/* v58: TRUHLA POKLADŮ — kompaktnější, na konci */}
-        <div style={{ background:'linear-gradient(135deg, #fef3c7, #fde68a)', borderRadius:22, padding:'18px 22px', boxShadow:'var(--shadow)', border:'2px solid #f59e0b' }}>
-          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:12 }}>
-            <div style={{ display:'flex', alignItems:'center', gap:10 }}>
-              <div style={{ fontSize:28 }}>🗝️</div>
-              <div>
-                <div style={{ fontFamily:'var(--display)', fontSize:20, fontWeight:600, color:'#7c2d12' }}>Truhla pokladů</div>
-                <div style={{ fontSize:12, fontWeight:800, color:'#92400e' }}>{inventory.length} {inventory.length === 1 ? 'předmět' : inventory.length < 5 ? 'předměty' : 'předmětů'} · padá při dokončení rutiny</div>
+        {/* v61: HLAVNÍ OBCHOD - velké kachle s kruhovým progress */}
+        <div style={{ flex:'none' }}>
+          {shop.length === 0 ? (
+            <div style={{ background:'#fff', borderRadius:20, padding:'40px 20px', textAlign:'center', boxShadow:'var(--shadow)' }}>
+              <div style={{ fontSize:64, marginBottom:12 }}>🛍️</div>
+              <div style={{ fontSize:14, fontWeight:800, color:'var(--muted)' }}>Obchod je prázdný — rodič musí přidat odměny</div>
+            </div>
+          ) : (() => {
+            // Seřaď podle ceny vzestupně - levné první (snadnější dosáhnout)
+            const sorted = [...shop].sort((a, b) => a.cost - b.cost);
+            // Roztříď podle dostupnosti
+            const available = sorted.filter(r => points >= r.cost && shopState[r.id] !== 'requested' && shopState[r.id] !== 'unlocked');
+            const unlocked = sorted.filter(r => shopState[r.id] === 'unlocked');
+            const pending = sorted.filter(r => shopState[r.id] === 'requested');
+            const locked = sorted.filter(r => points < r.cost);
+
+            const renderTile = (r) => {
+              const st = shopState[r.id];
+              const afford = points >= r.cost;
+              const isPending = st === 'requested';
+              const isUnlocked = st === 'unlocked';
+              const isLocked = !afford && !st;
+              // Progress 0-100 — kolik z ceny už máš
+              const progress = Math.min(100, Math.round((points / Math.max(1, r.cost)) * 100));
+              // Stav barvy
+              const ringColor = isUnlocked ? '#16a34a' : isPending ? '#f59e0b' : afford ? '#16a34a' : '#a78bfa';
+              const tileBg = isUnlocked ? 'linear-gradient(135deg, #dcfce7, #bbf7d0)' :
+                             isPending ? 'linear-gradient(135deg, #fef3c7, #fde68a)' :
+                             afford ? 'linear-gradient(135deg, #ecfccb, #d9f99d)' : '#fff';
+              const tileBorder = isUnlocked ? '3px solid #16a34a' :
+                                 isPending ? '3px solid #f59e0b' :
+                                 afford ? '3px solid #16a34a' : '2px solid #e9d5ff';
+
+              return (
+                <div key={r.id} onClick={() => !isLocked && !isPending && redeem(r)} style={{
+                  cursor: (isLocked || isPending) ? 'default' : 'pointer',
+                  background: tileBg,
+                  border: tileBorder,
+                  borderRadius:24,
+                  padding:'22px 18px 18px',
+                  position:'relative',
+                  boxShadow: isUnlocked ? '0 10px 28px rgba(22,163,74,.3)' :
+                             afford ? '0 8px 22px rgba(22,163,74,.18)' :
+                             '0 4px 14px rgba(0,0,0,.06)',
+                  animation: isUnlocked ? 'softPulse 1.6s ease-in-out infinite' : 'none',
+                  transition:'transform .2s, box-shadow .2s',
+                  display:'flex',
+                  flexDirection:'column',
+                  alignItems:'center',
+                  gap:14
+                }}>
+                  {/* Status badge top-right */}
+                  {isUnlocked && (
+                    <div style={{ position:'absolute', top:-12, right:-8, background:'#16a34a', color:'#fff', borderRadius:'50%', width:42, height:42, display:'flex', alignItems:'center', justifyContent:'center', fontSize:22, fontWeight:900, boxShadow:'0 4px 10px rgba(0,0,0,.2)', border:'3px solid #fff' }}>🎁</div>
+                  )}
+                  {isPending && (
+                    <div style={{ position:'absolute', top:-12, right:-8, background:'#f59e0b', color:'#fff', borderRadius:'50%', width:42, height:42, display:'flex', alignItems:'center', justifyContent:'center', fontSize:22, boxShadow:'0 4px 10px rgba(0,0,0,.2)', border:'3px solid #fff' }}>⏳</div>
+                  )}
+
+                  {/* CIRCULAR PROGRESS RING with emoji/photo in center */}
+                  <div style={{ position:'relative', width:144, height:144 }}>
+                    <svg width="144" height="144" style={{ position:'absolute', top:0, left:0, transform:'rotate(-90deg)' }}>
+                      {/* Background ring */}
+                      <circle cx="72" cy="72" r="64" fill="none" stroke={isLocked ? '#e9d5ff' : 'rgba(255,255,255,.4)'} strokeWidth="10"/>
+                      {/* Progress ring */}
+                      <circle cx="72" cy="72" r="64" fill="none" stroke={ringColor} strokeWidth="10" strokeLinecap="round"
+                        strokeDasharray={2 * Math.PI * 64}
+                        strokeDashoffset={2 * Math.PI * 64 * (1 - progress/100)}
+                        style={{ transition:'stroke-dashoffset .8s ease' }}/>
+                    </svg>
+                    {/* Center content */}
+                    <div style={{ position:'absolute', inset:'12px', borderRadius:'50%', background:'#fff', boxShadow:'inset 0 2px 6px rgba(0,0,0,.05)', display:'flex', alignItems:'center', justifyContent:'center', overflow:'hidden' }}>
+                      {r.photo ? (
+                        <div style={{ width:'100%', height:'100%', background:`url(${r.photo}) center/cover`, filter: isLocked ? 'grayscale(0.7) opacity(0.7)' : 'none' }}/>
+                      ) : (
+                        <div style={{ fontSize:74, lineHeight:1, filter: isLocked ? 'grayscale(0.7) opacity(0.7)' : 'none' }}>{r.emoji}</div>
+                      )}
+                    </div>
+                    {/* Price/lock indicator bottom */}
+                    {!isUnlocked && !isPending && (
+                      <div style={{
+                        position:'absolute',
+                        bottom:-6,
+                        left:'50%',
+                        transform:'translateX(-50%)',
+                        background: afford ? '#16a34a' : '#fff',
+                        color: afford ? '#fff' : '#7c3aed',
+                        borderRadius:999,
+                        padding:'5px 14px',
+                        fontFamily:'var(--display)',
+                        fontWeight:700,
+                        fontSize:18,
+                        boxShadow:'0 4px 10px rgba(0,0,0,.18)',
+                        border: afford ? '3px solid #fff' : '3px solid #c4b5fd',
+                        display:'flex',
+                        alignItems:'center',
+                        gap:3,
+                        whiteSpace:'nowrap'
+                      }}>
+                        <span style={{ fontSize:15 }}>⭐</span>
+                        <span>{r.cost}</span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Name - krátký, jen pokud existuje */}
+                  <div style={{
+                    textAlign:'center',
+                    fontFamily:'var(--display)',
+                    fontSize:17,
+                    fontWeight:600,
+                    color:'#1a1530',
+                    lineHeight:1.15,
+                    minHeight:38,
+                    display:'flex',
+                    alignItems:'center',
+                    justifyContent:'center'
+                  }}>{r.t}</div>
+
+                  {/* Big CTA bottom */}
+                  {isUnlocked && (
+                    <div style={{ width:'100%', background:'linear-gradient(135deg, #16a34a, #15803d)', color:'#fff', borderRadius:14, padding:'14px', textAlign:'center', fontFamily:'var(--display)', fontSize:20, fontWeight:600, boxShadow:'0 4px 12px rgba(22,163,74,.4)', display:'flex', alignItems:'center', justifyContent:'center', gap:8 }}>
+                      <span style={{ fontSize:26 }}>🎉</span>
+                      <span>Vyzvednout!</span>
+                    </div>
+                  )}
+                  {isPending && (
+                    <div style={{ width:'100%', background:'rgba(255,255,255,.7)', color:'#92400e', borderRadius:14, padding:'12px', textAlign:'center', fontFamily:'var(--display)', fontSize:16, fontWeight:600 }}>
+                      Rodič potvrzuje…
+                    </div>
+                  )}
+                  {afford && !isUnlocked && !isPending && (
+                    <div style={{ width:'100%', background:'linear-gradient(135deg, #16a34a, #15803d)', color:'#fff', borderRadius:14, padding:'14px', textAlign:'center', fontFamily:'var(--display)', fontSize:20, fontWeight:600, boxShadow:'0 4px 12px rgba(22,163,74,.4)', display:'flex', alignItems:'center', justifyContent:'center', gap:8 }}>
+                      <span style={{ fontSize:26 }}>🛒</span>
+                      <span>Koupit!</span>
+                    </div>
+                  )}
+                  {isLocked && (
+                    <div style={{ width:'100%', background:'rgba(167,139,250,.15)', color:'#7c3aed', borderRadius:14, padding:'10px', textAlign:'center', fontSize:13, fontWeight:800, display:'flex', alignItems:'center', justifyContent:'center', gap:5 }}>
+                      <span style={{ fontSize:16 }}>🔒</span>
+                      <span>Ještě {r.cost - points} bodů</span>
+                    </div>
+                  )}
+                </div>
+              );
+            };
+
+            return (
+              <div style={{ display:'flex', flexDirection:'column', gap:18 }}>
+                {/* Sekce: K vyzvednutí (unlocked) */}
+                {unlocked.length > 0 && (
+                  <div>
+                    <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:12 }}>
+                      <div style={{ fontSize:24 }}>🎉</div>
+                      <div style={{ fontFamily:'var(--display)', fontSize:22, fontWeight:600, color:'#15803d' }}>K vyzvednutí</div>
+                      <div style={{ background:'#16a34a', color:'#fff', borderRadius:999, padding:'3px 10px', fontSize:13, fontWeight:900 }}>{unlocked.length}</div>
+                    </div>
+                    <div style={{ display:'grid', gridTemplateColumns:'repeat(3, 1fr)', gap:18 }}>
+                      {unlocked.map(renderTile)}
+                    </div>
+                  </div>
+                )}
+
+                {/* Sekce: Můžeš si koupit (afford) */}
+                {available.length > 0 && (
+                  <div>
+                    <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:12 }}>
+                      <div style={{ fontSize:24 }}>✨</div>
+                      <div style={{ fontFamily:'var(--display)', fontSize:22, fontWeight:600, color:'#15803d' }}>Můžeš si koupit</div>
+                      <div style={{ background:'#16a34a', color:'#fff', borderRadius:999, padding:'3px 10px', fontSize:13, fontWeight:900 }}>{available.length}</div>
+                    </div>
+                    <div style={{ display:'grid', gridTemplateColumns:'repeat(3, 1fr)', gap:18 }}>
+                      {available.map(renderTile)}
+                    </div>
+                  </div>
+                )}
+
+                {/* Sekce: Čeká na potvrzení (pending) */}
+                {pending.length > 0 && (
+                  <div>
+                    <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:12 }}>
+                      <div style={{ fontSize:24 }}>⏳</div>
+                      <div style={{ fontFamily:'var(--display)', fontSize:22, fontWeight:600, color:'#92400e' }}>Čeká na rodiče</div>
+                    </div>
+                    <div style={{ display:'grid', gridTemplateColumns:'repeat(3, 1fr)', gap:18 }}>
+                      {pending.map(renderTile)}
+                    </div>
+                  </div>
+                )}
+
+                {/* Sekce: Ještě posbírej body */}
+                {locked.length > 0 && (
+                  <div>
+                    <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:12 }}>
+                      <div style={{ fontSize:24 }}>🌟</div>
+                      <div style={{ fontFamily:'var(--display)', fontSize:22, fontWeight:600, color:'#7c3aed' }}>Pošlu si pro</div>
+                      <div style={{ fontSize:12, fontWeight:800, color:'#9333ea', alignSelf:'center' }}>(splň úkoly a získej body)</div>
+                    </div>
+                    <div style={{ display:'grid', gridTemplateColumns:'repeat(3, 1fr)', gap:18 }}>
+                      {locked.map(renderTile)}
+                    </div>
+                  </div>
+                )}
               </div>
+            );
+          })()}
+        </div>
+
+        {/* v61: TRUHLA POKLADŮ - kompaktnější */}
+        {inventory.length > 0 && (
+          <div style={{ background:'linear-gradient(135deg, #fef3c7, #fde68a)', borderRadius:20, padding:'14px 18px', boxShadow:'0 6px 18px rgba(245,158,11,.18)', border:'2px solid #f59e0b' }}>
+            <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:10 }}>
+              <div style={{ fontSize:28 }}>🗝️</div>
+              <div style={{ fontFamily:'var(--display)', fontSize:18, fontWeight:600, color:'#7c2d12', flex:1 }}>Truhla pokladů</div>
+              <div style={{ background:'#f59e0b', color:'#fff', borderRadius:999, padding:'3px 10px', fontSize:13, fontWeight:900 }}>{inventory.length}</div>
             </div>
-          </div>
-          {inventory.length === 0 ? (
-            <div style={{ background:'#fff', borderRadius:12, padding:'14px', textAlign:'center', color:'#92400e', fontSize:13, fontWeight:700 }}>
-              Truhla je prázdná. Splň rutinu a něco padne! ✨
-            </div>
-          ) : (
-            <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(64px, 1fr))', gap:7 }}>
-              {[...inventory].reverse().slice(0, 48).map((item) => {
+            <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(58px, 1fr))', gap:6 }}>
+              {[...inventory].reverse().slice(0, 24).map((item) => {
                 const style = RARITY_STYLE[item.rarity] || RARITY_STYLE.common;
                 return (
                   <div key={item.uid} title={item.name + ' (' + style.label + ')'} style={{
                     background: style.bg,
                     border: '2px solid ' + style.border,
                     borderRadius: 10,
-                    padding: '8px 4px',
+                    padding: '7px 4px',
                     textAlign: 'center',
-                    boxShadow: item.rarity === 'legendary' ? '0 3px 10px rgba(245,158,11,.4)' : '0 1px 4px rgba(0,0,0,.06)',
+                    boxShadow: item.rarity === 'legendary' ? '0 3px 10px rgba(245,158,11,.4)' : 'none',
                     color: style.color,
-                    animation: item.rarity === 'legendary' ? 'rarityPulse 2.5s infinite' : 'none',
-                    cursor:'help'
+                    animation: item.rarity === 'legendary' ? 'rarityPulse 2.5s infinite' : 'none'
                   }}>
-                    <div style={{ fontSize:24, lineHeight:1 }}>{item.emoji}</div>
-                    <div style={{ fontSize:8, fontWeight:900, marginTop:3, textTransform:'uppercase', letterSpacing:'.03em' }}>{style.label}</div>
+                    <div style={{ fontSize:22, lineHeight:1 }}>{item.emoji}</div>
                   </div>
                 );
               })}
             </div>
-          )}
-          {inventory.length > 48 && (
-            <div style={{ fontSize:11, fontWeight:800, color:'#92400e', textAlign:'center', marginTop:7 }}>... a dalších {inventory.length - 48}</div>
-          )}
-        </div>
-
-        {/* challenges */}
-        <div style={{ background:'var(--surface)', border:'var(--hair)', borderRadius:26, padding:'22px 24px', boxShadow:'var(--shadow)' }}>
-          <div style={{ fontFamily:'var(--display)', fontSize:23, fontWeight:600, color:'var(--ink)' }}>Výzvy týdne 🏆</div>
-          <div style={{ fontSize:14, fontWeight:700, color:'var(--muted)', margin:'4px 0 14px' }}>Speciální mise na tenhle týden — nastavuje rodič v aplikaci</div>
-          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:14 }}>
-            {challengesKid.map((c) => (
-              <div key={c.id} style={{ display:'flex', alignItems:'center', gap:14, padding:16, background: c.bg, borderRadius:18 }}>
-                <div style={{ fontSize:38, lineHeight:1 }}>{c.mark}</div>
-                <div style={{ flex:1, minWidth:0 }}>
-                  <div style={{ fontFamily:'var(--display)', fontSize:18, fontWeight:500, color: c.ink, lineHeight:1.12 }}>{c.t}</div>
-                  <div style={{ display:'inline-block', marginTop:7, fontSize:12, fontWeight:800, color: c.ink, background: c.badgeBg, padding:'3px 10px', borderRadius:9 }}>{c.badge}</div>
-                </div>
-              </div>
-            ))}
+            {inventory.length > 24 && (
+              <div style={{ fontSize:11, fontWeight:800, color:'#92400e', textAlign:'center', marginTop:7 }}>+ dalších {inventory.length - 24}</div>
+            )}
           </div>
-        </div>
+        )}
 
-        {/* v6: Čtení + Nálepky */}
+        {/* v61: VÝZVY týdne - jen pokud nějaké jsou, kompaktní */}
+        {challengesKid && challengesKid.length > 0 && (
+          <div style={{ background:'var(--surface)', border:'var(--hair)', borderRadius:20, padding:'16px 20px', boxShadow:'var(--shadow)' }}>
+            <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:10 }}>
+              <div style={{ fontSize:24 }}>🏆</div>
+              <div style={{ fontFamily:'var(--display)', fontSize:18, fontWeight:600, color:'var(--ink)' }}>Výzvy týdne</div>
+            </div>
+            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>
+              {challengesKid.map((c) => (
+                <div key={c.id} style={{ display:'flex', alignItems:'center', gap:12, padding:12, background: c.bg, borderRadius:14 }}>
+                  <div style={{ fontSize:32, lineHeight:1 }}>{c.mark}</div>
+                  <div style={{ flex:1, minWidth:0 }}>
+                    <div style={{ fontFamily:'var(--display)', fontSize:15, fontWeight:500, color: c.ink, lineHeight:1.15 }}>{c.t}</div>
+                    <div style={{ display:'inline-block', marginTop:5, fontSize:11, fontWeight:800, color: c.ink, background: c.badgeBg, padding:'2px 8px', borderRadius:7 }}>{c.badge}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* v6: Čtení + Nálepky (jen pokud existují) */}
         {(readingList.length > 0 || stickers.length > 0) && (
-        <div style={{ display:'grid', gridTemplateColumns: readingList.length > 0 && stickers.length > 0 ? '1fr 1fr' : '1fr', gap:18 }}>
+        <div style={{ display:'grid', gridTemplateColumns: readingList.length > 0 && stickers.length > 0 ? '1fr 1fr' : '1fr', gap:16 }}>
           {readingList.length > 0 && (
             <div>
-              <div style={{ fontFamily:'var(--display)', fontSize:20, fontWeight:600, color:'var(--ink)', marginBottom:12 }}>Moje knížky 📚</div>
-              <div style={{ background:'var(--surface)', border:'var(--hair)', borderRadius:20, padding:14, boxShadow:'var(--shadow)' }}>
+              <div style={{ fontFamily:'var(--display)', fontSize:18, fontWeight:600, color:'var(--ink)', marginBottom:10 }}>Moje knížky 📚</div>
+              <div style={{ background:'var(--surface)', border:'var(--hair)', borderRadius:18, padding:12, boxShadow:'var(--shadow)' }}>
                 {readingList.map((b) => {
                   const done = b.pagesRead >= b.pagesTotal && b.pagesTotal > 0;
                   return (
-                    <div key={b.id} style={{ padding:'10px 4px', borderBottom:'var(--hair)' }}>
+                    <div key={b.id} style={{ padding:'8px 4px', borderBottom:'var(--hair)' }}>
                       <div style={{ display:'flex', alignItems:'center', gap:10 }}>
-                        <div style={{ fontSize:28 }}>{done ? '🎓' : '📖'}</div>
+                        <div style={{ fontSize:24 }}>{done ? '🎓' : '📖'}</div>
                         <div style={{ flex:1, minWidth:0 }}>
-                          <div style={{ fontFamily:'var(--display)', fontSize:17, fontWeight:500, color:'var(--ink)', lineHeight:1.1 }}>{b.title}</div>
-                          <div style={{ fontSize:13, fontWeight:800, color:'var(--muted)' }}>{b.pagesRead} / {b.pagesTotal} stránek</div>
+                          <div style={{ fontFamily:'var(--display)', fontSize:15, fontWeight:500, color:'var(--ink)', lineHeight:1.1 }}>{b.title}</div>
+                          <div style={{ fontSize:12, fontWeight:800, color:'var(--muted)' }}>{b.pagesRead} / {b.pagesTotal} stránek</div>
                         </div>
                         {!done && (
-                          <div style={{ display:'flex', gap:6 }}>
+                          <div style={{ display:'flex', gap:5 }}>
                             {[5, 10].map(n => (
                               <div key={n} onClick={() => {
                                 setReadingList(arr => arr.map(x => x.id === b.id ? {...x, pagesRead: Math.min(x.pagesTotal, x.pagesRead + n)} : x));
                                 addPoints(n, `Přečetl ${n} stránek`, true);
                                 feedPet(Math.ceil(n/3), 0);
                                 audio.coin();
-                              }} style={{ cursor:'pointer', background:'var(--accent)', color:'#fff', fontWeight:800, fontSize:13, padding:'8px 11px', borderRadius:10 }}>+{n}</div>
+                              }} style={{ cursor:'pointer', background:'var(--accent)', color:'#fff', fontWeight:800, fontSize:12, padding:'6px 10px', borderRadius:9 }}>+{n}</div>
                             ))}
                           </div>
                         )}
                         {done && (
-                          <div style={{ background:'#dcfce7', color:'#166534', fontWeight:800, fontSize:13, padding:'7px 11px', borderRadius:10 }}>Hotovo!</div>
+                          <div style={{ background:'#dcfce7', color:'#166534', fontWeight:800, fontSize:12, padding:'6px 10px', borderRadius:9 }}>Hotovo!</div>
                         )}
                       </div>
-                      <div style={{ marginTop:7, height:7, background:'#e5e7eb', borderRadius:4, overflow:'hidden' }}>
+                      <div style={{ marginTop:6, height:6, background:'#e5e7eb', borderRadius:3, overflow:'hidden' }}>
                         <div style={{ height:'100%', width: Math.min(100, (b.pagesRead / Math.max(1, b.pagesTotal)) * 100) + '%', background:'linear-gradient(90deg, #c084fc, #a855f7)', transition:'width .3s' }}/>
                       </div>
                     </div>
@@ -4716,13 +4857,13 @@ function App() {
           )}
           {stickers.length > 0 && (
             <div>
-              <div style={{ fontFamily:'var(--display)', fontSize:20, fontWeight:600, color:'var(--ink)', marginBottom:12 }}>Moje nálepky 🏆</div>
-              <div style={{ background:'var(--surface)', border:'var(--hair)', borderRadius:20, padding:14, boxShadow:'var(--shadow)' }}>
+              <div style={{ fontFamily:'var(--display)', fontSize:18, fontWeight:600, color:'var(--ink)', marginBottom:10 }}>Moje nálepky 🏆</div>
+              <div style={{ background:'var(--surface)', border:'var(--hair)', borderRadius:18, padding:12, boxShadow:'var(--shadow)' }}>
                 <div style={{ display:'grid', gridTemplateColumns:'repeat(4, 1fr)', gap:8 }}>
                   {stickers.map((s, i) => (
-                    <div key={i} style={{ background:'var(--soft)', borderRadius:14, padding:'14px 6px', textAlign:'center', animation: `popIn .5s ease ${(i*0.05).toFixed(2)}s both` }}>
-                      <div style={{ fontSize:42, lineHeight:1 }}>{s.emoji}</div>
-                      <div style={{ fontSize:11, fontWeight:800, color:'var(--ink)', marginTop:6, lineHeight:1.2 }}>{s.name}</div>
+                    <div key={i} style={{ background:'var(--soft)', borderRadius:12, padding:'12px 6px', textAlign:'center', animation: `popIn .5s ease ${(i*0.05).toFixed(2)}s both` }}>
+                      <div style={{ fontSize:36, lineHeight:1 }}>{s.emoji}</div>
+                      <div style={{ fontSize:10, fontWeight:800, color:'var(--ink)', marginTop:5, lineHeight:1.2 }}>{s.name}</div>
                     </div>
                   ))}
                 </div>
@@ -6014,13 +6155,54 @@ function App() {
                       </div>
                     )}
                     {gcalEvents.length > 0 && (
-                      <div style={{ marginTop:10, background:'#fff', borderRadius:10, padding:'8px 10px', maxHeight:200, overflowY:'auto' }}>
-                        {gcalEvents.slice(0, 10).map((ev, i) => (
-                          <div key={i} style={{ padding:'5px 0', borderBottom: i < 9 ? '1px solid #f0f0f5' : 'none', fontSize:12 }}>
-                            <span style={{ fontWeight:800, color:'#1e40af' }}>{ev.iso.slice(5).replace('-','/')} {ev.time}</span>
-                            <span style={{ color:'#1a1530', marginLeft:6 }}>{ev.summary}</span>
+                      <div style={{ marginTop:10, background:'#fff', borderRadius:10, padding:'8px 10px', maxHeight:240, overflowY:'auto' }}>
+                        <div style={{ fontSize:10, fontWeight:900, color:'#64748b', textTransform:'uppercase', letterSpacing:'.08em', marginBottom:6 }}>Náhled prvních 12 událostí:</div>
+                        {gcalEvents.slice(0, 12).map((ev, i) => (
+                          <div key={i} style={{ padding:'6px 0', borderBottom: i < 11 ? '1px solid #f0f0f5' : 'none', fontSize:12, display:'flex', gap:6, alignItems:'baseline' }}>
+                            <span style={{ fontWeight:800, color:'#1e40af', minWidth:55 }}>{ev.iso.slice(5).replace('-','/')}</span>
+                            <span style={{ fontWeight:700, color:'#0f172a', fontFamily:'monospace', minWidth:90 }}>
+                              {ev.allDay ? 'celý den' : (ev.time + (ev.endTime ? '–' + ev.endTime : ''))}
+                            </span>
+                            <span style={{ color:'#1a1530', flex:1, minWidth:0, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{ev.summary}</span>
                           </div>
                         ))}
+                      </div>
+                    )}
+                    {/* v61: Debug & re-parse */}
+                    {(gcalRawText || gcalEvents.length > 0) && (
+                      <div style={{ marginTop:10, display:'flex', gap:6, flexWrap:'wrap' }}>
+                        {gcalRawText && (
+                          <div onClick={() => {
+                            try {
+                              const reparsed = parseICal(gcalRawText);
+                              setGcalEvents(reparsed);
+                              showToast('Re-parsováno ' + reparsed.length + ' událostí', '🔄');
+                            } catch (e) {
+                              showToast('Chyba re-parse: ' + e.message, '⚠');
+                            }
+                          }} style={{ cursor:'pointer', flex:1, minWidth:100, background:'#dbeafe', color:'#1e40af', borderRadius:8, padding:'7px 10px', textAlign:'center', fontSize:11, fontWeight:800 }}>
+                            🔄 Re-parsovat (z cache)
+                          </div>
+                        )}
+                        <div onClick={() => {
+                          if (!window.confirm('Smazat cache kalendáře? Bude potřeba nové stažení.')) return;
+                          setGcalEvents([]);
+                          setGcalRawText('');
+                          setGcalLastFetch(0);
+                          showToast('Cache smazán', '🗑');
+                        }} style={{ cursor:'pointer', flex:1, minWidth:100, background:'#fee2e2', color:'#991b1b', borderRadius:8, padding:'7px 10px', textAlign:'center', fontSize:11, fontWeight:800 }}>
+                          🗑 Smazat cache
+                        </div>
+                        {gcalRawText && (
+                          <div onClick={() => {
+                            // Find first event with weird time and show its raw block
+                            const blocks = gcalRawText.split('BEGIN:VEVENT').slice(1, 4);
+                            const dump = blocks.map((b, idx) => 'EVENT #' + (idx+1) + ':\n' + b.split('END:VEVENT')[0].slice(0, 500)).join('\n\n---\n\n');
+                            window.alert('První 3 raw VEVENT bloky (zkráceno):\n\n' + dump);
+                          }} style={{ cursor:'pointer', flex:1, minWidth:100, background:'#fef3c7', color:'#92400e', borderRadius:8, padding:'7px 10px', textAlign:'center', fontSize:11, fontWeight:800 }}>
+                            🔍 Zobrazit raw
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
@@ -6960,8 +7142,8 @@ function App() {
 
                   {/* Verze (vždy zobrazeno) */}
                   <div style={{ background:'#fff', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
-                    <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'#1a1530' }}>Verze: Domácí pomocník v60</div>
-                    <div style={{ fontSize:12, color:'#9a96ac', marginTop:4 }}>Build 2026-06-22 · 18:13</div>
+                    <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'#1a1530' }}>Verze: Domácí pomocník v61</div>
+                    <div style={{ fontSize:12, color:'#9a96ac', marginTop:4 }}>Build 2026-06-22 · 18:31 · obchod redesign + kal fix</div>
                   </div>
                 </div>
                 )}
