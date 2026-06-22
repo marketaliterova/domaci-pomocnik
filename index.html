@@ -7030,10 +7030,39 @@ function App() {
                   </div>
                   </>)}
 
-                  {/* Verze (vždy zobrazeno) */}
+                  {/* Verze (vždy zobrazeno) + v64: Force refresh button */}
                   <div style={{ background:'#fff', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
-                    <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'#1a1530' }}>Verze: Domácí pomocník v63</div>
-                    <div style={{ fontSize:12, color:'#9a96ac', marginTop:4 }}>Build 2026-06-22 · 18:53 · kal Intl+offset</div>
+                    <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:12, flexWrap:'wrap' }}>
+                      <div style={{ flex:1, minWidth:0 }}>
+                        <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'#1a1530' }}>Verze: Domácí pomocník v64</div>
+                        <div style={{ fontSize:12, color:'#9a96ac', marginTop:4 }}>Build 2026-06-22 · 19:00 · force refresh btn</div>
+                      </div>
+                      <div onClick={() => {
+                        audio.tap();
+                        // Vynucené nové načtení s cache-busting query parametrem
+                        const url = window.location.origin + window.location.pathname + '?v=' + Date.now();
+                        window.location.href = url;
+                      }} style={{
+                        cursor:'pointer',
+                        background:'linear-gradient(135deg, #3b82f6, #2563eb)',
+                        color:'#fff',
+                        borderRadius:12,
+                        padding:'10px 16px',
+                        fontWeight:800,
+                        fontSize:13,
+                        boxShadow:'0 4px 12px rgba(59,130,246,.25)',
+                        whiteSpace:'nowrap',
+                        display:'flex',
+                        alignItems:'center',
+                        gap:6
+                      }} title="Stáhne nejnovější verzi aplikace bez ztráty hesel">
+                        <span style={{ fontSize:16 }}>🔄</span>
+                        <span>Vynutit aktualizaci</span>
+                      </div>
+                    </div>
+                    <div style={{ fontSize:11, color:'#6b7280', marginTop:8, lineHeight:1.4 }}>
+                      💡 Pokud aplikace ukazuje staré chování nebo se zobrazí špatně, klikni vlevo. Stáhne se čerstvá verze — <b>hesla a data zůstanou nedotčená</b>.
+                    </div>
                   </div>
                 </div>
                 )}
