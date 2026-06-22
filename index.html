@@ -38,6 +38,7 @@
   @keyframes blink { 0%,92%,100% { transform: scaleY(1); } 96% { transform: scaleY(.1); } }
   @keyframes shake { 0%,100% { transform: translateX(0); } 25% { transform: translateX(-3px); } 75% { transform: translateX(3px); } }
   @keyframes bubbleUp { 0% { transform: translateY(0); opacity: 0; } 10% { opacity: 0.8; } 90% { opacity: 0.8; } 100% { transform: translateY(-130vh); opacity: 0; } }
+  @keyframes explosionPulse { 0%, 100% { opacity: 0.8; transform: scale(1); } 50% { opacity: 1; transform: scale(1.04); } }
   @keyframes toastIn { 0% { opacity: 0; transform: translateY(-16px) scale(.96); } 100% { opacity: 1; transform: translateY(0) scale(1); } }
   @keyframes spinSlow { 0% { transform: rotate(0); } 100% { transform: rotate(360deg); } }
   @keyframes floatUp { 0% { transform: translate(-50%, 0) scale(1); opacity: 1; } 70% { opacity: 1; } 100% { transform: translate(-50%, -100px) scale(1.5); opacity: 0; } }
@@ -1059,6 +1060,10 @@ function App() {
   const [spinWheelLastDate, setSpinWheelLastDate] = useState((persisted && persisted.spinWheelLastDate) || '');
   // v47: pole thresholdů (v minutách) které byly DNES odpáleny pro ranní alarm odchodu - reset s denním resetem
   const [morningAlertsFired, setMorningAlertsFired] = useState((persisted && Array.isArray(persisted.morningAlertsFired)) ? persisted.morningAlertsFired : []);
+  // v48: BOMBA - když rutina není hotová v čase odchodu, vybuchne. Default vypnutá.
+  const [bombEnabled, setBombEnabled] = useState((persisted && typeof persisted.bombEnabled === 'boolean') ? persisted.bombEnabled : false);
+  const [showBomb, setShowBomb] = useState(false); // overlay modal
+  const [bombFiredToday, setBombFiredToday] = useState((persisted && persisted.bombFiredToday) || '');
   // v44: CURSUS - pole odemčených stage ID (např. ['forest', 'mountain'])
   const [cursusUnlocked, setCursusUnlocked] = useState((persisted && Array.isArray(persisted.cursusUnlocked)) ? persisted.cursusUnlocked : []);
   // Pro animaci právě odemčené - dočasně showovat modal
@@ -1177,6 +1182,7 @@ function App() {
       hueWebhookUrl, hueButtons,
       routineHistory, spinWheelLastDate,
       cursusUnlocked, morningAlertsFired,
+      bombEnabled, bombFiredToday,
     });
   }, [theme, points, totalXp, streak, morning, evening, doneM, doneE, whoHome, departMin,
       shopItems, shopState, choreState, pendingApprovals, packState, packAwarded,
@@ -1358,6 +1364,7 @@ function App() {
         { min: 30, sound: 'softBeep',    msg: 'Zbývá 30 minut do odchodu', voiceText: 'Zbývá 30 minut do školy' },
         { min: 15, sound: 'softBeep',    msg: 'Zbývá 15 minut, pospěš si', voiceText: 'Patnáct minut, pospěš si' },
         { min: 5,  sound: 'urgentAlarm', msg: 'Pozor, už jen 5 minut!',   voiceText: 'Pět minut, honem!' },
+        { min: 2,  sound: 'urgentAlarm', msg: '⚠️ 2 minuty! Rychle!',      voiceText: 'Dvě minuty! Honem!' },
         { min: 0,  sound: 'urgentAlarm', msg: 'Čas vyrazit! 🏃',            voiceText: 'Čas vyrazit do školy!' },
       ];
       for (const t of thresholds) {
@@ -1374,11 +1381,22 @@ function App() {
           break; // jeden threshold za check, ne všechny najednou
         }
       }
+
+      // v48: BOMBA - odpálí pokud rutina není hotová v čase odchodu a bomba je zapnutá
+      if (bombEnabled && remaining <= 0 && bombFiredToday !== todayISO() && !allMorningDone) {
+        setBombFiredToday(todayISO());
+        setShowBomb(true);
+        // Velký BOOM zvuk
+        try {
+          if (audio.urgentAlarm) audio.urgentAlarm();
+          setTimeout(() => { if (audio.urgentAlarm) audio.urgentAlarm(); }, 800);
+        } catch(e) {}
+      }
     };
     check();
     const id = setInterval(check, 30 * 1000); // každých 30s
     return () => clearInterval(id);
-  }, [departMin, morning, doneM, morningAlertsFired, audio, showToast]);
+  }, [departMin, morning, doneM, morningAlertsFired, bombEnabled, bombFiredToday, audio, showToast]);
 
   // v41: Denní snapshot - když se změní den, ulož včerejší rutinu do historie
   useEffect(() => {
@@ -1414,6 +1432,7 @@ function App() {
       setPackState({});
       setPackAwarded(false);
       setMorningAlertsFired([]); // v47: reset ranních alarmů pro nový den
+      // v48: bombFiredToday se neresetuje na empty string - logika v effect používá todayISO() jako kontrolu
       setLastDayKey(today);
     };
     checkDay();
@@ -2739,18 +2758,22 @@ function App() {
     }
   }, [screen, currentStepStart]);
 
-  // v19: Když se změní aktuální krok rutiny, přehraj hint MP3 (pokud nastaven)
+  // v19/v48: Když se změní aktuální krok rutiny, přehraj hint hláska JEN pokud uživatel nastavil vlastní MP3
+  // Nepřehrávat TTS fallback (nechceme, aby tablet četl text hintu - např. počasí "Dnes bude chladno")
   useEffect(() => {
     if (screen !== 'routine' || !currentStepStart || !activeRoutine) return;
     const list = (activeRoutine === 'morning' ? morning : evening).filter(s => s.on);
     const map = activeRoutine === 'morning' ? doneM : doneE;
     const current = list.find(s => !map[s.id]);
-    if (current) {
-      // Krátké zpoždění aby předchozí zvuk doběhl
-      const t = setTimeout(() => playVoice('hint-' + current.id, current.hint), 700);
-      return () => clearTimeout(t);
-    }
-  }, [screen, currentStepStart, activeRoutine, morning, evening, doneM, doneE, playVoice]);
+    if (!current) return;
+    // Hraj jen pokud uživatel explicitně nahrál vlastní hint MP3
+    const key = 'hint-' + current.id;
+    const userVoice = voiceMap && voiceMap[key];
+    if (!userVoice || !String(userVoice).trim()) return;
+    // Krátké zpoždění aby předchozí zvuk doběhl
+    const t = setTimeout(() => playVoice(key, ''), 700);
+    return () => clearTimeout(t);
+  }, [screen, currentStepStart, activeRoutine, morning, evening, doneM, doneE, voiceMap, playVoice]);
 
   // Re-render každou vteřinu pro plynulý časovač (jen když je rutina aktivní)
   useEffect(() => {
@@ -2866,6 +2889,8 @@ function App() {
     if (typeof s.spinWheelLastDate === 'string') setSpinWheelLastDate(s.spinWheelLastDate);
     if (Array.isArray(s.cursusUnlocked)) setCursusUnlocked(s.cursusUnlocked);
     if (Array.isArray(s.morningAlertsFired)) setMorningAlertsFired(s.morningAlertsFired);
+    if (typeof s.bombEnabled === 'boolean') setBombEnabled(s.bombEnabled);
+    if (typeof s.bombFiredToday === 'string') setBombFiredToday(s.bombFiredToday);
     if (isStr(s.gcalUrl)) setGcalUrl(s.gcalUrl);
     if (isArr(s.gcalEvents)) setGcalEvents(s.gcalEvents);
     if (isNum(s.gcalLastFetch)) setGcalLastFetch(s.gcalLastFetch);
@@ -4792,6 +4817,37 @@ function App() {
                       </div>
                     </div>
                   </div>
+
+                  {/* v48: BOMBA - opce kdy nestihne ráno */}
+                  <div style={{ background: bombEnabled ? 'linear-gradient(135deg, #fee2e2, #fecaca)' : '#fff', border: bombEnabled ? '2px solid #dc2626' : '1px solid #e7ebf3', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
+                    <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:12 }}>
+                      <div style={{ flex:1, minWidth:0 }}>
+                        <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:4 }}>
+                          <div style={{ fontSize:24 }}>💣</div>
+                          <div style={{ fontFamily:'var(--display)', fontSize:17, fontWeight:600, color: bombEnabled ? '#991b1b' : '#1a1530' }}>Bomba!</div>
+                        </div>
+                        <div style={{ fontSize:12, fontWeight:700, color: bombEnabled ? '#7f1d1d' : '#5a566e', lineHeight:1.4 }}>
+                          {bombEnabled
+                            ? '⚠️ ZAPNUTO: Když není rutina v čase odchodu hotová, vybuchne bomba s velkým bouchnutím.'
+                            : 'Když není rutina hotová v čase odchodu, vybuchne bomba s velkým efektem. (Jen vizuálně + zvuk, žádné body neutíkají.)'}
+                        </div>
+                      </div>
+                      <div onClick={() => { setBombEnabled(!bombEnabled); audio.tap(); }} style={{
+                        cursor:'pointer', width:54, height:30, borderRadius:15,
+                        background: bombEnabled ? '#dc2626' : '#cbd5e1',
+                        position:'relative', flexShrink:0,
+                        transition:'background .2s'
+                      }}>
+                        <div style={{
+                          position:'absolute', top:3, left: bombEnabled ? 27 : 3,
+                          width:24, height:24, borderRadius:'50%', background:'#fff',
+                          boxShadow:'0 2px 4px rgba(0,0,0,.2)',
+                          transition:'left .2s'
+                        }}/>
+                      </div>
+                    </div>
+                  </div>
+
                   <div style={{ background:'#fff', borderRadius:20, padding:18, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
                     <div style={{ fontFamily:'var(--display)', fontSize:18, fontWeight:600, color:'#1a1530' }}>Počasí v Praze</div>
                     <div style={{ display:'flex', alignItems:'center', gap:12, marginTop:11 }}>
@@ -6307,8 +6363,8 @@ function App() {
 
                   {/* Verze (vždy zobrazeno) */}
                   <div style={{ background:'#fff', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
-                    <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'#1a1530' }}>Verze: Domácí pomocník v47</div>
-                    <div style={{ fontSize:12, color:'#9a96ac', marginTop:4 }}>Build 2026-06-22 · 07:33</div>
+                    <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'#1a1530' }}>Verze: Domácí pomocník v48</div>
+                    <div style={{ fontSize:12, color:'#9a96ac', marginTop:4 }}>Build 2026-06-22 · 10:10</div>
                   </div>
                 </div>
                 )}
@@ -6538,6 +6594,22 @@ function App() {
               <div onClick={() => { setShowSpinWheel(false); setSpinResult(null); audio.tap(); }} style={{ cursor:'pointer', background:'rgba(255,255,255,.95)', color:'#1a1530', fontFamily:'var(--display)', fontSize:18, fontWeight:700, padding:'14px 36px', borderRadius:16 }}>Pokračovat</div>
             </>
           )}
+        </div>
+      )}
+
+      {/* v48: BOMBA modal - když nestihne rutinu */}
+      {showBomb && (
+        <div style={{ position:'absolute', inset:0, zIndex:90, background:'#000', display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', padding:30, animation:'shake 0.4s ease infinite' }}>
+          {/* Exploze pomocí radial gradient */}
+          <div style={{ position:'absolute', inset:0, background:'radial-gradient(circle at center, #fbbf24 0%, #f97316 25%, #dc2626 50%, #7f1d1d 75%, #000 100%)', animation:'explosionPulse .5s ease-in-out infinite', opacity:.8 }}/>
+
+          <div style={{ position:'relative', zIndex:1, textAlign:'center' }}>
+            <div style={{ fontSize:160, lineHeight:1, animation:'popIn .4s ease' }}>💥</div>
+            <div style={{ fontFamily:'var(--display)', fontSize:64, fontWeight:700, color:'#fbbf24', textShadow:'0 4px 16px rgba(0,0,0,.8)', letterSpacing:'.05em', marginTop:8 }}>BOOM!</div>
+            <div style={{ fontFamily:'var(--display)', fontSize:24, fontWeight:600, color:'#fff', marginTop:14, maxWidth:520, lineHeight:1.3, textShadow:'0 2px 8px rgba(0,0,0,.8)' }}>Nestihl/a jsi to do času! Bomba vybuchla.</div>
+            <div style={{ fontSize:16, fontWeight:700, color:'rgba(255,255,255,.85)', marginTop:10, maxWidth:480, lineHeight:1.4 }}>Žádné body se neztratí, jen pro zábavu. Zítra to dáš líp!</div>
+            <div onClick={() => { setShowBomb(false); audio.tap(); }} style={{ cursor:'pointer', marginTop:24, display:'inline-block', background:'rgba(255,255,255,.95)', color:'#1a1530', fontFamily:'var(--display)', fontSize:20, fontWeight:700, padding:'14px 36px', borderRadius:16 }}>Pokračovat</div>
+          </div>
         </div>
       )}
 
