@@ -610,7 +610,7 @@ const saveState = (s) => {
       // v14 hero quest
       inventory: s.inventory,
       // v15
-      lastDayKey: s.lastDayKey, gcalUrl: s.gcalUrl, gcalEvents: s.gcalEvents, gcalLastFetch: s.gcalLastFetch, gcalHourOffset: s.gcalHourOffset,
+      lastDayKey: s.lastDayKey, gcalUrl: s.gcalUrl, gcalEvents: s.gcalEvents, gcalLastFetch: s.gcalLastFetch, gcalHourOffset: s.gcalHourOffset, gcalAutoRefresh: s.gcalAutoRefresh,
       whoHomeSchedule: s.whoHomeSchedule,
       // v17
       voiceMap: s.voiceMap, voiceBaseUrl: s.voiceBaseUrl,
@@ -1446,7 +1446,7 @@ function App() {
       syncUrl, lastSyncTime,
       petSleeping,
       inventory,
-      lastDayKey, gcalUrl, gcalEvents, gcalLastFetch, gcalHourOffset, whoHomeSchedule,
+      lastDayKey, gcalUrl, gcalEvents, gcalLastFetch, gcalHourOffset, gcalAutoRefresh, whoHomeSchedule,
       voiceMap, voiceBaseUrl, dayBlueprintByDay,
       hueWebhookUrl, hueButtons,
       routineHistory, spinWheelLastDate,
@@ -1464,7 +1464,7 @@ function App() {
       syncUrl, lastSyncTime,
       petSleeping,
       inventory,
-      lastDayKey, gcalUrl, gcalEvents, gcalLastFetch, gcalHourOffset, whoHomeSchedule,
+      lastDayKey, gcalUrl, gcalEvents, gcalLastFetch, gcalHourOffset, gcalAutoRefresh, whoHomeSchedule,
       voiceMap, voiceBaseUrl, dayBlueprintByDay,
       hueWebhookUrl, hueButtons,
       routineHistory, spinWheelLastDate,
@@ -2108,21 +2108,18 @@ function App() {
     if (force) showToast('Všechny proxies selhaly', '⚠');
   }, [gcalUrl, gcalLastFetch, parseICal, showToast]);
 
-  // v57: jednorázový force-refresh GCal pro zneplatnění staré (špatné) cached parse
-  const gcalForcedReparseRef = useRef(false);
+  // v65: VYPNUTO auto-fetch a 15min interval - kalendář se NIKDY nepřepisuje sám.
+  // Megy chce 100% kontrolu — fetch jen kliknutím tlačítka "Stáhnout teď".
+  // Pokud chce auto-refresh, může si ho zapnout přes přepínač níže.
+  const [gcalAutoRefresh, setGcalAutoRefresh] = useState((persisted && persisted.gcalAutoRefresh) || false);
   useEffect(() => {
     if (!gcalUrl) return;
-    if (!gcalForcedReparseRef.current) {
-      gcalForcedReparseRef.current = true;
-      console.log('[gcal] v57 force-refresh on first mount (kvůli stale UTC parse)');
-      fetchGcal(true); // FORCE - ignore cache
-    } else {
-      fetchGcal(false);
-    }
-    const id = setInterval(() => fetchGcal(false), 15 * 60 * 1000); // 15 min auto-refresh
+    if (!gcalAutoRefresh) return; // OFF default
+    console.log('[gcal] v65 auto-refresh ZAPNUTO');
+    const id = setInterval(() => fetchGcal(false), 15 * 60 * 1000);
     return () => clearInterval(id);
     // eslint-disable-next-line
-  }, [gcalUrl]);
+  }, [gcalUrl, gcalAutoRefresh]);
 
   // Dnešní whoHome z týdenního rozvrhu (key/string)
   const todayDayIdx = (() => { const d = new Date(); return (d.getDay() + 6) % 7; })(); // 0=Po
@@ -3287,7 +3284,9 @@ function App() {
     if (typeof s.walletGoalAmount === 'number') setWalletGoalAmount(s.walletGoalAmount);
     if (typeof s.walletGoalName === 'string') setWalletGoalName(s.walletGoalName);
     if (isStr(s.gcalUrl)) setGcalUrl(s.gcalUrl);
-    if (isArr(s.gcalEvents)) setGcalEvents(s.gcalEvents);
+    // v65: NEPŘEPISOVAT gcalEvents ze sync — jiné zařízení může mít špatný parse.
+    // Každé zařízení si stáhne kalendář samo (jediný zdroj pravdy = Google).
+    // if (isArr(s.gcalEvents)) setGcalEvents(s.gcalEvents);
     if (isNum(s.gcalLastFetch)) setGcalLastFetch(s.gcalLastFetch);
     if (isArr(s.whoHomeSchedule) && s.whoHomeSchedule.length === 7) setWhoHomeSchedule(s.whoHomeSchedule);
     if (isObj(s.voiceMap)) setVoiceMap(s.voiceMap);
@@ -5964,7 +5963,24 @@ function App() {
                       <div style={{ fontFamily:'var(--display)', fontSize:18, fontWeight:600, color:'#1e40af' }}>Google Calendar dítěte</div>
                     </div>
                     <div style={{ fontSize:12, fontWeight:700, color:'#1e40af', lineHeight:1.5, marginBottom:10 }}>
-                      Tady vlož <b>tajnou iCal adresu</b> Google kalendáře. App stáhne události a ukáže dítěti na home + v kalendáři. Aktualizuje se každých 15 minut.
+                      Tady vlož <b>tajnou iCal adresu</b> Google kalendáře. App stáhne události a ukáže dítěti na home + v kalendáři. <b>Aktualizuje se jen ručně</b> — klikni „Stáhnout teď" když chceš čerstvá data.
+                    </div>
+
+                    {/* v65: Přepínač auto-refresh - VÝCHOZÍ OFF aby se ti nepřepisovaly opravy */}
+                    <div style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 12px', background:'#fff', borderRadius:10, marginBottom:10 }}>
+                      <div onClick={() => { audio.tap(); setGcalAutoRefresh(!gcalAutoRefresh); }} style={{
+                        cursor:'pointer', width:42, height:24, borderRadius:14,
+                        background: gcalAutoRefresh ? '#16a34a' : '#cdcdd6',
+                        position:'relative', transition:'background .2s', flex:'none'
+                      }}>
+                        <div style={{ position:'absolute', top:2, left: gcalAutoRefresh ? 20 : 2, width:20, height:20, borderRadius:'50%', background:'#fff', transition:'left .2s', boxShadow:'0 2px 4px rgba(0,0,0,.2)' }}/>
+                      </div>
+                      <div style={{ flex:1, minWidth:0 }}>
+                        <div style={{ fontSize:12, fontWeight:800, color:'#1e40af' }}>Automatická aktualizace každých 15 min</div>
+                        <div style={{ fontSize:10, fontWeight:700, color:'#64748b', lineHeight:1.4 }}>
+                          {gcalAutoRefresh ? '✓ Zapnuto — app pravidelně stahuje nové události' : 'Vypnuto — kalendář se nepřepisuje sám (doporučeno pokud máš nastavený posun času)'}
+                        </div>
+                      </div>
                     </div>
                     <details style={{ marginBottom:10 }}>
                       <summary style={{ cursor:'pointer', fontSize:12, fontWeight:800, color:'#1e40af' }}>📋 Jak na to (klikni)</summary>
@@ -7034,8 +7050,8 @@ function App() {
                   <div style={{ background:'#fff', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
                     <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:12, flexWrap:'wrap' }}>
                       <div style={{ flex:1, minWidth:0 }}>
-                        <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'#1a1530' }}>Verze: Domácí pomocník v64</div>
-                        <div style={{ fontSize:12, color:'#9a96ac', marginTop:4 }}>Build 2026-06-22 · 19:00 · force refresh btn</div>
+                        <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'#1a1530' }}>Verze: Domácí pomocník v65</div>
+                        <div style={{ fontSize:12, color:'#9a96ac', marginTop:4 }}>Build 2026-06-22 · 19:06 · STOP auto-overwrite</div>
                       </div>
                       <div onClick={() => {
                         audio.tap();
