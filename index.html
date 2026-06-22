@@ -12,11 +12,11 @@
   try {
     var url = location.href;
     var hasParam = url.indexOf('v=') >= 0 || url.indexOf('_cb=') >= 0;
-    var sessionKey = '_dompomocnik_cb_v68';
+    var sessionKey = '_dompomocnik_cb_v69';
     if (!hasParam && !sessionStorage.getItem(sessionKey)) {
       sessionStorage.setItem(sessionKey, '1');
       var sep = url.indexOf('?') >= 0 ? '&' : '?';
-      location.replace(url + sep + 'v=68_' + Date.now());
+      location.replace(url + sep + 'v=69_' + Date.now());
     }
   } catch(e) {}
 })();
@@ -790,6 +790,15 @@ function useAudio() {
         tone(900, 0.18, i * 0.25 + 0.12, 'square', 0.22);
       }
     },
+    // v69: TV game show "WRONG!" buzz - dissonant nízký sawtooth pro hlukoměr
+    wrongAnswer: () => {
+      // Dva souběžné dissonantní tóny (tritón) = drsný "BZZZZT"
+      tone(220, 0.55, 0,    'sawtooth', 0.22);  // A3
+      tone(207, 0.55, 0,    'sawtooth', 0.18);  // G#3 - dissonance
+      // Padá dolů na konci jako "nééé" v soutěži
+      tone(165, 0.30, 0.50, 'sawtooth', 0.20);  // E3
+      tone(155, 0.30, 0.50, 'sawtooth', 0.16);  // Eb3 - dissonance
+    },
     ensure,
   }), [tone, ensure]);
 }
@@ -1546,6 +1555,9 @@ function App() {
     coin:    () => soundOn && baseAudio.coin(),
     success: () => soundOn && baseAudio.success(),
     undo:    () => soundOn && baseAudio.undo(),
+    softBeep:    () => soundOn && baseAudio.softBeep(),
+    urgentAlarm: () => soundOn && baseAudio.urgentAlarm(),
+    wrongAnswer: () => soundOn && baseAudio.wrongAnswer(),
   }), [soundOn, baseAudio]);
 
   // --- real-time clock (každou vteřinu Date.now)
@@ -1726,7 +1738,8 @@ function App() {
       const now = Date.now();
       if (now - lastNoiseBeepRef.current > 3000) {
         lastNoiseBeepRef.current = now;
-        if (audio && audio.undo) audio.undo();
+        // v69: TV game show "BZZZT — wrong answer!" buzz místo jemného undo
+        if (audio && audio.wrongAnswer) audio.wrongAnswer();
         setNoiseAlerts(n => n + 1);
         setQuietStreakSecs(0); // reset tichá streak
         lastQuietRewardRef.current = now; // reset reward timer
@@ -7178,6 +7191,18 @@ function App() {
                             <span style={{ width:8, height:8, borderRadius:'50%', background: currentDB > noiseThreshold ? '#ef4444' : '#22c55e', boxShadow:'0 0 6px currentColor' }}/>
                           </div>
                         </div>
+                        {/* v69: Test pípnutí */}
+                        <div onClick={() => { audio.wrongAnswer && audio.wrongAnswer(); }} style={{
+                          cursor:'pointer', background:'linear-gradient(135deg, #f87171, #dc2626)', color:'#fff',
+                          padding:'10px 16px', borderRadius:10, textAlign:'center',
+                          fontFamily:'var(--display)', fontSize:14, fontWeight:700,
+                          boxShadow:'0 4px 0 #7f1d1d, 0 6px 12px rgba(0,0,0,.3)',
+                          border:'1px solid rgba(0,0,0,.15)',
+                          display:'flex', alignItems:'center', justifyContent:'center', gap:8
+                        }}>
+                          <span style={{ fontSize:18 }}>🔊</span>
+                          <span>Vyzkoušet pípnutí</span>
+                        </div>
                       </div>
                     )}
                   </div>
@@ -7887,8 +7912,8 @@ function App() {
                   <div style={{ background:'#fff', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
                     <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:12, flexWrap:'wrap' }}>
                       <div style={{ flex:1, minWidth:0 }}>
-                        <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'#1a1530' }}>Verze: Domácí pomocník v68</div>
-                        <div style={{ fontSize:12, color:'#9a96ac', marginTop:4 }}>Build 2026-06-22 · 19:52 · v68 hlukoměr</div>
+                        <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'#1a1530' }}>Verze: Domácí pomocník v69</div>
+                        <div style={{ fontSize:12, color:'#9a96ac', marginTop:4 }}>Build 2026-06-22 · 20:10 · BZZZT buzz</div>
                       </div>
                       <div onClick={() => {
                         audio.tap();
