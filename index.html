@@ -378,31 +378,7 @@ function rollLoot(forceRarity) {
   return pool[0];
 }
 
-// TÝDENNÍ BOSS roster
-const BOSS_ROSTER = [
-  { id:'dragon',   name:'Ohnivý drak',       emoji:'🐲', color:'#dc2626' },
-  { id:'lich',     name:'Temný čaroděj',     emoji:'🧙', color:'#7c3aed' },
-  { id:'cyclops',  name:'Obří kyklop',       emoji:'👹', color:'#ea580c' },
-  { id:'demon',    name:'Démon temnoty',     emoji:'😈', color:'#991b1b' },
-  { id:'kraken',   name:'Kraken hlubin',     emoji:'🐙', color:'#1e40af' },
-  { id:'wolf',     name:'Stínový vlk',       emoji:'🐺', color:'#374151' },
-  { id:'spider',   name:'Královna pavouků',  emoji:'🕷️', color:'#581c87' },
-  { id:'skeleton', name:'Kostlivý král',     emoji:'💀', color:'#6b7280' },
-];
-
-// Vrátí ISO datum pondělí toho týdne (pro identifikaci týdne)
-function getWeekId() {
-  const d = new Date();
-  const day = (d.getDay() + 6) % 7; // pondělí=0
-  d.setDate(d.getDate() - day);
-  return d.getFullYear() + '-' + pad2(d.getMonth()+1) + '-' + pad2(d.getDate());
-}
-function getBossForWeek(weekId) {
-  // Deterministicky vyber bosse pro týden (hash z weekId)
-  let hash = 0;
-  for (let i = 0; i < weekId.length; i++) hash = (hash * 31 + weekId.charCodeAt(i)) | 0;
-  return BOSS_ROSTER[Math.abs(hash) % BOSS_ROSTER.length];
-}
+// v58: BOSS feature kompletně odstraněna (nebyla využívána)
 
 // ====================================================================
 // v17: HLASOVÉ VZKAZY (ElevenLabs MP3)
@@ -630,9 +606,9 @@ const saveState = (s) => {
       syncUrl: s.syncUrl,
       lastSyncTime: s.lastSyncTime,
       // v8 tamagotchi
-      petMood: s.petMood, petEnergy: s.petEnergy, petSleeping: s.petSleeping, petLastDecay: s.petLastDecay,
+      petSleeping: s.petSleeping,
       // v14 hero quest
-      inventory: s.inventory, bossState: s.bossState,
+      inventory: s.inventory,
       // v15
       lastDayKey: s.lastDayKey, gcalUrl: s.gcalUrl, gcalEvents: s.gcalEvents, gcalLastFetch: s.gcalLastFetch,
       whoHomeSchedule: s.whoHomeSchedule,
@@ -1340,14 +1316,11 @@ function App() {
   const [syncError, setSyncError] = useState(null);
   const lastPushedStateRef = useRef(null);
   const initialPullDoneRef = useRef(false);
-  // v8 Tamagotchi
-  const [petMood, setPetMood] = useState(persisted && persisted.petMood != null ? persisted.petMood : 70);    // 0-100 pohoda
-  const [petEnergy, setPetEnergy] = useState(persisted && persisted.petEnergy != null ? persisted.petEnergy : 70); // 0-100 energie
+  // v58: Tamagotchi zjednodušeno — petMood/petEnergy/petLastDecay odstraněny, jen sleep toggle
   const [petSleeping, setPetSleeping] = useState(persisted && persisted.petSleeping || false);
-  const [petLastDecay, setPetLastDecay] = useState(persisted && persisted.petLastDecay || Date.now());
   // v14 HERO QUEST
   const [inventory, setInventory] = useState((persisted && Array.isArray(persisted.inventory)) ? persisted.inventory : []);
-  const [bossState, setBossState] = useState((persisted && persisted.bossState && typeof persisted.bossState === 'object') ? persisted.bossState : { weekId: getWeekId(), hp: 7, defeated: false });
+  // v58: bossState odstraněn (boss feature vyhozena)
   const [floatingXp, setFloatingXp] = useState([]); // efemerní {id, x, y, value, critical}
   // v15: denní reset + kalendář + týdenní whoHome
   const [lastDayKey, setLastDayKey] = useState((persisted && persisted.lastDayKey) || todayISO());
@@ -1469,8 +1442,8 @@ function App() {
       moodLog, lastMoodDate, parentPin, childName,
       weekEvents, worryMessages, readingList, stickers, childPhoto, choresList, weeklyChores,
       syncUrl, lastSyncTime,
-      petMood, petEnergy, petSleeping, petLastDecay,
-      inventory, bossState,
+      petSleeping,
+      inventory,
       lastDayKey, gcalUrl, gcalEvents, gcalLastFetch, whoHomeSchedule,
       voiceMap, voiceBaseUrl, dayBlueprintByDay,
       hueWebhookUrl, hueButtons,
@@ -1487,8 +1460,8 @@ function App() {
       moodLog, lastMoodDate, parentPin, childName,
       weekEvents, worryMessages, readingList, stickers, childPhoto, choresList, weeklyChores,
       syncUrl, lastSyncTime,
-      petMood, petEnergy, petSleeping, petLastDecay,
-      inventory, bossState,
+      petSleeping,
+      inventory,
       lastDayKey, gcalUrl, gcalEvents, gcalLastFetch, whoHomeSchedule,
       voiceMap, voiceBaseUrl, dayBlueprintByDay,
       hueWebhookUrl, hueButtons,
@@ -1552,24 +1525,20 @@ function App() {
     return msg;
   }, [praiseMessages]);
 
-  // --- v8 Tamagotchi (musí být definováno před checkStep, který feedPet používá)
-  const feedPet = useCallback((mood, energy) => {
-    setPetMood(m => Math.min(100, m + (mood || 0)));
-    setPetEnergy(e => Math.min(100, e + (energy || 0)));
-  }, []);
+  // v58: Tamagotchi zjednodušeno — pohoda/energie odstraněny, jen sleep toggle
+  const feedPet = useCallback(() => { /* noop - pohoda/energie odstraněny */ }, []);
 
   const togglePetSleep = useCallback(() => {
     setPetSleeping(s => {
       const newSleep = !s;
       if (newSleep) {
-        showToast(`${mascotName} jde spát 😴`, '💤');
+        showToast(`${mascotName || 'Riki'} jde spát 😴`, '💤');
         audio.undo();
         playVoice("petSleep", "Dobrou noc, vrátím se až přijdeš zpátky.");
       } else {
-        showToast(`${mascotName} se probudil!`, '☀️');
+        showToast(`${mascotName || 'Riki'} se probudil!`, '☀️');
         audio.ding();
         playVoice("petWake", "Ahoj, už jsi zpátky!");
-        setPetLastDecay(Date.now());
       }
       return newSleep;
     });
@@ -1588,32 +1557,7 @@ function App() {
     return item;
   }, [showToast]);
 
-  // Týdenní boss: 1 damage; vrátí true pokud byl právě poražen
-  const damageBoss = useCallback((amount) => {
-    let defeatedNow = false;
-    setBossState(b => {
-      if (!b || b.defeated) return b;
-      const newHp = Math.max(0, b.hp - (amount || 1));
-      if (newHp === 0) defeatedNow = true;
-      return { ...b, hp: newHp, defeated: newHp === 0 };
-    });
-    return defeatedNow;
-  }, []);
-
-  // Reset boss na začátku každého nového týdne
-  useEffect(() => {
-    const currentWeek = getWeekId();
-    if (bossState.weekId !== currentWeek) {
-      setBossState({ weekId: currentWeek, hp: 7, defeated: false });
-    }
-    // jednou za den ověř
-    const id = setInterval(() => {
-      const wk = getWeekId();
-      setBossState(b => (b.weekId !== wk ? { weekId: wk, hp: 7, defeated: false } : b));
-    }, 3600 * 1000);
-    return () => clearInterval(id);
-    // eslint-disable-next-line
-  }, []);
+  // v58: damageBoss + boss weekly reset odstraněny (boss feature vyhozena)
 
   const spawnFloatingXp = useCallback((x, y, value, critical) => {
     const id = 'fx-' + Date.now() + '-' + Math.floor(Math.random()*9999);
@@ -2276,32 +2220,7 @@ function App() {
   useEffect(() => { sayRikiVoiceRef.current = sayRikiVoice; }, [sayRikiVoice]);
 
   // Tamagotchi decay: 2 body za hodinu (pomalu), když spí tak nic
-  useEffect(() => {
-    const tick = () => {
-      const now = Date.now();
-      const hoursSince = (now - petLastDecay) / (1000 * 60 * 60);
-      if (petSleeping || hoursSince < 0.05) return;
-      const decayPoints = Math.floor(hoursSince * 2);
-      if (decayPoints > 0) {
-        setPetMood(m => Math.max(0, m - decayPoints));
-        setPetEnergy(e => Math.max(0, e - decayPoints));
-        setPetLastDecay(now);
-      }
-    };
-    tick();
-    const id = setInterval(tick, 60 * 1000);
-    return () => clearInterval(id);
-  }, [petLastDecay, petSleeping]);
-
-  // Pet stav podle hodnot
-  const petStatus = (() => {
-    if (petSleeping) return { mood:'sleeping', label:'spí 💤', color:'#7c5cff', emoji:'😴' };
-    const avg = (petMood + petEnergy) / 2;
-    if (avg < 20) return { mood:'sad',     label:'smutný 😢',  color:'#dc2626', emoji:'😢' };
-    if (avg < 50) return { mood:'tired',   label:'unavený 😐', color:'#f59e0b', emoji:'😐' };
-    if (avg < 80) return { mood:'ok',      label:'v pohodě 🙂', color:'#16a34a', emoji:'🙂' };
-    return            { mood:'great',   label:'štastný 😄', color:'#16a34a', emoji:'😄' };
-  })();
+  // v58: Tamagotchi decay effect + petStatus odstraněny (pohoda/energie pryč)
 
   // --- routine logic
   const steps = (kind) => (kind === 'morning' ? morning : evening).filter(s => s.on);
@@ -2373,17 +2292,7 @@ function App() {
       if (forceRarity || lootChance < 1.0) { // vždy padne něco po splněné rutině
         setTimeout(() => dropLoot(forceRarity), 600);
       }
-      // v14: damage boss
-      const bossDefeated = damageBoss(1);
-      if (bossDefeated) {
-        setTimeout(() => {
-          setPoints(p => p + 100); setTotalXp(x => x + 100);
-          confetti.fire({ n: 200 });
-          showToast('🐉 BOSS PORAŽEN! +100 XP', '👑');
-          if (playVoiceRef.current) playVoiceRef.current('bossDefeated', 'Boss padl, sto bodů!');
-          dropLoot('legendary');
-        }, 1000);
-      }
+      // v58: damageBoss volání odstraněno (boss feature pryč)
     } else {
       audio.ding(); confetti.fire({ y: 300, n: 26 });
       feedPet(2, 3);
@@ -2398,7 +2307,7 @@ function App() {
         }
       }
     }
-  }, [morning, evening, doneM, doneE, audio, confetti, bumpStreak, tts, showPraise, feedPet, dropLoot, damageBoss, spawnFloatingXp, streakDays, showToast]);
+  }, [morning, evening, doneM, doneE, audio, confetti, bumpStreak, tts, showPraise, feedPet, dropLoot, spawnFloatingXp, streakDays, showToast]);
 
   const skipStep = useCallback((kind) => {
     const list = steps(kind), map = doneMap(kind);
@@ -3206,8 +3115,8 @@ function App() {
     weekEvents, worryMessages, readingList, stickers, childPhoto,
     choresList, weeklyChores,
     // v56 přidáno:
-    petMood, petEnergy, petSleeping, petLastDecay,
-    inventory, bossState,
+    petSleeping,
+    inventory,
     lastDayKey, gcalUrl, gcalEvents, gcalLastFetch, whoHomeSchedule,
     voiceMap, voiceBaseUrl, dayBlueprintByDay,
     hueWebhookUrl, hueButtons,
@@ -3225,8 +3134,8 @@ function App() {
     moodLog, lastMoodDate, parentPin, childName,
     weekEvents, worryMessages, readingList, stickers, childPhoto,
     choresList, weeklyChores,
-    petMood, petEnergy, petSleeping, petLastDecay,
-    inventory, bossState,
+    petSleeping,
+    inventory,
     lastDayKey, gcalUrl, gcalEvents, gcalLastFetch, whoHomeSchedule,
     voiceMap, voiceBaseUrl, dayBlueprintByDay,
     hueWebhookUrl, hueButtons,
@@ -3299,12 +3208,8 @@ function App() {
     if (s.childPhoto === null || isStr(s.childPhoto)) setChildPhoto(s.childPhoto);
     if (isArr(s.choresList)) setChoresList(s.choresList);
     if (isArr(s.weeklyChores)) setWeeklyChores(s.weeklyChores);
-    if (isNum(s.petMood)) setPetMood(s.petMood);
-    if (isNum(s.petEnergy)) setPetEnergy(s.petEnergy);
     if (isBool(s.petSleeping)) setPetSleeping(s.petSleeping);
-    if (isNum(s.petLastDecay)) setPetLastDecay(s.petLastDecay);
     if (isArr(s.inventory)) setInventory(s.inventory);
-    if (isObj(s.bossState)) setBossState(s.bossState);
     if (isStr(s.lastDayKey)) setLastDayKey(s.lastDayKey);
     if (Array.isArray(s.routineHistory)) setRoutineHistory(s.routineHistory);
     if (typeof s.spinWheelLastDate === 'string') setSpinWheelLastDate(s.spinWheelLastDate);
@@ -3948,6 +3853,20 @@ function App() {
               <div style={{ height:6, background:'var(--soft)', borderRadius:5, overflow:'hidden', marginTop:10 }}>
                 <div style={{ height:'100%', width: child.xpPct+'%', background:'linear-gradient(90deg,var(--accent2),var(--accent))', borderRadius:5, transition:'width .6s' }}/>
               </div>
+              {/* v58: sleep toggle (uspat/vzbudit) */}
+              <div onClick={(e) => { e.stopPropagation(); audio.tap(); togglePetSleep(); }} style={{
+                cursor:'pointer',
+                marginTop:10,
+                background: petSleeping ? '#fef3c7' : 'var(--soft)',
+                color: petSleeping ? '#92400e' : 'var(--ink)',
+                borderRadius:11,
+                padding:'8px 12px',
+                fontSize:12,
+                fontWeight:800,
+                textAlign:'center'
+              }}>
+                {petSleeping ? '☀️ Vzbudit ' + (mascotName || 'Riki') : '💤 Uspat ' + (mascotName || 'Riki')}
+              </div>
             </div>
 
             {/* tiles - bez Extra úkoly */}
@@ -4502,148 +4421,43 @@ function App() {
           <div style={{ fontFamily:'var(--display)', fontSize:34, fontWeight:600, color:'var(--ink)', flex:1 }}>Body a odměny</div>
         </div>
 
-        {/* v14: BOSS karta */}
-        {(() => {
-          const boss = getBossForWeek(bossState.weekId || getWeekId());
-          const maxHp = 7;
-          const hp = bossState.hp != null ? bossState.hp : maxHp;
-          const defeated = bossState.defeated;
-          const hpPct = (hp / maxHp) * 100;
-          return (
-            <div style={{
-              background: defeated ? 'linear-gradient(135deg, #16a34a, #15803d)' : 'linear-gradient(135deg, #1f2937, #0f172a)',
-              color:'#fff', borderRadius:22, padding:'18px 22px',
-              boxShadow:'0 8px 24px rgba(0,0,0,.25)', display:'flex', alignItems:'center', gap:18, position:'relative',
-              flex:'none'
-            }}>
-              {/* Emoji v bílém kruhu */}
-              <div style={{
-                flex:'none',
-                width: 84, height: 84,
-                borderRadius: '50%',
-                background: defeated ? 'rgba(255,255,255,.92)' : '#fef3c7',
-                display:'flex',
-                alignItems:'center',
-                justifyContent:'center',
-                border: '3px solid '+(defeated ? '#15803d' : boss.color),
-                boxShadow: '0 4px 14px rgba(0,0,0,.25)',
-                animation: defeated ? 'none' : 'bossShake 3s infinite',
-                filter: defeated ? 'grayscale(0.4) opacity(0.6)' : 'none'
-              }}>
-                <span style={{
-                  fontSize: 50,
-                  lineHeight: 1,
-                  color: 'initial',
-                  display: 'block'
-                }}>{boss.emoji}</span>
-              </div>
-              <div style={{ flex:1, minWidth:0 }}>
-                <div style={{ fontSize:11, fontWeight:900, opacity:.85, textTransform:'uppercase', letterSpacing:'.1em' }}>Týdenní boss</div>
-                <div style={{ fontFamily:'var(--display)', fontSize:22, fontWeight:600, marginBottom:8 }}>{boss.name}</div>
-                {defeated ? (
-                  <div style={{ fontSize:14, fontWeight:800, color:'#86efac' }}>🏆 PORAŽEN! Další přijde v pondělí.</div>
-                ) : (
-                  <React.Fragment>
-                    <div style={{ height:12, background:'rgba(255,255,255,.18)', borderRadius:7, overflow:'hidden', marginBottom:6 }}>
-                      <div style={{ height:'100%', width: hpPct+'%', background:'linear-gradient(90deg, #ef4444, #b91c1c)', borderRadius:7, transition:'width .6s' }}/>
-                    </div>
-                    <div style={{ fontSize:12, fontWeight:800, opacity:.9 }}>HP {hp} / {maxHp} · 1× rutina = 1 dmg · +100 XP za poražení</div>
-                  </React.Fragment>
-                )}
-              </div>
-            </div>
-          );
-        })()}
-
-        {/* v14: TRUHLA POKLADŮ */}
-        <div style={{ background:'linear-gradient(135deg, #fef3c7, #fde68a)', borderRadius:22, padding:'18px 22px', boxShadow:'var(--shadow)', border:'2px solid #f59e0b' }}>
-          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:14 }}>
-            <div style={{ display:'flex', alignItems:'center', gap:12 }}>
-              <div style={{ fontSize:32 }}>🗝️</div>
-              <div>
-                <div style={{ fontFamily:'var(--display)', fontSize:22, fontWeight:600, color:'#7c2d12' }}>Truhla pokladů</div>
-                <div style={{ fontSize:13, fontWeight:800, color:'#92400e' }}>{inventory.length} {inventory.length === 1 ? 'předmět' : inventory.length < 5 ? 'předměty' : 'předmětů'}</div>
-              </div>
-            </div>
-            <div style={{ fontSize:11, fontWeight:800, color:'#92400e', textAlign:'right', lineHeight:1.3 }}>Padá při<br/>dokončení rutiny</div>
+        {/* v58: HERO panel — body, level, streak, XP progress */}
+        <div style={{ background:'var(--maskotCard)', border:'var(--hair)', borderRadius:24, padding:'22px 26px', boxShadow:'var(--shadow)', display:'flex', alignItems:'center', gap:24 }}>
+          <div style={{ display:'flex', alignItems:'baseline', gap:6 }}>
+            <span style={{ fontFamily:'var(--display)', fontSize:64, fontWeight:700, color:'var(--accent)', lineHeight:1 }}>{child.points}</span>
+            <span style={{ fontSize:18, fontWeight:800, color:'var(--muted)' }}>bodů</span>
           </div>
-          {inventory.length === 0 ? (
-            <div style={{ background:'#fff', borderRadius:14, padding:'18px 14px', textAlign:'center', color:'#92400e', fontSize:13, fontWeight:700 }}>
-              Truhla je prázdná. Splň rutinu a něco padne! ✨
+          <div style={{ flex:1, minWidth:0 }}>
+            <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:8 }}>
+              <div style={{ fontFamily:'var(--display)', fontSize:18, fontWeight:600, color:'var(--ink)' }}>{child.levelLabel}</div>
+              <div style={{ background:'var(--soft)', padding:'4px 11px', borderRadius:11, fontFamily:'var(--display)', fontSize:15, fontWeight:600, color:'var(--ink)' }}>🔥 {child.streak} {child.streak === 1 ? 'den' : 'dní'}</div>
             </div>
-          ) : (
-            <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(74px, 1fr))', gap:8 }}>
-              {[...inventory].reverse().slice(0, 36).map((item) => {
-                const style = RARITY_STYLE[item.rarity] || RARITY_STYLE.common;
-                return (
-                  <div key={item.uid} title={item.name + ' (' + style.label + ')'} style={{
-                    background: style.bg,
-                    border: '2px solid ' + style.border,
-                    borderRadius: 12,
-                    padding: '10px 6px',
-                    textAlign: 'center',
-                    boxShadow: item.rarity === 'legendary' ? '0 4px 14px rgba(245,158,11,.5)' : '0 2px 6px rgba(0,0,0,.06)',
-                    color: style.color,
-                    animation: item.rarity === 'legendary' ? 'rarityPulse 2.5s infinite' : 'none',
-                    cursor:'help'
-                  }}>
-                    <div style={{ fontSize:30, lineHeight:1 }}>{item.emoji}</div>
-                    <div style={{ fontSize:9, fontWeight:900, marginTop:4, textTransform:'uppercase', letterSpacing:'.03em' }}>{style.label}</div>
-                  </div>
-                );
-              })}
+            <div style={{ height:14, background:'var(--soft)', borderRadius:9, overflow:'hidden' }}>
+              <div style={{ height:'100%', width: child.xpPct+'%', background:'linear-gradient(90deg,var(--accent2),var(--accent))', transition:'width .6s' }}/>
             </div>
-          )}
-          {inventory.length > 36 && (
-            <div style={{ fontSize:11, fontWeight:800, color:'#92400e', textAlign:'center', marginTop:8 }}>... a dalších {inventory.length - 36}</div>
-          )}
+            <div style={{ fontSize:12, fontWeight:800, color:'var(--muted)', marginTop:5 }}>{child.xpPct}% do dalšího levelu</div>
+          </div>
         </div>
 
-        <div style={{ display:'grid', gridTemplateColumns:'320px 1fr', gap:20 }}>
-          {/* maskot panel */}
-          <div style={{ background:'var(--maskotCard)', border:'var(--hair)', borderRadius:24, padding:24, display:'flex', flexDirection:'column', alignItems:'center', gap:14, boxShadow:'var(--shadow)', alignSelf:'start' }}>
-            <Mascot size={150} kind={mascotKind} dancing={rikiDancing} sleeping={isRikiSleeping}/>
-            <div style={{ textAlign:'center' }}>
-              <div style={{ fontFamily:'var(--display)', fontSize:24, fontWeight:600, color:'var(--ink)' }}>{mascotName || 'Riki'}</div>
-              <div style={{ fontSize:13, fontWeight:800, color:'var(--muted)', marginTop:3 }}>{child.levelLabel}</div>
-            </div>
-            <div style={{ width:'100%', height:12, background:'var(--soft)', borderRadius:8, overflow:'hidden' }}>
-              <div style={{ height:'100%', width: child.xpPct+'%', background:'linear-gradient(90deg,var(--accent2),var(--accent))' }}/>
-            </div>
-            <div style={{ display:'flex', gap:10, width:'100%' }}>
-              <div style={{ flex:1, textAlign:'center', background:'var(--soft)', borderRadius:14, padding:'12px 6px' }}>
-                <div style={{ fontFamily:'var(--display)', fontSize:28, fontWeight:600, color:'var(--accent)' }}>{child.points}</div>
-                <div style={{ fontSize:11, fontWeight:800, color:'var(--muted)' }}>bodů</div>
-              </div>
-              <div style={{ flex:1, textAlign:'center', background:'var(--soft)', borderRadius:14, padding:'12px 6px' }}>
-                <div style={{ fontFamily:'var(--display)', fontSize:28, fontWeight:600, color:'var(--ink)' }}>🔥 {child.streak}</div>
-                <div style={{ fontSize:11, fontWeight:800, color:'var(--muted)' }}>v řadě</div>
+        {/* v58: SHOP — full width, hlavní obsah */}
+        <div style={{ background:'linear-gradient(135deg, #fef9c3 0%, #fef3c7 100%)', borderRadius:24, padding:'24px 28px', boxShadow:'var(--shadow)' }}>
+          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:18 }}>
+            <div>
+              <div style={{ fontFamily:'var(--display)', fontSize:28, fontWeight:600, color:'#854d0e' }}>🛍️ Obchůdek odměn</div>
+              <div style={{ fontSize:14, fontWeight:800, color:'#a16207', marginTop:3 }}>
+                {child.points > 0
+                  ? `Máš ${child.points} bodů — co si koupíš?`
+                  : 'Posbírej body a něco si kup'}
               </div>
             </div>
           </div>
 
-          {/* shop */}
-          <div style={{ background:'linear-gradient(135deg, #fef9c3 0%, #fef3c7 100%)', borderRadius:24, padding:'22px 24px', boxShadow:'var(--shadow)', position:'relative' }}>
-            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:16 }}>
-              <div>
-                <div style={{ fontFamily:'var(--display)', fontSize:24, fontWeight:600, color:'#854d0e' }}>🛍️ Obchůdek odměn</div>
-                <div style={{ fontSize:13, fontWeight:800, color:'#a16207', marginTop:2 }}>
-                  {child.points > 0
-                    ? `Máš ${child.points} bodů — co si koupíš?`
-                    : 'Posbírej body a něco si kup'}
-                </div>
-              </div>
-              {/* Wallet badge */}
-              <div style={{ background:'#fff', borderRadius:14, padding:'8px 14px', display:'flex', alignItems:'center', gap:8, boxShadow:'0 3px 10px rgba(146,64,14,.12)' }}>
-                <div style={{ fontSize:24 }}>💰</div>
-                <div>
-                  <div style={{ fontFamily:'var(--display)', fontSize:20, fontWeight:600, color:'#854d0e', lineHeight:1 }}>{child.points}</div>
-                  <div style={{ fontSize:10, fontWeight:800, color:'#a16207', textTransform:'uppercase' }}>bodů</div>
-                </div>
-              </div>
+          {shop.length === 0 ? (
+            <div style={{ background:'#fff', borderRadius:14, padding:'22px 16px', textAlign:'center', color:'#a16207', fontSize:13, fontWeight:700 }}>
+              Obchod je prázdný. Rodič může přidat odměny v admin.
             </div>
-
-            <div style={{ display:'grid', gridTemplateColumns:'repeat(3, 1fr)', gap:14 }}>
+          ) : (
+            <div style={{ display:'grid', gridTemplateColumns:'repeat(4, 1fr)', gap:16 }}>
               {shop.map((r) => {
                 const st = shopState[r.id];
                 const afford = points >= r.cost;
@@ -4654,8 +4468,8 @@ function App() {
                   <div key={r.id} style={{
                     background:'#fff',
                     border: unlocked ? '3px solid #16a34a' : pending ? '2px solid #f59e0b' : (afford ? '2px solid #16a34a' : '2px solid #e5e7eb'),
-                    borderRadius:16,
-                    padding:'14px 12px',
+                    borderRadius:18,
+                    padding:'16px 14px',
                     position:'relative',
                     boxShadow: unlocked ? '0 6px 18px rgba(22,163,74,.22)' : '0 4px 12px rgba(0,0,0,.05)',
                     opacity: locked ? 0.7 : 1,
@@ -4664,34 +4478,34 @@ function App() {
                     {/* Cenovka v rohu */}
                     <div style={{
                       position:'absolute',
-                      top:-7, right:10,
+                      top:-8, right:12,
                       background: unlocked ? '#16a34a' : pending ? '#fbbf24' : (afford ? '#16a34a' : '#9ca3af'),
                       color:'#fff',
-                      borderRadius:9,
-                      padding:'3px 10px',
+                      borderRadius:10,
+                      padding:'4px 11px',
                       fontFamily:'var(--display)',
                       fontWeight:600,
-                      fontSize:13,
-                      boxShadow:'0 2px 6px rgba(0,0,0,.15)',
-                      display:'flex', alignItems:'center', gap:3
+                      fontSize:14,
+                      boxShadow:'0 3px 8px rgba(0,0,0,.18)',
+                      display:'flex', alignItems:'center', gap:4
                     }}>
-                      <span style={{ fontSize:12 }}>{unlocked ? '✓' : '⭐'}</span>
+                      <span style={{ fontSize:13 }}>{unlocked ? '✓' : '⭐'}</span>
                       <span>{unlocked ? 'TVOJE' : r.cost}</span>
                     </div>
 
                     {r.photo ? (
                       <div style={{
-                        width: 80, height: 80, borderRadius: 14,
+                        width: 92, height: 92, borderRadius: 16,
                         background: `url(${r.photo}) center/cover`,
-                        margin:'12px auto 8px',
-                        boxShadow: '0 3px 10px rgba(0,0,0,.12)',
+                        margin:'14px auto 10px',
+                        boxShadow: '0 4px 12px rgba(0,0,0,.15)',
                         filter: locked ? 'grayscale(0.6)' : 'none'
                       }}/>
                     ) : (
                       <div style={{
-                        fontSize: 54,
+                        fontSize: 60,
                         textAlign:'center',
-                        margin:'12px 0 8px',
+                        margin:'14px 0 10px',
                         lineHeight: 1,
                         filter: locked ? 'grayscale(0.6)' : 'none'
                       }}>{r.emoji}</div>
@@ -4700,12 +4514,12 @@ function App() {
                     <div style={{
                       textAlign:'center',
                       fontFamily:'var(--display)',
-                      fontSize:15,
+                      fontSize:16,
                       fontWeight:600,
                       color:'var(--ink)',
                       lineHeight:1.15,
-                      minHeight:36,
-                      marginBottom:10
+                      minHeight:38,
+                      marginBottom:11
                     }}>{r.t}</div>
 
                     <div onClick={() => redeem(r)} style={{
@@ -4719,13 +4533,14 @@ function App() {
                             ? 'linear-gradient(135deg, #16a34a, #15803d)'
                             : '#f0f0f7',
                       color: unlocked ? '#fff' : pending ? '#92400e' : afford ? '#fff' : '#9ca3af',
-                      borderRadius:11,
-                      padding:'9px 6px',
+                      borderRadius:12,
+                      padding:'10px 6px',
                       textAlign:'center',
                       fontFamily:'var(--display)',
                       fontWeight:600,
-                      fontSize:13,
-                      boxShadow: (afford && !pending) || unlocked ? '0 3px 8px rgba(0,0,0,.15)' : 'none'
+                      fontSize:14,
+                      boxShadow: (afford && !pending) || unlocked ? '0 3px 8px rgba(0,0,0,.15)' : 'none',
+                      boxSizing:'border-box'
                     }}>
                       {unlocked ? '🎁 Vyzvednout!' : pending ? '⏳ Čeká' : afford ? '🛒 Koupit' : `🔒 chybí ${r.cost - points}`}
                     </div>
@@ -4733,13 +4548,50 @@ function App() {
                 );
               })}
             </div>
+          )}
+        </div>
 
-            {shop.length === 0 && (
-              <div style={{ background:'#fff', borderRadius:14, padding:'20px 16px', textAlign:'center', color:'#a16207', fontSize:13, fontWeight:700 }}>
-                Obchod je prázdný. Rodič může přidat odměny v admin.
+        {/* v58: TRUHLA POKLADŮ — kompaktnější, na konci */}
+        <div style={{ background:'linear-gradient(135deg, #fef3c7, #fde68a)', borderRadius:22, padding:'18px 22px', boxShadow:'var(--shadow)', border:'2px solid #f59e0b' }}>
+          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:12 }}>
+            <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+              <div style={{ fontSize:28 }}>🗝️</div>
+              <div>
+                <div style={{ fontFamily:'var(--display)', fontSize:20, fontWeight:600, color:'#7c2d12' }}>Truhla pokladů</div>
+                <div style={{ fontSize:12, fontWeight:800, color:'#92400e' }}>{inventory.length} {inventory.length === 1 ? 'předmět' : inventory.length < 5 ? 'předměty' : 'předmětů'} · padá při dokončení rutiny</div>
               </div>
-            )}
+            </div>
           </div>
+          {inventory.length === 0 ? (
+            <div style={{ background:'#fff', borderRadius:12, padding:'14px', textAlign:'center', color:'#92400e', fontSize:13, fontWeight:700 }}>
+              Truhla je prázdná. Splň rutinu a něco padne! ✨
+            </div>
+          ) : (
+            <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(64px, 1fr))', gap:7 }}>
+              {[...inventory].reverse().slice(0, 48).map((item) => {
+                const style = RARITY_STYLE[item.rarity] || RARITY_STYLE.common;
+                return (
+                  <div key={item.uid} title={item.name + ' (' + style.label + ')'} style={{
+                    background: style.bg,
+                    border: '2px solid ' + style.border,
+                    borderRadius: 10,
+                    padding: '8px 4px',
+                    textAlign: 'center',
+                    boxShadow: item.rarity === 'legendary' ? '0 3px 10px rgba(245,158,11,.4)' : '0 1px 4px rgba(0,0,0,.06)',
+                    color: style.color,
+                    animation: item.rarity === 'legendary' ? 'rarityPulse 2.5s infinite' : 'none',
+                    cursor:'help'
+                  }}>
+                    <div style={{ fontSize:24, lineHeight:1 }}>{item.emoji}</div>
+                    <div style={{ fontSize:8, fontWeight:900, marginTop:3, textTransform:'uppercase', letterSpacing:'.03em' }}>{style.label}</div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          {inventory.length > 48 && (
+            <div style={{ fontSize:11, fontWeight:800, color:'#92400e', textAlign:'center', marginTop:7 }}>... a dalších {inventory.length - 48}</div>
+          )}
         </div>
 
         {/* challenges */}
@@ -5225,6 +5077,36 @@ function App() {
                     <div style={{ display:'flex', flexWrap:'wrap', gap:8 }}>
                       {['Uklidil pokoj','Pomohl s nádobím','Bez připomínání','Hezky se učil'].map((t) => (
                         <div key={t} onClick={() => parentReason(t)} style={{ cursor:'pointer', background:'rgba(124,92,255,0.1)', color:'#5a4bd0', fontWeight:800, fontSize:14, padding:'9px 13px', borderRadius:12 }}>{t}</div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* v58: Odečíst body (trest) */}
+                  <div style={{ background:'#fff', borderRadius:20, padding:18, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
+                    <div style={{ fontFamily:'var(--display)', fontSize:18, fontWeight:600, color:'#1a1530' }}>Odečíst body</div>
+                    <div style={{ fontSize:11, fontWeight:700, color:'#9a96ac', marginTop:2, marginBottom:10, lineHeight:1.4 }}>Pokud poruší pravidla. Dítě uvidí důvod v historii.</div>
+                    <div style={{ display:'flex', gap:10 }}>
+                      {[5,10,20].map((n) => (
+                        <div key={n} onClick={() => {
+                          audio.undo();
+                          setPoints(p => Math.max(0, p - n));
+                          showToast(`Odečteno −${n} bodů`, '⚠');
+                        }} style={{ cursor:'pointer', flex:1, textAlign:'center', background:'linear-gradient(135deg, #dc2626, #991b1b)', color:'#fff', fontFamily:'var(--display)', fontSize:24, fontWeight:600, padding:'16px 0', borderRadius:16 }}>−{n}</div>
+                      ))}
+                    </div>
+                    <div style={{ fontSize:13, fontWeight:800, color:'#8a86a0', margin:'14px 0 8px' }}>Za co? (rychlý důvod)</div>
+                    <div style={{ display:'flex', flexWrap:'wrap', gap:8 }}>
+                      {[
+                        {t:'Neuklidil',n:5},
+                        {t:'Vzteku/sprostá slova',n:10},
+                        {t:'Neposlechl',n:10},
+                        {t:'Lhaní',n:20},
+                      ].map((r) => (
+                        <div key={r.t} onClick={() => {
+                          audio.undo();
+                          setPoints(p => Math.max(0, p - r.n));
+                          showToast(`−${r.n} bodů: ${r.t}`, '⚠');
+                        }} style={{ cursor:'pointer', background:'#fee2e2', color:'#991b1b', fontWeight:800, fontSize:14, padding:'9px 13px', borderRadius:12 }}>−{r.n} {r.t}</div>
                       ))}
                     </div>
                   </div>
@@ -7022,8 +6904,8 @@ function App() {
 
                   {/* Verze (vždy zobrazeno) */}
                   <div style={{ background:'#fff', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
-                    <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'#1a1530' }}>Verze: Domácí pomocník v57</div>
-                    <div style={{ fontSize:12, color:'#9a96ac', marginTop:4 }}>Build 2026-06-22 · 17:22</div>
+                    <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'#1a1530' }}>Verze: Domácí pomocník v58</div>
+                    <div style={{ fontSize:12, color:'#9a96ac', marginTop:4 }}>Build 2026-06-22 · 17:39</div>
                   </div>
                 </div>
                 )}
