@@ -1,7 +1,7 @@
 /**
  * Domácí pomocník — Apps Script backend
- * v3 — přidán AI chat endpoint (Riki přes OpenAI GPT-4o-mini)
- * Vygenerováno: 2026-06-23 07:15
+ * v4 — přidán OpenAI TTS endpoint (lidský hlas pro Rikiho)
+ * Vygenerováno: 2026-06-23 18:59
  *
  * SETUP (jednorázově):
  *   1) Project Settings (⚙️) → Script Properties → "+ Add property"
@@ -17,6 +17,7 @@
  *   GET  ?action=clearstate      → smaže sync state
  *   GET                          → vrátí aktuální sync state
  *   GET  ?action=chat&prompt=...&systemPrompt=...&history=[...] → AI chat (Riki)
+ *   GET  ?action=tts&text=...&voice=nova → vrátí base64 MP3 (lidský hlas)
  *   POST { action: 'pull' }      → vrátí sync state
  *   POST { action: 'push', state: ... } → uloží sync state
  */
@@ -69,6 +70,11 @@ function doGet(e) {
     // v3: AI CHAT — Riki přes OpenAI GPT-4o-mini
     if (p.action === 'chat') {
       return handleChat_(p);
+    }
+
+    // v4: TTS — lidský hlas přes OpenAI Audio
+    if (p.action === 'tts') {
+      return handleTTS_(p);
     }
 
     if (p.press) {
@@ -186,24 +192,115 @@ function handleChat_(p) {
 }
 
 // =====================================================================
-// TEST RUNNER — spusť v editoru aby se ověřil setup
-// (dropdown vlevo nahoře → "testChatLocally" → ▶ Run → View → Logs)
+// v4: TTS — Lidský hlas přes OpenAI Audio API
+// Voice options: alloy, echo, fable, onyx, nova, shimmer
+// Model: tts-1 (rychlejší, levnější) nebo tts-1-hd (vyšší kvalita)
+// =====================================================================
+function handleTTS_(p) {
+  const apiKey = PropertiesService.getScriptProperties()
+                   .getProperty('OPENAI_API_KEY');
+
+  if (!apiKey) {
+    return ContentService
+      .createTextOutput(JSON.stringify({
+        error: 'OPENAI_API_KEY není v Script Properties.'
+      }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+
+  const text = (p.text || '').slice(0, 4000); // OpenAI limit 4096
+  const voice = p.voice || 'nova';
+  const model = p.model || 'tts-1';
+
+  if (!text) {
+    return ContentService
+      .createTextOutput(JSON.stringify({ error: 'Prázdný text' }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+
+  try {
+    const resp = UrlFetchApp.fetch(
+      'https://api.openai.com/v1/audio/speech',
+      {
+        method: 'post',
+        contentType: 'application/json',
+        headers: { 'Authorization': 'Bearer ' + apiKey },
+        payload: JSON.stringify({
+          model: model,
+          voice: voice,
+          input: text,
+          response_format: 'mp3'
+        }),
+        muteHttpExceptions: true
+      }
+    );
+
+    if (resp.getResponseCode() !== 200) {
+      var errText = resp.getContentText();
+      return ContentService
+        .createTextOutput(JSON.stringify({
+          error: 'OpenAI TTS chyba: ' + errText.substring(0, 500)
+        }))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+
+    // Binary MP3 → base64
+    const blob = resp.getBlob();
+    const base64Audio = Utilities.base64Encode(blob.getBytes());
+
+    return ContentService
+      .createTextOutput(JSON.stringify({
+        audio: base64Audio,
+        format: 'mp3',
+        voice: voice
+      }))
+      .setMimeType(ContentService.MimeType.JSON);
+  } catch (err) {
+    return ContentService
+      .createTextOutput(JSON.stringify({
+        error: 'Apps Script TTS chyba: ' + err.toString()
+      }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+}
+
+// =====================================================================
+// TEST RUNNERS — spusť v editoru aby se ověřil setup
 // =====================================================================
 function testChatLocally() {
   const apiKey = PropertiesService.getScriptProperties()
                    .getProperty('OPENAI_API_KEY');
   if (!apiKey) {
     Logger.log('❌ OPENAI_API_KEY není v Script Properties!');
-    Logger.log('   Project Settings (⚙️) → Script Properties → Add property');
     return;
   }
   Logger.log('✓ Klíč je nastaven (' + apiKey.substring(0, 10) + '...)');
 
   const result = handleChat_({
-    action: 'chat',
     prompt: 'Ahoj Riki!',
     systemPrompt: 'Jsi Riki. Odpověz česky, jednou krátkou větou.',
     history: '[]'
   });
   Logger.log('Odpověď: ' + result.getContent());
+}
+
+function testTTSLocally() {
+  const apiKey = PropertiesService.getScriptProperties()
+                   .getProperty('OPENAI_API_KEY');
+  if (!apiKey) {
+    Logger.log('❌ OPENAI_API_KEY není v Script Properties!');
+    return;
+  }
+  Logger.log('✓ Klíč je nastaven, testuji TTS...');
+
+  const result = handleTTS_({
+    text: 'Ahoj, já jsem Riki. Slyšíš mě?',
+    voice: 'nova'
+  });
+  const json = JSON.parse(result.getContent());
+  if (json.audio) {
+    Logger.log('✓ TTS funguje! Audio délka (base64): ' + json.audio.length + ' znaků');
+  } else {
+    Logger.log('❌ TTS chyba: ' + result.getContent());
+  }
 }
