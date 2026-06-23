@@ -12,11 +12,11 @@
   try {
     var url = location.href;
     var hasParam = url.indexOf('v=') >= 0 || url.indexOf('_cb=') >= 0;
-    var sessionKey = '_dompomocnik_cb_v76';
+    var sessionKey = '_dompomocnik_cb_v77';
     if (!hasParam && !sessionStorage.getItem(sessionKey)) {
       sessionStorage.setItem(sessionKey, '1');
       var sep = url.indexOf('?') >= 0 ? '&' : '?';
-      location.replace(url + sep + 'v=76_' + Date.now());
+      location.replace(url + sep + 'v=77_' + Date.now());
     }
   } catch(e) {}
 })();
@@ -825,7 +825,7 @@ const switchProfile = (newProfile) => {
     }
     // 3. Clean URL + cache-bust v query
     var base = window.location.origin + window.location.pathname;
-    window.location.href = base + '?user=' + newProfile + '&v=76_' + Date.now();
+    window.location.href = base + '?user=' + newProfile + '&v=77_' + Date.now();
   } catch(e) { console.error('[switchProfile]', e); }
 };
 
@@ -1848,12 +1848,24 @@ function App() {
     var s = loadShared();
     return (s && s.preferredVoiceName) || '';
   });
-  // Auto-save preferredVoiceName do shared
+  // v77: TTS provider — 'browser' (Web Speech, free) nebo 'openai' (lidský hlas přes Apps Script)
+  const [ttsProvider, setTtsProvider] = useState(() => {
+    var s = loadShared();
+    return (s && s.ttsProvider) || 'browser';
+  });
+  const [openaiVoice, setOpenaiVoice] = useState(() => {
+    var s = loadShared();
+    return (s && s.openaiVoice) || 'nova';
+  });
+  const openaiAudioRef = useRef(null);
+  // Auto-save TTS preferences do shared
   useEffect(() => {
     var s = loadShared() || {};
     s.preferredVoiceName = preferredVoiceName;
+    s.ttsProvider = ttsProvider;
+    s.openaiVoice = openaiVoice;
     saveShared(s);
-  }, [preferredVoiceName]);
+  }, [preferredVoiceName, ttsProvider, openaiVoice]);
 
   // Načteme všechny dostupné hlasy + vybereme preferovaný (nebo cs-CZ fallback)
   useEffect(() => {
@@ -1886,17 +1898,68 @@ function App() {
   }, [preferredVoiceName]);
 
   const speakChatResponse = useCallback((text, opts) => {
-    if (!text || !window.speechSynthesis) return;
+    if (!text) return;
     opts = opts || {};
+
+    // v77: OpenAI TTS varianta (lidský hlas přes Apps Script)
+    if (ttsProvider === 'openai' && effectiveHueWebhookUrl) {
+      try {
+        // Zastav předchozí audio
+        if (openaiAudioRef.current) {
+          openaiAudioRef.current.pause();
+          openaiAudioRef.current = null;
+        }
+        setChatSpeaking(true);
+        var sep = effectiveHueWebhookUrl.indexOf('?') >= 0 ? '&' : '?';
+        var url = effectiveHueWebhookUrl + sep + 'action=tts' +
+          '&voice=' + encodeURIComponent(openaiVoice) +
+          '&text=' + encodeURIComponent(text);
+        fetch(url).then(function(r) { return r.json(); }).then(function(data) {
+          if (data.audio) {
+            var audio = new Audio('data:audio/mpeg;base64,' + data.audio);
+            openaiAudioRef.current = audio;
+            audio.onended = function() {
+              setChatSpeaking(false);
+              if (opts.autoRepeat && !opts._wasRepeat) {
+                setTimeout(function() {
+                  speakChatResponse(text, { autoRepeat: false, _wasRepeat: true });
+                }, 900);
+              }
+            };
+            audio.onerror = function() {
+              setChatSpeaking(false);
+              setChatError('Audio přehrávání selhalo');
+            };
+            audio.play().catch(function(e) {
+              setChatSpeaking(false);
+              setChatError('Nelze přehrát zvuk: ' + (e && e.message ? e.message : 'neznámá chyba'));
+            });
+          } else {
+            setChatSpeaking(false);
+            setChatError('TTS error: ' + (data.error || 'neznámá'));
+          }
+        }).catch(function(e) {
+          setChatSpeaking(false);
+          setChatError('Síť: ' + (e && e.message ? e.message : 'chyba'));
+        });
+        return;
+      } catch (e) {
+        setChatSpeaking(false);
+        console.error('[openai tts] error', e);
+        // fallback na browser TTS
+      }
+    }
+
+    // Browser TTS (default)
+    if (!window.speechSynthesis) return;
     try {
-      // v74: cancel + kratičká pauza aby předchozí utterance opravdu skončil než spustíme nový
       window.speechSynthesis.cancel();
       setTimeout(function() {
         try {
           const utter = new SpeechSynthesisUtterance(text);
           utter.lang = 'cs-CZ';
-          utter.rate = opts.rate || 0.95; // mírně pomalu pro děti
-          utter.pitch = opts.pitch || 1.15; // mírně vyšší hlas (mascot)
+          utter.rate = opts.rate || 0.95;
+          utter.pitch = opts.pitch || 1.15;
           utter.volume = 1.0;
           if (ttsVoiceRef.current) utter.voice = ttsVoiceRef.current;
           utter.onstart = function() { setChatSpeaking(true); };
@@ -1910,18 +1973,17 @@ function App() {
           };
           utter.onerror = function(ev) {
             setChatSpeaking(false);
-            // 'canceled' a 'interrupted' nejsou opravdové chyby — znamenají že byl spuštěn nový speak()
             if (ev && (ev.error === 'canceled' || ev.error === 'interrupted')) return;
             if (!ttsWarnedRef.current) {
               ttsWarnedRef.current = true;
-              setChatError('Hlas selhal: ' + (ev.error || 'neznámá chyba') + ' (zkontroluj hlasitost a že tab není mute)');
+              setChatError('Hlas selhal: ' + (ev.error || 'neznámá chyba') + ' (zkontroluj hlasitost)');
             }
           };
           window.speechSynthesis.speak(utter);
         } catch(e) { console.error('[chat] TTS speak error', e); }
       }, 80);
     } catch(e) { console.error('[chat] TTS error', e); }
-  }, []);
+  }, [ttsProvider, effectiveHueWebhookUrl, openaiVoice]);
 
   const sendChatMessage = useCallback(async (userText) => {
     if (!userText || !userText.trim()) return;
@@ -4951,10 +5013,10 @@ function App() {
             <div style={{ fontFamily:'var(--display)', fontSize:30, fontWeight:600, color:'#fff', lineHeight:1 }}>🎙️ Povídej si s Rikim</div>
             <div style={{ fontSize:13, fontWeight:700, color:'#c4b5fd', marginTop:3 }}>Stiskni mikrofon a mluv. Riki tě poslouchá a odpoví hlasem.</div>
           </div>
-          {/* v76: Test hlasu + výběr (Megy si vybere Zuzanu, Víta, atd.) */}
+          {/* v76: Test hlasu + výběr. v77: ukazuje provider */}
           <div onClick={() => speakChatResponse('Ahoj! Já jsem Riki. Slyšíš mě?')} style={{ cursor:'pointer', background:'rgba(251,191,36,.2)', border:'1px solid rgba(251,191,36,.5)', padding:'8px 14px', borderRadius:10, fontSize:12, fontWeight:800, color:'#fbbf24', display:'flex', alignItems:'center', gap:6 }}>🔊 Test</div>
           <div onClick={() => setShowVoicePicker(true)} style={{ cursor:'pointer', background:'rgba(167,139,250,.2)', border:'1px solid rgba(167,139,250,.5)', padding:'8px 14px', borderRadius:10, fontSize:12, fontWeight:800, color:'#c4b5fd', display:'flex', alignItems:'center', gap:6 }}>
-            🎵 {ttsVoiceRef.current ? (ttsVoiceRef.current.name.length > 14 ? ttsVoiceRef.current.name.slice(0,12)+'…' : ttsVoiceRef.current.name) : 'Vybrat hlas'}
+            🎵 {ttsProvider === 'openai' ? 'OpenAI: ' + openaiVoice : (ttsVoiceRef.current ? (ttsVoiceRef.current.name.length > 12 ? ttsVoiceRef.current.name.slice(0,10)+'…' : ttsVoiceRef.current.name) : 'Vybrat hlas')}
           </div>
           {chatHistory.length > 0 && (
             <div onClick={clearChat} style={{ cursor:'pointer', background:'rgba(255,255,255,.08)', border:'1px solid rgba(255,255,255,.2)', padding:'8px 14px', borderRadius:10, fontSize:12, fontWeight:700, color:'#cbd5e1' }}>🗑️ Nový</div>
@@ -5080,16 +5142,94 @@ function App() {
               <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
                 <div>
                   <div style={{ fontFamily:'var(--display)', fontSize:22, fontWeight:600 }}>🎵 Vyber Rikiho hlas</div>
-                  <div style={{ fontSize:12, fontWeight:700, color:'#6b7280', marginTop:3 }}>Klikni na hlas → uslyšíš ho a aplikuje se. České jsou nahoře.</div>
+                  <div style={{ fontSize:12, fontWeight:700, color:'#6b7280', marginTop:3 }}>Klikni na hlas → uslyšíš ho a aplikuje se.</div>
                 </div>
                 <div onClick={() => setShowVoicePicker(false)} style={{ cursor:'pointer', width:36, height:36, borderRadius:10, background:'#f3f4f6', display:'flex', alignItems:'center', justifyContent:'center', fontSize:18 }}>✕</div>
               </div>
 
-              {availableVoices.length === 0 ? (
+              {/* v77: TAB SWITCHER browser TTS vs OpenAI lidský hlas */}
+              <div style={{ display:'flex', gap:6, background:'#f3f4f6', padding:5, borderRadius:12 }}>
+                <div onClick={() => setTtsProvider('openai')} style={{
+                  flex:1, cursor:'pointer', textAlign:'center',
+                  padding:'10px 14px', borderRadius:10,
+                  background: ttsProvider === 'openai' ? '#fff' : 'transparent',
+                  boxShadow: ttsProvider === 'openai' ? '0 2px 6px rgba(0,0,0,.1)' : 'none',
+                  fontSize:13, fontWeight:800,
+                  color: ttsProvider === 'openai' ? '#1a1530' : '#6b7280'
+                }}>
+                  🌟 Lidský hlas (OpenAI) <span style={{ fontSize:9, color:'#16a34a', display:'block', marginTop:2 }}>doporučeno pro děti</span>
+                </div>
+                <div onClick={() => setTtsProvider('browser')} style={{
+                  flex:1, cursor:'pointer', textAlign:'center',
+                  padding:'10px 14px', borderRadius:10,
+                  background: ttsProvider === 'browser' ? '#fff' : 'transparent',
+                  boxShadow: ttsProvider === 'browser' ? '0 2px 6px rgba(0,0,0,.1)' : 'none',
+                  fontSize:13, fontWeight:800,
+                  color: ttsProvider === 'browser' ? '#1a1530' : '#6b7280'
+                }}>
+                  💻 Browser (zdarma) <span style={{ fontSize:9, color:'#6b7280', display:'block', marginTop:2 }}>Zuzana, Vít...</span>
+                </div>
+              </div>
+
+              {/* OpenAI voice list */}
+              {ttsProvider === 'openai' ? (
+                <div style={{ flex:1, overflowY:'auto', display:'flex', flexDirection:'column', gap:8 }}>
+                  {[
+                    { id:'nova',    name:'Nova',    desc:'Ženský, teplý — výborný pro děti' },
+                    { id:'shimmer', name:'Shimmer', desc:'Ženský, jemný' },
+                    { id:'fable',   name:'Fable',   desc:'Mužský, britský přízvuk, vyprávěč' },
+                    { id:'alloy',   name:'Alloy',   desc:'Neutrální, vyrovnaný' },
+                    { id:'echo',    name:'Echo',    desc:'Mužský, dospělý' },
+                    { id:'onyx',    name:'Onyx',    desc:'Hluboký mužský' },
+                  ].map(function(v) {
+                    var isSel = openaiVoice === v.id;
+                    return (
+                      <div key={v.id} onClick={() => {
+                        setOpenaiVoice(v.id);
+                        // Hned testovat
+                        setTimeout(function() {
+                          // Použij novou voice — nemusíme čekat na effect
+                          if (effectiveHueWebhookUrl) {
+                            var sep = effectiveHueWebhookUrl.indexOf('?') >= 0 ? '&' : '?';
+                            var url = effectiveHueWebhookUrl + sep + 'action=tts&voice=' + v.id + '&text=' + encodeURIComponent('Ahoj, já jsem Riki. Slyšíš mě?');
+                            setChatSpeaking(true);
+                            fetch(url).then(function(r) { return r.json(); }).then(function(d) {
+                              if (d.audio) {
+                                if (openaiAudioRef.current) openaiAudioRef.current.pause();
+                                var audio = new Audio('data:audio/mpeg;base64,' + d.audio);
+                                openaiAudioRef.current = audio;
+                                audio.onended = function() { setChatSpeaking(false); };
+                                audio.onerror = function() { setChatSpeaking(false); };
+                                audio.play();
+                              } else {
+                                setChatSpeaking(false);
+                                setChatError('TTS error: ' + (d.error || ''));
+                              }
+                            }).catch(function() { setChatSpeaking(false); });
+                          }
+                        }, 100);
+                      }} style={{
+                        cursor:'pointer',
+                        background: isSel ? 'linear-gradient(135deg, #fbbf24, #f59e0b)' : '#fef9c3',
+                        color: '#1a1530',
+                        padding:'14px 16px', borderRadius:12,
+                        border: isSel ? '2px solid #d97706' : '1px solid #fde047',
+                        display:'flex', alignItems:'center', justifyContent:'space-between', gap:10
+                      }}>
+                        <div style={{ flex:1, minWidth:0 }}>
+                          <div style={{ fontFamily:'var(--display)', fontSize:16, fontWeight:700 }}>{v.name}</div>
+                          <div style={{ fontSize:11, fontWeight:700, color: isSel ? '#7c2d12' : '#6b7280', marginTop:3 }}>{v.desc}</div>
+                        </div>
+                        <div style={{ fontSize:20 }}>{isSel ? '✓' : '🔊'}</div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : availableVoices.length === 0 ? (
                 <div style={{ padding:'30px 20px', textAlign:'center', color:'#6b7280' }}>
                   <div style={{ fontSize:48, marginBottom:10 }}>🔇</div>
-                  <div style={{ fontFamily:'var(--display)', fontSize:16, fontWeight:600, color:'#1a1530', marginBottom:6 }}>Žádné hlasy nenalezeny</div>
-                  <div style={{ fontSize:13 }}>iPad: Nastavení → Přístupnost → Mluvený obsah → Hlasy → Čeština → stáhnout</div>
+                  <div style={{ fontFamily:'var(--display)', fontSize:16, fontWeight:600, color:'#1a1530', marginBottom:6 }}>Žádné browser hlasy</div>
+                  <div style={{ fontSize:13 }}>Zkus přepnout na „🌟 Lidský hlas (OpenAI)" nahoře</div>
                 </div>
               ) : (
                 <div style={{ flex:1, overflowY:'auto', display:'flex', flexDirection:'column', gap:8 }}>
@@ -8744,8 +8884,8 @@ function App() {
                   <div style={{ background:'#fff', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
                     <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:12, flexWrap:'wrap' }}>
                       <div style={{ flex:1, minWidth:0 }}>
-                        <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'#1a1530' }}>Verze: Domácí pomocník v76</div>
-                        <div style={{ fontSize:12, color:'#9a96ac', marginTop:4 }}>Build 2026-06-23 · 18:50 · výběr hlasu</div>
+                        <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'#1a1530' }}>Verze: Domácí pomocník v77</div>
+                        <div style={{ fontSize:12, color:'#9a96ac', marginTop:4 }}>Build 2026-06-23 · 18:59 · OpenAI TTS lidský hlas</div>
                       </div>
                       <div onClick={() => {
                         audio.tap();
