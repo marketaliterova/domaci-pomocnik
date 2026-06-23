@@ -12,11 +12,11 @@
   try {
     var url = location.href;
     var hasParam = url.indexOf('v=') >= 0 || url.indexOf('_cb=') >= 0;
-    var sessionKey = '_dompomocnik_cb_v70';
+    var sessionKey = '_dompomocnik_cb_v71';
     if (!hasParam && !sessionStorage.getItem(sessionKey)) {
       sessionStorage.setItem(sessionKey, '1');
       var sep = url.indexOf('?') >= 0 ? '&' : '?';
-      location.replace(url + sep + 'v=70_' + Date.now());
+      location.replace(url + sep + 'v=71_' + Date.now());
     }
   } catch(e) {}
 })();
@@ -791,8 +791,8 @@ const saveState = (s) => {
       voiceMap: s.voiceMap, voiceBaseUrl: s.voiceBaseUrl,
       // v18+v19
       dayBlueprintByDay: s.dayBlueprintByDay,
-      // v28+v29: Hue Webhook
-      hueWebhookUrl: s.hueWebhookUrl, hueButtons: s.hueButtons,
+      // v28+v29: Hue Webhook - v71 PŘESUNUTO do shared storage (sdíleno napříč profily)
+      // hueWebhookUrl: s.hueWebhookUrl, hueButtons: s.hueButtons,
       // v52: wallet
       walletBalance: s.walletBalance, walletHistory: s.walletHistory,
       walletGoalAmount: s.walletGoalAmount, walletGoalName: s.walletGoalName,
@@ -819,6 +819,35 @@ const switchProfile = (newProfile) => {
     url.searchParams.set('v', '70_' + Date.now());
     window.location.href = url.toString();
   } catch(e) {}
+};
+
+// v71: SHARED storage (data napříč profily - tlačítka, hue webhook)
+const LS_SHARED_KEY = 'dompomocnik_shared_v1';
+
+const loadShared = () => {
+  try {
+    var raw = localStorage.getItem(LS_SHARED_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch(e) {}
+  return null;
+};
+
+const saveShared = (data) => {
+  try { localStorage.setItem(LS_SHARED_KEY, JSON.stringify(data)); } catch(e) {}
+};
+
+// v71: cross-profile přidání bodů (přímý zápis do localStorage druhého profilu)
+const addPointsToProfile = (profile, points) => {
+  if (!profile || PROFILES.indexOf(profile) < 0) return false;
+  try {
+    var key = LS_PROFILE_PREFIX + profile;
+    var data = JSON.parse(localStorage.getItem(key) || '{}');
+    data.points = (data.points || 0) + points;
+    data.totalXp = (data.totalXp || 0) + points;
+    localStorage.setItem(key, JSON.stringify(data));
+    return true;
+  } catch(e) {}
+  return false;
 };
 
 // Datum jako ISO YYYY-MM-DD (pro streaks/mood log)
@@ -1625,8 +1654,31 @@ function App() {
   const [showVoicePanel, setShowVoicePanel] = useState(false);
   // v29: Webhook tlačítka (Apple Home → Apps Script → app)
   // v30: webhook URL je defaultně stejná jako sync URL (jeden script dělá obě věci)
-  const [hueWebhookUrl, setHueWebhookUrl] = useState((persisted && persisted.hueWebhookUrl) || '');
-  const [hueButtons, setHueButtons] = useState((persisted && Array.isArray(persisted.hueButtons)) ? persisted.hueButtons : []); // [{key, label, action: {type, ref}}]
+  // v71: TLAČÍTKA + WEBHOOK URL = SHARED napříč profily (kdo stiskne, target profile dostane body)
+  const persistedShared = useMemo(loadShared, []);
+  const [hueWebhookUrl, setHueWebhookUrl] = useState(() => {
+    if (persistedShared && typeof persistedShared.hueWebhookUrl === 'string') return persistedShared.hueWebhookUrl;
+    // Migrace z per-profile
+    if (persisted && persisted.hueWebhookUrl) return persisted.hueWebhookUrl;
+    return '';
+  });
+  const [hueButtons, setHueButtons] = useState(() => {
+    if (persistedShared && Array.isArray(persistedShared.hueButtons)) return persistedShared.hueButtons;
+    // Migrace z per-profile - kopie + default targetProfile='current'
+    if (persisted && Array.isArray(persisted.hueButtons)) {
+      return persisted.hueButtons.map(function(b) {
+        return Object.assign({}, b, { targetProfile: b.targetProfile || 'current' });
+      });
+    }
+    return [];
+  }); // [{key, label, action: {type, ref}, targetProfile: 'current'|'alex'|'albert'|'oba'}]
+  // v71: auto-sync hueButtons + hueWebhookUrl do shared storage
+  useEffect(() => {
+    var s = loadShared() || {};
+    s.hueButtons = hueButtons;
+    s.hueWebhookUrl = hueWebhookUrl;
+    saveShared(s);
+  }, [hueButtons, hueWebhookUrl]);
   const [hueEvents, setHueEvents] = useState([]); // diagnostika - posledních pár eventů
   const [hueLastError, setHueLastError] = useState(null);
   const [showHuePanel, setShowHuePanel] = useState(false);
@@ -2331,8 +2383,37 @@ function App() {
 
   // v29: Webhook polling - tahá z Apps Script "events" endpoint
   // Trigger akce podle config
-  const triggerHueAction = useCallback((action, label) => {
+  // v71: + targetProfile - pokud cíl != aktivní profil, body přes cross-profile write
+  const triggerHueAction = useCallback((action, label, targetProfile) => {
     if (!action || !action.type || action.type === 'none') return;
+    var target = targetProfile || 'current';
+
+    // v71: cross-profile - body do jiného profilu (state-mutating actions se neaplikují)
+    if (target !== 'current' && target !== activeProfile) {
+      if (target === 'oba') {
+        // Body do obou profilů
+        var ptsOba = action.type === 'praise' ? (parseInt(action.ref, 10) || 5) : 10;
+        addPoints(ptsOba, label || 'Tlačítko', true); // current profile přes state
+        PROFILES.filter(function(p) { return p !== activeProfile; }).forEach(function(p) {
+          addPointsToProfile(p, ptsOba);
+        });
+        var otherName = PROFILES.filter(function(p) { return p !== activeProfile; })
+          .map(function(p) { return PROFILE_DEFAULTS[p].displayName; }).join(', ');
+        showToast('Oba: +' + ptsOba + ' 🌕 (i ' + otherName + ')', '🎉');
+        return;
+      }
+      // Konkrétní jiný profil
+      var ptsT = action.type === 'praise' ? (parseInt(action.ref, 10) || 5) : 10;
+      var ok = addPointsToProfile(target, ptsT);
+      if (ok) {
+        var tName = PROFILE_DEFAULTS[target].displayName;
+        audio.coin();
+        showToast(tName + ': +' + ptsT + ' 🌕 ' + (label ? '· ' + label : ''), '👍');
+      }
+      return;
+    }
+
+    // Standard flow (target == 'current' || target == activeProfile)
     if (action.type === 'step') {
       const allSteps = [...morning, ...evening];
       const step = allSteps.find(s => s.id === action.ref);
@@ -2378,7 +2459,7 @@ function App() {
       showToast(msg, '🎉');
       if (playVoiceRef.current) playVoiceRef.current('praise', msg);
     }
-  }, [morning, evening, doneM, doneE, audio, confetti, showToast, feedPet, choresList, choreState]);
+  }, [morning, evening, doneM, doneE, audio, confetti, showToast, feedPet, choresList, choreState, activeProfile, addPoints]);
 
   // Polling Apps Script webhook endpoint pro nové eventy
   // v32: použijeme refs aby se polling NERESTARTOVAL při každém re-render
@@ -2408,7 +2489,7 @@ function App() {
           if (hueLastTsRef.current && ev.ts <= hueLastTsRef.current) continue;
           const btn = hueButtonsRef.current.find(b => b.key === ev.key);
           if (btn && btn.action) {
-            triggerHueActionRef.current(btn.action, btn.label || ev.key);
+            triggerHueActionRef.current(btn.action, btn.label || ev.key, btn.targetProfile);
           }
           setHueEvents(prev => [{ ts: ev.ts, key: ev.key, label: btn ? (btn.label || btn.key) : '(nepřiřazeno)' }, ...prev].slice(0, 10));
           if (!latestTs || ev.ts > latestTs) latestTs = ev.ts;
@@ -7750,6 +7831,25 @@ function App() {
                                   <option value="mood">😊 Otevři otázku na náladu</option>
                                 </select>
                               </div>
+                              {/* v71: TARGET PROFILE - komu jdou body */}
+                              <div style={{ display:'flex', gap:6, marginBottom:6, alignItems:'center' }}>
+                                <div style={{ fontSize:11, fontWeight:800, color:'#6b21a8', width:60 }}>KOMU:</div>
+                                <select value={b.targetProfile || 'current'} onChange={(e) => {
+                                  const val = e.target.value;
+                                  setHueButtons(arr => arr.map((x, i) => i === idx ? {...x, targetProfile: val} : x));
+                                }} style={{ flex:1, fontSize:12, border:'1px solid #c4b5fd', borderRadius:6, padding:'6px 8px', background:'#fafafd' }}>
+                                  <option value="current">👤 Aktuálně přihlášenému (kdo má tablet)</option>
+                                  <option value="alex">🦸 Vždy Alexovi</option>
+                                  <option value="albert">🧙 Vždy Albertovi</option>
+                                  <option value="oba">👥 Oběma (Alex i Albert)</option>
+                                </select>
+                              </div>
+                              {/* Info hint pokud cíl není 'current' a typ je rutina/chore/mood */}
+                              {b.targetProfile && b.targetProfile !== 'current' && b.action && ['step','chore','mood','routine-morning','routine-evening'].indexOf(b.action.type) >= 0 && (
+                                <div style={{ background:'#fef3c7', borderRadius:6, padding:'6px 10px', fontSize:10, fontWeight:700, color:'#92400e', marginBottom:6, lineHeight:1.4 }}>
+                                  ⚠️ Tento typ akce (rutina/úkol) vyžaduje UI interakci. Pro <b>{b.targetProfile === 'oba' ? 'jiný profil' : PROFILE_DEFAULTS[b.targetProfile].displayName}</b> se připíše jen <b>+10 bodů</b> (bez UI).
+                                </div>
+                              )}
                               {/* URL pro Apple Home shortcut */}
                               {b.key && effectiveHueWebhookUrl && (
                                 <div style={{ background:'#f9f5ff', borderRadius:8, padding:'8px 10px', fontSize:11, fontFamily:'monospace', color:'#581c87', wordBreak:'break-all', display:'flex', gap:6, alignItems:'center' }}>
@@ -8081,8 +8181,8 @@ function App() {
                   <div style={{ background:'#fff', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
                     <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:12, flexWrap:'wrap' }}>
                       <div style={{ flex:1, minWidth:0 }}>
-                        <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'#1a1530' }}>Verze: Domácí pomocník v70</div>
-                        <div style={{ fontSize:12, color:'#9a96ac', marginTop:4 }}>Build 2026-06-23 · 05:59 · profily Alex + Albert</div>
+                        <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'#1a1530' }}>Verze: Domácí pomocník v71</div>
+                        <div style={{ fontSize:12, color:'#9a96ac', marginTop:4 }}>Build 2026-06-23 · 06:10 · globální tlačítka s cílem</div>
                       </div>
                       <div onClick={() => {
                         audio.tap();
