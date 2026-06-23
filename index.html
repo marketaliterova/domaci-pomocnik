@@ -12,11 +12,11 @@
   try {
     var url = location.href;
     var hasParam = url.indexOf('v=') >= 0 || url.indexOf('_cb=') >= 0;
-    var sessionKey = '_dompomocnik_cb_v71';
+    var sessionKey = '_dompomocnik_cb_v72';
     if (!hasParam && !sessionStorage.getItem(sessionKey)) {
       sessionStorage.setItem(sessionKey, '1');
       var sep = url.indexOf('?') >= 0 ? '&' : '?';
-      location.replace(url + sep + 'v=71_' + Date.now());
+      location.replace(url + sep + 'v=72_' + Date.now());
     }
   } catch(e) {}
 })();
@@ -1614,6 +1614,15 @@ function App() {
   const noiseStreamRef = useRef(null);
   const lastNoiseBeepRef = useRef(0);
   const lastQuietRewardRef = useRef(0);
+
+  // v72: CHAT s Rikim (Live AI přes Apps Script proxy)
+  const [chatHistory, setChatHistory] = useState([]); // [{role: 'user'|'assistant', content}]
+  const [chatListening, setChatListening] = useState(false);
+  const [chatSpeaking, setChatSpeaking] = useState(false);
+  const [chatThinking, setChatThinking] = useState(false);
+  const [chatError, setChatError] = useState('');
+  const [chatInterim, setChatInterim] = useState(''); // live transcript zatímco dítě mluví
+  const chatRecognitionRef = useRef(null);
   // whoHomeSchedule: 7 položek (0=Pondělí ... 6=Neděle), hodnoty 'mama'|'tata'|'oba'|'sam'|'babi'|'deda'
   const [whoHomeSchedule, setWhoHomeSchedule] = useState((persisted && Array.isArray(persisted.whoHomeSchedule) && persisted.whoHomeSchedule.length === 7) ? persisted.whoHomeSchedule : ['mama','mama','mama','mama','mama','mama','mama']);
   // v17: hlasové vzkazy (mapování event id → URL na MP3)
@@ -1817,6 +1826,139 @@ function App() {
 
   const cancelMysteryBox = useCallback(() => {
     setMysteryBox(null);
+  }, []);
+
+  // v72: CHAT s Rikim — Speech Recognition + Apps Script proxy + TTS
+  const speakChatResponse = useCallback((text) => {
+    if (!text || !window.speechSynthesis) return;
+    try {
+      window.speechSynthesis.cancel(); // zrušit předchozí
+      const utter = new SpeechSynthesisUtterance(text);
+      utter.lang = 'cs-CZ';
+      utter.rate = 1.0;
+      utter.pitch = 1.15; // mírně vyšší hlas (mascot)
+      utter.volume = 1.0;
+      // Pokus o český hlas
+      const voices = window.speechSynthesis.getVoices();
+      const csVoice = voices.find(function(v) { return v.lang && v.lang.toLowerCase().indexOf('cs') === 0; });
+      if (csVoice) utter.voice = csVoice;
+      utter.onstart = function() { setChatSpeaking(true); };
+      utter.onend = function() { setChatSpeaking(false); };
+      utter.onerror = function() { setChatSpeaking(false); };
+      window.speechSynthesis.speak(utter);
+    } catch(e) { console.error('[chat] TTS error', e); }
+  }, []);
+
+  const sendChatMessage = useCallback(async (userText) => {
+    if (!userText || !userText.trim()) return;
+    const txt = userText.trim();
+    setChatHistory(function(h) { return h.concat([{ role: 'user', content: txt }]); });
+    setChatThinking(true);
+    setChatError('');
+
+    // System prompt s kontextem dítěte
+    const systemPrompt = 'Jsi Riki, kamarádský mascot v aplikaci Domácí pomocník. Mluvíš s dítětem ' +
+      (childName || PROFILE_DEFAULTS[activeProfile].displayName) + '. ' +
+      'Dítě dělá ranní/večerní rutinu a domácí úkoly. Tvůj úkol je ho motivovat, podpořit, pochválit, povídat si. ' +
+      'Mluv stručně (1-3 věty), tykej, hodně se usmívej slovně, používej emoji. Buď přátelský, hravý, povzbuzující. ' +
+      'Aktuální stav: ' + points + ' bodů, ' + totalXp + ' XP, ' + streakDays + ' dní v řadě. ' +
+      'Pokud dítě zmíní něco vážného (smutek, problém, strach), nabídni mu že si o tom může promluvit s rodičem. ' +
+      'NIKDY nedávej rady k zdraví/léky/úrazy — nasměruj na rodiče. ' +
+      'Mluv VŽDY česky.';
+
+    try {
+      const url = effectiveHueWebhookUrl;
+      if (!url) {
+        setChatError('Není nastavena Apps Script URL (admin → Sync/Webhook)');
+        setChatThinking(false);
+        return;
+      }
+      // Posíláme do Apps Script - history posledních 6 zpráv pro kontext
+      const recentHist = chatHistory.slice(-6).concat([{ role: 'user', content: txt }]);
+      const sep = url.indexOf('?') >= 0 ? '&' : '?';
+      const fullUrl = url + sep + 'action=chat&prompt=' + encodeURIComponent(txt) +
+        '&systemPrompt=' + encodeURIComponent(systemPrompt) +
+        '&history=' + encodeURIComponent(JSON.stringify(recentHist));
+
+      const resp = await fetch(fullUrl, { method: 'GET' });
+      if (!resp.ok) throw new Error('HTTP ' + resp.status);
+      const data = await resp.json();
+      const aiText = (data && (data.text || data.message || data.content)) || '';
+      if (!aiText) throw new Error('Prázdná odpověď');
+
+      setChatHistory(function(h) { return h.concat([{ role: 'assistant', content: aiText }]); });
+      setChatThinking(false);
+      speakChatResponse(aiText);
+    } catch (e) {
+      console.error('[chat] error', e);
+      setChatError('Chyba: ' + (e && e.message ? e.message : 'připojení'));
+      setChatThinking(false);
+    }
+  }, [chatHistory, childName, activeProfile, points, totalXp, streakDays, effectiveHueWebhookUrl, speakChatResponse]);
+
+  const startChatListen = useCallback(() => {
+    setChatError('');
+    setChatInterim('');
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) {
+      setChatError('Tvůj prohlížeč nepodporuje rozpoznávání řeči (vyzkoušej Chrome/Safari)');
+      return;
+    }
+    try {
+      // Zastavit případný předchozí TTS
+      if (window.speechSynthesis) window.speechSynthesis.cancel();
+      setChatSpeaking(false);
+
+      const rec = new SR();
+      rec.lang = 'cs-CZ';
+      rec.continuous = false;
+      rec.interimResults = true;
+      rec.maxAlternatives = 1;
+
+      var finalTranscript = '';
+      rec.onresult = function(event) {
+        var interim = '';
+        for (var i = event.resultIndex; i < event.results.length; i++) {
+          var res = event.results[i];
+          if (res.isFinal) finalTranscript += res[0].transcript;
+          else interim += res[0].transcript;
+        }
+        setChatInterim(finalTranscript + interim);
+      };
+      rec.onerror = function(e) {
+        setChatError('Mikrofon: ' + (e.error || 'neznámá chyba'));
+        setChatListening(false);
+        setChatInterim('');
+      };
+      rec.onend = function() {
+        setChatListening(false);
+        setChatInterim('');
+        if (finalTranscript.trim()) {
+          sendChatMessage(finalTranscript.trim());
+        }
+      };
+      chatRecognitionRef.current = rec;
+      rec.start();
+      setChatListening(true);
+    } catch (e) {
+      setChatError('Nelze spustit mikrofon: ' + (e && e.message ? e.message : ''));
+      setChatListening(false);
+    }
+  }, [sendChatMessage]);
+
+  const stopChatListen = useCallback(() => {
+    try {
+      if (chatRecognitionRef.current) chatRecognitionRef.current.stop();
+    } catch(e) {}
+    setChatListening(false);
+  }, []);
+
+  const clearChat = useCallback(() => {
+    setChatHistory([]);
+    setChatError('');
+    setChatInterim('');
+    if (window.speechSynthesis) window.speechSynthesis.cancel();
+    setChatSpeaking(false);
   }, []);
 
   // v68: HLUKOMĚR — Web Audio API mikrofon
@@ -4624,6 +4766,25 @@ function App() {
           </div>
         )}
 
+        {/* v72: CHAT s Rikim floating tlačítko — vlevo dole vedle Mystery Box */}
+        <div onClick={() => go('chat')} style={{
+          cursor:'pointer',
+          position:'absolute',
+          bottom: 20,
+          left: mysteryBox ? 380 : 20,
+          zIndex: 30,
+          background:'linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%)',
+          borderRadius:'50%',
+          width:74, height:74,
+          display:'flex', alignItems:'center', justifyContent:'center',
+          boxShadow:'0 10px 28px rgba(251,191,36,.5), 0 0 30px rgba(251,191,36,.3)',
+          border:'3px solid #fff',
+          transition:'left .3s'
+        }}>
+          <div style={{ fontSize:42, lineHeight:1 }}>🎙️</div>
+          <div style={{ position:'absolute', bottom:-6, background:'#1a1530', color:'#fff', fontSize:9, fontWeight:900, letterSpacing:'.06em', padding:'2px 8px', borderRadius:5, whiteSpace:'nowrap', boxShadow:'0 3px 8px rgba(0,0,0,.3)' }}>POVÍDAT</div>
+        </div>
+
         {/* v68: HLUKOMĚR floating widget — vpravo dole, jen pokud aktivní */}
         {noiseMeterEnabled && (
           <div onClick={() => go('noise')} style={{
@@ -4661,6 +4822,125 @@ function App() {
         )}
       </div>
       )}
+      {/* ===================== v72: CHAT s Rikim ===================== */}
+      {screen === 'chat' && (
+      <div data-screen-label="Chat s Rikim" style={{ position:'absolute', inset:0, padding:'18px 24px', display:'flex', flexDirection:'column', gap:14, overflow:'hidden', background:'linear-gradient(180deg, #1e1b4b 0%, #312e81 100%)', color:'#fff' }}>
+        {/* Header */}
+        <div style={{ display:'flex', alignItems:'center', gap:14, flex:'none' }}>
+          <div onClick={() => { stopChatListen(); if (window.speechSynthesis) window.speechSynthesis.cancel(); go('home'); }} style={{ cursor:'pointer', width:48, height:48, borderRadius:14, background:'rgba(255,255,255,.1)', border:'1px solid rgba(255,255,255,.2)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:22, color:'#fff' }}>←</div>
+          <div style={{ flex:1 }}>
+            <div style={{ fontFamily:'var(--display)', fontSize:30, fontWeight:600, color:'#fff', lineHeight:1 }}>🎙️ Povídej si s Rikim</div>
+            <div style={{ fontSize:13, fontWeight:700, color:'#c4b5fd', marginTop:3 }}>Stiskni mikrofon a mluv. Riki tě poslouchá a odpoví hlasem.</div>
+          </div>
+          {chatHistory.length > 0 && (
+            <div onClick={clearChat} style={{ cursor:'pointer', background:'rgba(255,255,255,.08)', border:'1px solid rgba(255,255,255,.2)', padding:'8px 14px', borderRadius:10, fontSize:12, fontWeight:700, color:'#cbd5e1' }}>🗑️ Nový</div>
+          )}
+        </div>
+
+        {/* Mascot + state */}
+        <div style={{ flex:'none', display:'flex', alignItems:'center', justifyContent:'center', padding:'10px 0' }}>
+          <div style={{ position:'relative' }}>
+            <div style={{
+              width:140, height:140, borderRadius:'50%',
+              background:'radial-gradient(circle at 30% 30%, #fbbf24, #f59e0b)',
+              display:'flex', alignItems:'center', justifyContent:'center',
+              boxShadow: chatSpeaking ? '0 0 50px rgba(251,191,36,.9), 0 0 100px rgba(251,191,36,.5)' :
+                         chatListening ? '0 0 50px rgba(239,68,68,.9), 0 0 100px rgba(239,68,68,.4)' :
+                         chatThinking ? '0 0 50px rgba(96,165,250,.9), 0 0 100px rgba(96,165,250,.4)' :
+                         '0 0 30px rgba(167,139,250,.4)',
+              transition:'box-shadow .3s',
+              animation: chatSpeaking ? 'softPulse 0.6s ease-in-out infinite' :
+                         chatListening ? 'softPulse 1s ease-in-out infinite' : 'none'
+            }}>
+              <Mascot size={130} kind={mascotKind} dancing={chatSpeaking} sleeping={false}/>
+            </div>
+            {chatListening && (
+              <div style={{ position:'absolute', top:-12, right:-12, background:'#ef4444', color:'#fff', padding:'4px 10px', borderRadius:8, fontSize:11, fontWeight:900, letterSpacing:'.05em', boxShadow:'0 4px 12px rgba(0,0,0,.4)' }}>🔴 POSLOUCHÁM</div>
+            )}
+            {chatSpeaking && (
+              <div style={{ position:'absolute', top:-12, right:-12, background:'#fbbf24', color:'#1a1530', padding:'4px 10px', borderRadius:8, fontSize:11, fontWeight:900, letterSpacing:'.05em', boxShadow:'0 4px 12px rgba(0,0,0,.4)' }}>🔊 MLUVÍM</div>
+            )}
+            {chatThinking && (
+              <div style={{ position:'absolute', top:-12, right:-12, background:'#60a5fa', color:'#fff', padding:'4px 10px', borderRadius:8, fontSize:11, fontWeight:900, letterSpacing:'.05em', boxShadow:'0 4px 12px rgba(0,0,0,.4)' }}>💭 MYSLÍM</div>
+            )}
+          </div>
+        </div>
+
+        {/* Chat historie */}
+        <div style={{ flex:1, minHeight:0, overflowY:'auto', display:'flex', flexDirection:'column', gap:8, padding:'0 4px' }}>
+          {chatHistory.length === 0 ? (
+            <div style={{ background:'rgba(255,255,255,.04)', borderRadius:14, padding:'30px 20px', textAlign:'center', color:'#cbd5e1' }}>
+              <div style={{ fontSize:48, marginBottom:12 }}>👋</div>
+              <div style={{ fontFamily:'var(--display)', fontSize:18, fontWeight:600, color:'#fff', marginBottom:6 }}>Ahoj, jsem Riki!</div>
+              <div style={{ fontSize:13, fontWeight:700, color:'#cbd5e1', maxWidth:420, margin:'0 auto', lineHeight:1.5 }}>
+                Stiskni dole tlačítko mikrofonu a povídej. Můžeš mi říct cokoliv — jak se ti vede, co děláš, co tě trápí. Pokud ti něco není jasné, zkus to.
+              </div>
+            </div>
+          ) : (
+            chatHistory.map(function(m, i) {
+              return (
+                <div key={i} style={{
+                  alignSelf: m.role === 'user' ? 'flex-end' : 'flex-start',
+                  maxWidth:'80%',
+                  background: m.role === 'user' ? 'linear-gradient(135deg, #818cf8, #6366f1)' : 'rgba(255,255,255,.1)',
+                  color:'#fff',
+                  padding:'10px 14px',
+                  borderRadius:14,
+                  borderBottomRightRadius: m.role === 'user' ? 4 : 14,
+                  borderBottomLeftRadius: m.role === 'assistant' ? 4 : 14,
+                  fontSize:14, fontWeight:600, lineHeight:1.4,
+                  boxShadow:'0 2px 8px rgba(0,0,0,.2)'
+                }}>
+                  {m.role === 'assistant' && <div style={{ fontSize:11, fontWeight:900, color:'#fbbf24', marginBottom:3, letterSpacing:'.04em' }}>🤖 RIKI</div>}
+                  {m.content}
+                </div>
+              );
+            })
+          )}
+          {/* Live interim transcript zatímco dítě mluví */}
+          {chatInterim && (
+            <div style={{ alignSelf:'flex-end', maxWidth:'80%', background:'rgba(129,140,248,.3)', color:'#cbd5e1', padding:'10px 14px', borderRadius:14, borderBottomRightRadius:4, fontSize:14, fontWeight:600, lineHeight:1.4, fontStyle:'italic' }}>
+              {chatInterim}…
+            </div>
+          )}
+        </div>
+
+        {chatError && (
+          <div style={{ background:'rgba(239,68,68,.15)', border:'1px solid rgba(239,68,68,.4)', borderRadius:12, padding:'10px 14px', color:'#fca5a5', fontSize:12, fontWeight:700, flex:'none' }}>⚠️ {chatError}</div>
+        )}
+
+        {/* Mikrofon tlačítko */}
+        <div style={{ display:'flex', justifyContent:'center', flex:'none', padding:'6px 0 14px' }}>
+          <div onClick={() => {
+            if (chatThinking || chatSpeaking) return;
+            if (chatListening) stopChatListen();
+            else startChatListen();
+          }} style={{
+            cursor: (chatThinking || chatSpeaking) ? 'wait' : 'pointer',
+            width: chatListening ? 110 : 90, height: chatListening ? 110 : 90,
+            borderRadius:'50%',
+            background: chatListening ? 'linear-gradient(180deg, #f87171 0%, #dc2626 100%)' :
+                        (chatThinking || chatSpeaking) ? 'linear-gradient(180deg, #6b7280, #4b5563)' :
+                        'linear-gradient(180deg, #fbbf24 0%, #f59e0b 100%)',
+            display:'flex', alignItems:'center', justifyContent:'center',
+            fontSize: chatListening ? 50 : 44,
+            color:'#1a1530',
+            boxShadow: chatListening ? '0 8px 0 #7f1d1d, 0 12px 30px rgba(239,68,68,.5)' :
+                       (chatThinking || chatSpeaking) ? '0 6px 0 #1f2937, 0 8px 20px rgba(0,0,0,.4)' :
+                       '0 8px 0 #92400e, 0 12px 30px rgba(251,191,36,.4)',
+            transition:'all .2s',
+            border:'3px solid rgba(255,255,255,.3)',
+            animation: chatListening ? 'softPulse 1s ease-in-out infinite' : 'none'
+          }}>
+            {chatListening ? '⏹️' : '🎙️'}
+          </div>
+        </div>
+        <div style={{ textAlign:'center', flex:'none', fontSize:12, fontWeight:700, color:'#a78bfa', marginTop:-8 }}>
+          {chatListening ? 'Mluv... (klik = konec)' : chatThinking ? 'Riki přemýšlí...' : chatSpeaking ? 'Riki mluví...' : 'Klikni a mluv'}
+        </div>
+      </div>
+      )}
+
       {/* ===================== v68: HLUKOMĚR ===================== */}
       {screen === 'noise' && (
       <div data-screen-label="Hlukoměr" style={{ position:'absolute', inset:0, padding:'18px 24px', display:'flex', flexDirection:'column', gap:14, overflow:'hidden', background:'linear-gradient(180deg, #0c0a26 0%, #1a1240 100%)', color:'#fff' }}>
@@ -7909,6 +8189,78 @@ function App() {
                       </React.Fragment>
                     )}
                   </div>
+
+                  {/* v72: AI CHAT - návod pro Apps Script proxy */}
+                  <div style={{ background:'linear-gradient(135deg, #fef3c7, #fed7aa)', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)', border:'2px solid #fbbf24', marginTop:14 }}>
+                    <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:10 }}>
+                      <span style={{ fontSize:24 }}>🎙️</span>
+                      <div style={{ flex:1 }}>
+                        <div style={{ fontFamily:'var(--display)', fontSize:18, fontWeight:600, color:'#7c2d12' }}>Live AI chat s Rikim</div>
+                        <div style={{ fontSize:11, fontWeight:700, color:'#92400e' }}>Apps Script proxy → OpenAI → Riki mluví s dětmi</div>
+                      </div>
+                      <div onClick={() => {
+                        if (!effectiveHueWebhookUrl) { showToast('Nejdřív nastav Apps Script URL výše', '⚠️'); return; }
+                        var testUrl = effectiveHueWebhookUrl + (effectiveHueWebhookUrl.indexOf('?') >= 0 ? '&' : '?') + 'action=chat&prompt=' + encodeURIComponent('Ahoj Riki!') + '&systemPrompt=' + encodeURIComponent('Jsi Riki. Odpověz krátce.') + '&history=' + encodeURIComponent('[]');
+                        fetch(testUrl).then(function(r) { return r.json(); }).then(function(d) {
+                          if (d && (d.text || d.message || d.content)) showToast('AI chat funguje! ✓ "' + (d.text || d.message || d.content).slice(0,40) + '"', '✅');
+                          else if (d && d.error) showToast('Chyba Apps Script: ' + d.error, '✕');
+                          else showToast('AI chat ještě není nasazený v Apps Script', '⚠️');
+                        }).catch(function(e) { showToast('Chyba: ' + e.message, '✕'); });
+                      }} style={{ cursor:'pointer', background:'#7c2d12', color:'#fff', padding:'6px 12px', borderRadius:8, fontSize:11, fontWeight:800 }}>🧪 Test</div>
+                    </div>
+                    <div style={{ background:'#fff', borderRadius:10, padding:'12px 14px', fontSize:11, fontWeight:700, color:'#7c2d12', lineHeight:1.6 }}>
+                      <div style={{ fontWeight:900, marginBottom:6, fontSize:12 }}>Setup návod (jednorázově):</div>
+                      <ol style={{ margin:'0 0 8px 18px', padding:0 }}>
+                        <li><b>OpenAI klíč</b>: <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener noreferrer" style={{ color:'#0369a1', fontWeight:900 }}>platform.openai.com/api-keys</a> → Create new key. <b>~$5 kredit stačí na měsíce.</b></li>
+                        <li><b>Apps Script</b>: otevři tvůj sync/webhook skript → Project Settings (⚙️) → Script Properties → Add property: <code style={{ background:'#fef3c7', padding:'1px 4px', borderRadius:3, fontFamily:'monospace' }}>OPENAI_API_KEY</code> = tvůj klíč</li>
+                        <li>Rozšiř <code style={{ background:'#fef3c7', padding:'1px 4px', borderRadius:3 }}>doGet</code> o blok pro <code>action=chat</code> (viz níže). Pokud používáš <code>doPost</code>, dej stejný blok i tam.</li>
+                      </ol>
+                      <div style={{ background:'#1e293b', color:'#86efac', borderRadius:8, padding:'10px 12px', fontFamily:'monospace', fontSize:10, overflow:'auto', whiteSpace:'pre', lineHeight:1.4 }}>{`function doGet(e) {
+  if (e.parameter.action === 'chat') {
+    var apiKey = PropertiesService.getScriptProperties()
+                   .getProperty('OPENAI_API_KEY');
+    var systemPrompt = e.parameter.systemPrompt || '';
+    var history = JSON.parse(e.parameter.history || '[]');
+    var messages = [{role:'system', content:systemPrompt}]
+                   .concat(history);
+    try {
+      var resp = UrlFetchApp.fetch(
+        'https://api.openai.com/v1/chat/completions', {
+        method: 'post',
+        contentType: 'application/json',
+        headers: { 'Authorization': 'Bearer ' + apiKey },
+        payload: JSON.stringify({
+          model: 'gpt-4o-mini',
+          messages: messages,
+          max_tokens: 200,
+          temperature: 0.8
+        }),
+        muteHttpExceptions: true
+      });
+      var data = JSON.parse(resp.getContentText());
+      var text = (data.choices && data.choices[0])
+                 ? data.choices[0].message.content
+                 : 'Chyba: ' + JSON.stringify(data);
+      return ContentService
+        .createTextOutput(JSON.stringify({text: text}))
+        .setMimeType(ContentService.MimeType.JSON);
+    } catch(err) {
+      return ContentService
+        .createTextOutput(JSON.stringify({error: err.toString()}))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+  }
+  // ... zbytek tvého doGet (sync, hue webhook, atd.)
+}`}</div>
+                      <ol start="4" style={{ margin:'8px 0 0 18px', padding:0 }}>
+                        <li><b>Deploy</b>: Apps Script → Deploy → Manage deployments → Edit (✏️) → <b>New version</b> → Deploy</li>
+                        <li><b>Test</b>: klikni 🧪 vpravo nahoře v této kartě. Měl by se zobrazit toast „AI chat funguje! ✓"</li>
+                      </ol>
+                      <div style={{ background:'#fef3c7', borderRadius:6, padding:'8px 10px', marginTop:8, fontSize:10, fontWeight:700, color:'#92400e' }}>
+                        💰 <b>Cena</b>: GPT-4o-mini ~ 0.04 Kč za 10 zpráv. $5 kredit ~ 5000+ rozhovorů. Když chceš víc lidský hlas, místo browser TTS lze později přidat ElevenLabs (extra setup).
+                      </div>
+                    </div>
+                  </div>
                   </>)}
 
                   {settingsSubTab === 'zvuk' && (<>
@@ -8181,8 +8533,8 @@ function App() {
                   <div style={{ background:'#fff', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
                     <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:12, flexWrap:'wrap' }}>
                       <div style={{ flex:1, minWidth:0 }}>
-                        <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'#1a1530' }}>Verze: Domácí pomocník v71</div>
-                        <div style={{ fontSize:12, color:'#9a96ac', marginTop:4 }}>Build 2026-06-23 · 06:10 · globální tlačítka s cílem</div>
+                        <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'#1a1530' }}>Verze: Domácí pomocník v72</div>
+                        <div style={{ fontSize:12, color:'#9a96ac', marginTop:4 }}>Build 2026-06-23 · 06:46 · Live AI chat s Rikim</div>
                       </div>
                       <div onClick={() => {
                         audio.tap();
