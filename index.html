@@ -12,11 +12,11 @@
   try {
     var url = location.href;
     var hasParam = url.indexOf('v=') >= 0 || url.indexOf('_cb=') >= 0;
-    var sessionKey = '_dompomocnik_cb_v75';
+    var sessionKey = '_dompomocnik_cb_v76';
     if (!hasParam && !sessionStorage.getItem(sessionKey)) {
       sessionStorage.setItem(sessionKey, '1');
       var sep = url.indexOf('?') >= 0 ? '&' : '?';
-      location.replace(url + sep + 'v=75_' + Date.now());
+      location.replace(url + sep + 'v=76_' + Date.now());
     }
   } catch(e) {}
 })();
@@ -825,7 +825,7 @@ const switchProfile = (newProfile) => {
     }
     // 3. Clean URL + cache-bust v query
     var base = window.location.origin + window.location.pathname;
-    window.location.href = base + '?user=' + newProfile + '&v=75_' + Date.now();
+    window.location.href = base + '?user=' + newProfile + '&v=76_' + Date.now();
   } catch(e) { console.error('[switchProfile]', e); }
 };
 
@@ -1552,6 +1552,8 @@ function App() {
   const [moodLog, setMoodLog] = useState((persisted && persisted.moodLog) || {});
   const [lastMoodDate, setLastMoodDate] = useState((persisted && persisted.lastMoodDate) || null);
   const [showMoodPrompt, setShowMoodPrompt] = useState(false);
+  // v76: voice picker modal pro výběr TTS hlasu
+  const [showVoicePicker, setShowVoicePicker] = useState(false);
   const [praiseShown, setPraiseShown] = useState(null);
   const [rikiDancing, setRikiDancing] = useState(false);
   const [parentPin, setParentPin] = useState((persisted && persisted.parentPin) || '1234');
@@ -1838,29 +1840,50 @@ function App() {
 
   // v72: CHAT s Rikim — Speech Recognition + Apps Script proxy + TTS
   // v73: zlepšený TTS — robust voice loading + tap-to-replay + auto-repeat pro nečtenáře
+  // v76: + výběr hlasu (preferredVoiceName ze shared storage)
   const ttsVoiceRef = useRef(null);
   const ttsWarnedRef = useRef(false);
+  const [availableVoices, setAvailableVoices] = useState([]);
+  const [preferredVoiceName, setPreferredVoiceName] = useState(() => {
+    var s = loadShared();
+    return (s && s.preferredVoiceName) || '';
+  });
+  // Auto-save preferredVoiceName do shared
+  useEffect(() => {
+    var s = loadShared() || {};
+    s.preferredVoiceName = preferredVoiceName;
+    saveShared(s);
+  }, [preferredVoiceName]);
 
-  // Načteme cs-CZ hlas (může to chvíli trvat než browser hlasy načte)
+  // Načteme všechny dostupné hlasy + vybereme preferovaný (nebo cs-CZ fallback)
   useEffect(() => {
     if (!window.speechSynthesis) return;
-    function pickVoice() {
+    function refreshVoices() {
       var voices = window.speechSynthesis.getVoices();
-      if (!voices || voices.length === 0) return null;
-      // Priority: cs-CZ > cs > sk > pl > en > první dostupný
-      var cs = voices.find(function(v) { return v.lang && v.lang.toLowerCase().indexOf('cs') === 0; }) ||
-               voices.find(function(v) { return v.lang && v.lang.toLowerCase().indexOf('sk') === 0; }) ||
-               voices.find(function(v) { return v.lang && v.lang.toLowerCase().indexOf('pl') === 0; }) ||
-               voices.find(function(v) { return v.lang && v.lang.toLowerCase().indexOf('en') === 0; }) ||
-               voices[0];
-      ttsVoiceRef.current = cs || null;
-      return cs;
+      if (!voices || voices.length === 0) return;
+      setAvailableVoices(voices.map(function(v) { return { name: v.name, lang: v.lang, localService: v.localService, isDefault: v.default }; }));
+      // Pickni voice instance:
+      var picked = null;
+      if (preferredVoiceName) {
+        picked = voices.find(function(v) { return v.name === preferredVoiceName; });
+      }
+      if (!picked) {
+        // Fallback chain: cs-CZ > cs > sk > pl > en > první
+        picked = voices.find(function(v) { return v.lang && v.lang.toLowerCase().indexOf('cs') === 0; }) ||
+                 voices.find(function(v) { return v.lang && v.lang.toLowerCase().indexOf('sk') === 0; }) ||
+                 voices.find(function(v) { return v.lang && v.lang.toLowerCase().indexOf('pl') === 0; }) ||
+                 voices.find(function(v) { return v.lang && v.lang.toLowerCase().indexOf('en') === 0; }) ||
+                 voices[0];
+      }
+      ttsVoiceRef.current = picked || null;
     }
-    pickVoice();
-    if (!ttsVoiceRef.current) {
-      window.speechSynthesis.onvoiceschanged = function() { pickVoice(); };
-    }
-  }, []);
+    refreshVoices();
+    window.speechSynthesis.onvoiceschanged = refreshVoices;
+    // Retry po prodlevě (iOS někdy potřebuje čas)
+    var t1 = setTimeout(refreshVoices, 500);
+    var t2 = setTimeout(refreshVoices, 2000);
+    return function() { clearTimeout(t1); clearTimeout(t2); };
+  }, [preferredVoiceName]);
 
   const speakChatResponse = useCallback((text, opts) => {
     if (!text || !window.speechSynthesis) return;
@@ -4928,17 +4951,11 @@ function App() {
             <div style={{ fontFamily:'var(--display)', fontSize:30, fontWeight:600, color:'#fff', lineHeight:1 }}>🎙️ Povídej si s Rikim</div>
             <div style={{ fontSize:13, fontWeight:700, color:'#c4b5fd', marginTop:3 }}>Stiskni mikrofon a mluv. Riki tě poslouchá a odpoví hlasem.</div>
           </div>
-          {/* v73: Test hlasu - ověří že TTS funguje. v74: log info o použitém hlasu */}
-          <div onClick={() => {
-            var v = ttsVoiceRef.current;
-            if (v) {
-              console.log('[TTS] Aktivní hlas:', v.name, '(' + v.lang + ')');
-              showToast('Hlas: ' + v.name + ' (' + v.lang + ')', '🔊');
-            } else {
-              showToast('Žádný TTS hlas — instaluj český TTS', '⚠️');
-            }
-            speakChatResponse('Ahoj! Slyšíš mě? Já jsem Riki.');
-          }} style={{ cursor:'pointer', background:'rgba(251,191,36,.2)', border:'1px solid rgba(251,191,36,.5)', padding:'8px 14px', borderRadius:10, fontSize:12, fontWeight:800, color:'#fbbf24', display:'flex', alignItems:'center', gap:6 }}>🔊 Test hlasu</div>
+          {/* v76: Test hlasu + výběr (Megy si vybere Zuzanu, Víta, atd.) */}
+          <div onClick={() => speakChatResponse('Ahoj! Já jsem Riki. Slyšíš mě?')} style={{ cursor:'pointer', background:'rgba(251,191,36,.2)', border:'1px solid rgba(251,191,36,.5)', padding:'8px 14px', borderRadius:10, fontSize:12, fontWeight:800, color:'#fbbf24', display:'flex', alignItems:'center', gap:6 }}>🔊 Test</div>
+          <div onClick={() => setShowVoicePicker(true)} style={{ cursor:'pointer', background:'rgba(167,139,250,.2)', border:'1px solid rgba(167,139,250,.5)', padding:'8px 14px', borderRadius:10, fontSize:12, fontWeight:800, color:'#c4b5fd', display:'flex', alignItems:'center', gap:6 }}>
+            🎵 {ttsVoiceRef.current ? (ttsVoiceRef.current.name.length > 14 ? ttsVoiceRef.current.name.slice(0,12)+'…' : ttsVoiceRef.current.name) : 'Vybrat hlas'}
+          </div>
           {chatHistory.length > 0 && (
             <div onClick={clearChat} style={{ cursor:'pointer', background:'rgba(255,255,255,.08)', border:'1px solid rgba(255,255,255,.2)', padding:'8px 14px', borderRadius:10, fontSize:12, fontWeight:700, color:'#cbd5e1' }}>🗑️ Nový</div>
           )}
@@ -5055,6 +5072,83 @@ function App() {
         <div style={{ textAlign:'center', flex:'none', fontSize:12, fontWeight:700, color:'#a78bfa', marginTop:-8 }}>
           {chatListening ? 'Mluv... (klik = konec)' : chatThinking ? 'Riki přemýšlí...' : chatSpeaking ? 'Riki mluví...' : 'Klikni a mluv'}
         </div>
+
+        {/* v76: VOICE PICKER MODAL */}
+        {showVoicePicker && (
+          <div onClick={() => setShowVoicePicker(false)} style={{ position:'absolute', inset:0, zIndex:80, background:'rgba(0,0,0,.7)', display:'flex', alignItems:'center', justifyContent:'center', padding:24 }}>
+            <div onClick={(e) => e.stopPropagation()} style={{ background:'#fff', color:'#1a1530', borderRadius:20, padding:'20px 22px', maxWidth:520, width:'100%', maxHeight:'80vh', display:'flex', flexDirection:'column', gap:14, boxShadow:'0 30px 60px rgba(0,0,0,.5)' }}>
+              <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+                <div>
+                  <div style={{ fontFamily:'var(--display)', fontSize:22, fontWeight:600 }}>🎵 Vyber Rikiho hlas</div>
+                  <div style={{ fontSize:12, fontWeight:700, color:'#6b7280', marginTop:3 }}>Klikni na hlas → uslyšíš ho a aplikuje se. České jsou nahoře.</div>
+                </div>
+                <div onClick={() => setShowVoicePicker(false)} style={{ cursor:'pointer', width:36, height:36, borderRadius:10, background:'#f3f4f6', display:'flex', alignItems:'center', justifyContent:'center', fontSize:18 }}>✕</div>
+              </div>
+
+              {availableVoices.length === 0 ? (
+                <div style={{ padding:'30px 20px', textAlign:'center', color:'#6b7280' }}>
+                  <div style={{ fontSize:48, marginBottom:10 }}>🔇</div>
+                  <div style={{ fontFamily:'var(--display)', fontSize:16, fontWeight:600, color:'#1a1530', marginBottom:6 }}>Žádné hlasy nenalezeny</div>
+                  <div style={{ fontSize:13 }}>iPad: Nastavení → Přístupnost → Mluvený obsah → Hlasy → Čeština → stáhnout</div>
+                </div>
+              ) : (
+                <div style={{ flex:1, overflowY:'auto', display:'flex', flexDirection:'column', gap:8 }}>
+                  {(() => {
+                    var cs = availableVoices.filter(function(v) { return v.lang && v.lang.toLowerCase().indexOf('cs') === 0; });
+                    var rest = availableVoices.filter(function(v) { return !v.lang || v.lang.toLowerCase().indexOf('cs') !== 0; });
+                    var sorted = cs.concat(rest);
+                    return sorted.map(function(v, i) {
+                      var isSelected = preferredVoiceName === v.name || (!preferredVoiceName && ttsVoiceRef.current && ttsVoiceRef.current.name === v.name);
+                      var isCzech = v.lang && v.lang.toLowerCase().indexOf('cs') === 0;
+                      return (
+                        <div key={v.name + '_' + i} onClick={() => {
+                          setPreferredVoiceName(v.name);
+                          // Hned test
+                          setTimeout(function() {
+                            try {
+                              window.speechSynthesis.cancel();
+                              var u = new SpeechSynthesisUtterance('Ahoj! Já jsem Riki. Slyšíš mě?');
+                              u.lang = v.lang || 'cs-CZ';
+                              u.rate = 0.95; u.pitch = 1.15; u.volume = 1.0;
+                              // Najdi voice instance
+                              var voices = window.speechSynthesis.getVoices();
+                              var inst = voices.find(function(vo) { return vo.name === v.name; });
+                              if (inst) u.voice = inst;
+                              window.speechSynthesis.speak(u);
+                            } catch(e) {}
+                          }, 200);
+                        }} style={{
+                          cursor:'pointer',
+                          background: isSelected ? 'linear-gradient(135deg, #fbbf24, #f59e0b)' : (isCzech ? '#fef9c3' : '#f3f4f6'),
+                          color: isSelected ? '#1a1530' : '#1a1530',
+                          padding:'12px 14px', borderRadius:12,
+                          border: isSelected ? '2px solid #d97706' : (isCzech ? '1px solid #facc15' : '1px solid #e5e7eb'),
+                          display:'flex', alignItems:'center', justifyContent:'space-between', gap:10
+                        }}>
+                          <div style={{ flex:1, minWidth:0 }}>
+                            <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:700 }}>{v.name}</div>
+                            <div style={{ fontSize:11, fontWeight:700, color: isSelected ? '#7c2d12' : '#6b7280', marginTop:2, display:'flex', gap:6 }}>
+                              <span>{v.lang}</span>
+                              {v.localService && <span style={{ background:'rgba(34,197,94,.2)', color:'#15803d', padding:'1px 6px', borderRadius:4, fontSize:9 }}>OFFLINE</span>}
+                              {v.isDefault && <span style={{ background:'rgba(59,130,246,.2)', color:'#1d4ed8', padding:'1px 6px', borderRadius:4, fontSize:9 }}>DEFAULT</span>}
+                              {isCzech && <span style={{ background:'rgba(239,68,68,.2)', color:'#b91c1c', padding:'1px 6px', borderRadius:4, fontSize:9 }}>🇨🇿 ČESKÝ</span>}
+                            </div>
+                          </div>
+                          <div style={{ fontSize:18 }}>{isSelected ? '✓' : '🔊'}</div>
+                        </div>
+                      );
+                    });
+                  })()}
+                </div>
+              )}
+
+              <div style={{ background:'#f3f4f6', borderRadius:10, padding:'10px 14px', fontSize:11, fontWeight:700, color:'#4b5563', lineHeight:1.5 }}>
+                💡 <b>iPad tip</b>: Pokud nevidíš Zuzanu Premium, jdi do <b>Nastavení → Přístupnost → Mluvený obsah → Hlasy → Čeština</b> a stáhni „Zuzana (Enhanced)" nebo „Vít".
+                <br/>🔊 <b>Některé prohlížeče</b> (Safari na iOS) nezpřístupňují všechny systémové hlasy. Pokud Zuzana Premium není v seznamu, zkus Chrome.
+              </div>
+            </div>
+          </div>
+        )}
       </div>
       )}
 
@@ -8650,8 +8744,8 @@ function App() {
                   <div style={{ background:'#fff', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
                     <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:12, flexWrap:'wrap' }}>
                       <div style={{ flex:1, minWidth:0 }}>
-                        <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'#1a1530' }}>Verze: Domácí pomocník v75</div>
-                        <div style={{ fontSize:12, color:'#9a96ac', marginTop:4 }}>Build 2026-06-23 · 18:41 · Albie + Riki kámoš</div>
+                        <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'#1a1530' }}>Verze: Domácí pomocník v76</div>
+                        <div style={{ fontSize:12, color:'#9a96ac', marginTop:4 }}>Build 2026-06-23 · 18:50 · výběr hlasu</div>
                       </div>
                       <div onClick={() => {
                         audio.tap();
