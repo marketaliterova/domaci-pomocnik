@@ -12,11 +12,11 @@
   try {
     var url = location.href;
     var hasParam = url.indexOf('v=') >= 0 || url.indexOf('_cb=') >= 0;
-    var sessionKey = '_dompomocnik_cb_v69';
+    var sessionKey = '_dompomocnik_cb_v70';
     if (!hasParam && !sessionStorage.getItem(sessionKey)) {
       sessionStorage.setItem(sessionKey, '1');
       var sep = url.indexOf('?') >= 0 ? '&' : '?';
-      location.replace(url + sep + 'v=69_' + Date.now());
+      location.replace(url + sep + 'v=70_' + Date.now());
     }
   } catch(e) {}
 })();
@@ -660,9 +660,91 @@ const hexA = (hex, a) => {
 
 // localStorage helpers
 const LS_KEY = 'dompomocnik_v1';
-const loadState = () => {
-  try { const raw = localStorage.getItem(LS_KEY); return raw ? JSON.parse(raw) : null; } catch(e) { return null; }
+const LS_PROFILE_PREFIX = 'dompomocnik_v1_'; // v70: per-profile data
+const LS_ACTIVE_KEY = 'dompomocnik_active_profile'; // v70: which profile is active
+
+// v70: PROFILES (Alex + Albert) — vše per-dítě
+const PROFILES = ['alex', 'albert'];
+
+// Default profile labels (lze změnit v adminu)
+const PROFILE_DEFAULTS = {
+  alex: { displayName: 'Alex', avatar: '🦸' },
+  albert: { displayName: 'Albert', avatar: '🧙' }
 };
+
+// Klíče, které se RESETUJÍ při kopírování konfigurace mezi profily (statistiky, ne nastavení)
+const STAT_KEYS_TO_RESET = [
+  'points', 'totalXp', 'streak',
+  'streakDays', 'streakLastDate', 'eveningStreakDays', 'eveningStreakLast',
+  'doneM', 'doneE',
+  'shopState', 'choreState', 'pendingApprovals',
+  'packState', 'packAwarded', 'weeklyDone',
+  'mysteryBox',
+  'walletBalance', 'walletHistory',
+  'moodLog', 'lastMoodDate',
+  'routineHistory', 'inventory', 'stickers',
+  'cursusUnlocked', 'morningAlertsFired',
+  'lastDayKey', 'bombFiredToday',
+  'spinWheelLastDate'
+];
+
+const getActiveProfile = () => {
+  try {
+    // URL parametr má prioritu
+    var url = new URLSearchParams(window.location.search);
+    var u = (url.get('user') || '').toLowerCase();
+    if (PROFILES.indexOf(u) >= 0) {
+      localStorage.setItem(LS_ACTIVE_KEY, u);
+      return u;
+    }
+    var saved = localStorage.getItem(LS_ACTIVE_KEY);
+    if (PROFILES.indexOf(saved) >= 0) return saved;
+  } catch(e) {}
+  return 'alex';
+};
+
+const loadState = () => {
+  try {
+    var active = getActiveProfile();
+    var key = LS_PROFILE_PREFIX + active;
+
+    // 1. Existující per-profile data
+    var raw = localStorage.getItem(key);
+    if (raw) return JSON.parse(raw);
+
+    // 2. Migration: pokud je profil 'alex' a existuje starý klíč, použij ho
+    if (active === 'alex') {
+      var legacy = localStorage.getItem(LS_KEY);
+      if (legacy) {
+        var legacyData = JSON.parse(legacy);
+        // Uložit už pod novým klíčem
+        localStorage.setItem(key, legacy);
+        return legacyData;
+      }
+    }
+
+    // 3. Albert default: zkopírovat Alexovo nastavení s resetnutými statistikami
+    if (active === 'albert') {
+      var alexRaw = localStorage.getItem(LS_PROFILE_PREFIX + 'alex') || localStorage.getItem(LS_KEY);
+      if (alexRaw) {
+        var alexData = JSON.parse(alexRaw);
+        var albertDefaults = JSON.parse(JSON.stringify(alexData)); // deep clone
+        // Reset všech statistik (kromě nastavení/configů jako rutiny, ceník, ...)
+        STAT_KEYS_TO_RESET.forEach(function(k) {
+          if (k === 'points' || k === 'totalXp' || k === 'streakDays' || k === 'eveningStreakDays' || k === 'walletBalance') albertDefaults[k] = 0;
+          else if (k === 'streakLastDate' || k === 'eveningStreakLast' || k === 'lastDayKey' || k === 'bombFiredToday' || k === 'lastMoodDate' || k === 'spinWheelLastDate') albertDefaults[k] = null;
+          else if (k === 'mysteryBox') albertDefaults[k] = null;
+          else if (k === 'walletHistory' || k === 'moodLog' || k === 'inventory' || k === 'stickers' || k === 'cursusUnlocked' || k === 'pendingApprovals') albertDefaults[k] = [];
+          else albertDefaults[k] = {}; // doneM, doneE, shopState, choreState, packState, packAwarded, weeklyDone, routineHistory, morningAlertsFired
+        });
+        albertDefaults.childName = PROFILE_DEFAULTS.albert.displayName;
+        return albertDefaults;
+      }
+    }
+  } catch(e) {}
+  return null;
+};
+
 const saveState = (s) => {
   try {
     const persistable = {
@@ -711,8 +793,31 @@ const saveState = (s) => {
       dayBlueprintByDay: s.dayBlueprintByDay,
       // v28+v29: Hue Webhook
       hueWebhookUrl: s.hueWebhookUrl, hueButtons: s.hueButtons,
+      // v52: wallet
+      walletBalance: s.walletBalance, walletHistory: s.walletHistory,
+      walletGoalAmount: s.walletGoalAmount, walletGoalName: s.walletGoalName,
+      // v45+
+      routineHistory: s.routineHistory, spinWheelLastDate: s.spinWheelLastDate,
+      cursusUnlocked: s.cursusUnlocked, morningAlertsFired: s.morningAlertsFired,
+      bombEnabled: s.bombEnabled, bombFiredToday: s.bombFiredToday,
     };
-    localStorage.setItem(LS_KEY, JSON.stringify(persistable));
+    // v70: ukládáme do per-profile klíče (ne univerzálního)
+    var active = getActiveProfile();
+    localStorage.setItem(LS_PROFILE_PREFIX + active, JSON.stringify(persistable));
+  } catch(e) {}
+};
+
+// v70: přepnutí mezi profily - uloží current state, nastaví active, reload
+const switchProfile = (newProfile) => {
+  if (PROFILES.indexOf(newProfile) < 0) return;
+  try {
+    localStorage.setItem(LS_ACTIVE_KEY, newProfile);
+    // Reload s URL parametrem aby kdokoli kdo má URL otevřenou viděl správný profile
+    var url = new URL(window.location.href);
+    url.searchParams.set('user', newProfile);
+    // Cache-bust pro fresh load
+    url.searchParams.set('v', '70_' + Date.now());
+    window.location.href = url.toString();
   } catch(e) {}
 };
 
@@ -1305,6 +1410,8 @@ function App() {
   const baseAudio = useAudio();
   const confetti = useConfetti();
   const persisted = useMemo(loadState, []);
+  // v70: aktivní profil (Alex / Albert)
+  const [activeProfile] = useState(getActiveProfile);
 
   // --- core state
   const [screen, setScreen] = useState('home');
@@ -3891,6 +3998,33 @@ function App() {
 
         {/* top bar */}
         <div style={{ display:'flex', alignItems:'center', gap:18, animation: ent(0) }}>
+          {/* v70: PROFILE SWITCHER - dva tappable avatary */}
+          <div style={{ display:'flex', alignItems:'center', gap:6, background:'var(--surface)', border:'var(--hair)', borderRadius:30, padding:5, boxShadow:'var(--shadow)', flex:'none' }}>
+            {PROFILES.map(function(p) {
+              const isActive = activeProfile === p;
+              const def = PROFILE_DEFAULTS[p];
+              return (
+                <div key={p} onClick={() => {
+                  if (isActive) return;
+                  if (window.confirm('Přepnout na ' + def.displayName + '? Aplikace se znovu načte.')) {
+                    switchProfile(p);
+                  }
+                }} style={{
+                  cursor: isActive ? 'default' : 'pointer',
+                  width: 52, height: 52, borderRadius: '50%',
+                  background: isActive ? 'linear-gradient(135deg, var(--accent), var(--accent2))' : 'transparent',
+                  display:'flex', alignItems:'center', justifyContent:'center',
+                  fontSize: 28,
+                  transition: 'all .2s',
+                  boxShadow: isActive ? '0 4px 14px rgba(0,0,0,.18)' : 'none',
+                  border: isActive ? '2px solid #fff' : '2px solid transparent',
+                  opacity: isActive ? 1 : 0.55
+                }} title={def.displayName}>
+                  {def.avatar}
+                </div>
+              );
+            })}
+          </div>
           {childPhoto && (
             <div style={{ width:64, height:64, borderRadius:'50%', background: `url(${childPhoto}) center/cover`, border:'3px solid #fff', boxShadow:'var(--shadow)', flex:'none' }}/>
           )}
@@ -7366,6 +7500,41 @@ function App() {
                   </>)}
 
                   {settingsSubTab === 'dite' && (<>
+                  {/* v70: PROFILE BANNER - aktivní profil + odkaz na druhého */}
+                  <div style={{ background:'linear-gradient(135deg, #1e3a8a, #4c1d95)', borderRadius:20, padding:18, color:'#fff', boxShadow:'0 6px 20px rgba(76,29,149,.25)' }}>
+                    <div style={{ display:'flex', alignItems:'center', gap:14 }}>
+                      <div style={{ fontSize:42, background:'linear-gradient(135deg, var(--accent), var(--accent2))', width:60, height:60, borderRadius:'50%', display:'flex', alignItems:'center', justifyContent:'center', border:'2px solid rgba(255,255,255,.4)', boxShadow:'0 4px 14px rgba(0,0,0,.25)' }}>{PROFILE_DEFAULTS[activeProfile].avatar}</div>
+                      <div style={{ flex:1, minWidth:0 }}>
+                        <div style={{ fontSize:11, fontWeight:800, color:'rgba(255,255,255,.7)', letterSpacing:'.08em', textTransform:'uppercase', marginBottom:4 }}>Právě upravuješ profil</div>
+                        <div style={{ fontFamily:'var(--display)', fontSize:22, fontWeight:600 }}>{childName || PROFILE_DEFAULTS[activeProfile].displayName}</div>
+                        <div style={{ fontSize:11, fontWeight:700, color:'#cbd5e1', marginTop:3 }}>{points} 🌕 · {totalXp} XP · {streakDays} dní v řadě</div>
+                      </div>
+                      <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
+                        {PROFILES.filter(function(p) { return p !== activeProfile; }).map(function(p) {
+                          var def = PROFILE_DEFAULTS[p];
+                          return (
+                            <div key={p} onClick={() => {
+                              if (window.confirm('Přepnout na profil ' + def.displayName + '? Aplikace se znovu načte.')) {
+                                switchProfile(p);
+                              }
+                            }} style={{
+                              cursor:'pointer', background:'rgba(255,255,255,.12)', border:'1px solid rgba(255,255,255,.3)',
+                              padding:'8px 14px', borderRadius:10, fontSize:12, fontWeight:800,
+                              display:'flex', alignItems:'center', gap:8, whiteSpace:'nowrap'
+                            }}>
+                              <span style={{ fontSize:18 }}>{def.avatar}</span>
+                              <span>Přepnout na {def.displayName}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                    <div style={{ marginTop:12, padding:'10px 14px', background:'rgba(0,0,0,.25)', borderRadius:10, fontSize:11, fontWeight:700, color:'#cbd5e1', lineHeight:1.5 }}>
+                      💡 <b>Každý profil má vlastní</b> body, XP, streak, rutiny, peníze, kalendář, ceník, úkoly. Změny v jednom profilu neovlivní druhý.
+                      <br/>📲 Přímé odkazy: <code style={{ background:'rgba(255,255,255,.15)', padding:'1px 5px', borderRadius:4 }}>?user=alex</code> nebo <code style={{ background:'rgba(255,255,255,.15)', padding:'1px 5px', borderRadius:4 }}>?user=albert</code> (přidej na konec URL)
+                    </div>
+                  </div>
+
                   <div style={{ background:'#fff', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
                     <div style={{ fontFamily:'var(--display)', fontSize:18, fontWeight:600, color:'#1a1530', marginBottom:10 }}>Dítě 👧🧒</div>
                     <div style={{ fontSize:13, fontWeight:700, color:'#5a566e', marginBottom:8 }}>Jméno dítěte</div>
@@ -7912,8 +8081,8 @@ function App() {
                   <div style={{ background:'#fff', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
                     <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:12, flexWrap:'wrap' }}>
                       <div style={{ flex:1, minWidth:0 }}>
-                        <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'#1a1530' }}>Verze: Domácí pomocník v69</div>
-                        <div style={{ fontSize:12, color:'#9a96ac', marginTop:4 }}>Build 2026-06-22 · 20:10 · BZZZT buzz</div>
+                        <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'#1a1530' }}>Verze: Domácí pomocník v70</div>
+                        <div style={{ fontSize:12, color:'#9a96ac', marginTop:4 }}>Build 2026-06-23 · 05:59 · profily Alex + Albert</div>
                       </div>
                       <div onClick={() => {
                         audio.tap();
