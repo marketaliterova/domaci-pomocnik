@@ -12,11 +12,11 @@
   try {
     var url = location.href;
     var hasParam = url.indexOf('v=') >= 0 || url.indexOf('_cb=') >= 0;
-    var sessionKey = '_dompomocnik_cb_v74';
+    var sessionKey = '_dompomocnik_cb_v75';
     if (!hasParam && !sessionStorage.getItem(sessionKey)) {
       sessionStorage.setItem(sessionKey, '1');
       var sep = url.indexOf('?') >= 0 ? '&' : '?';
-      location.replace(url + sep + 'v=74_' + Date.now());
+      location.replace(url + sep + 'v=75_' + Date.now());
     }
   } catch(e) {}
 })();
@@ -669,7 +669,7 @@ const PROFILES = ['alex', 'albert'];
 // Default profile labels (lze změnit v adminu)
 const PROFILE_DEFAULTS = {
   alex: { displayName: 'Alex', avatar: '🦸' },
-  albert: { displayName: 'Albert', avatar: '🧙' }
+  albert: { displayName: 'Albie', avatar: '🧙' }
 };
 
 // Klíče, které se RESETUJÍ při kopírování konfigurace mezi profily (statistiky, ne nastavení)
@@ -725,6 +725,8 @@ const loadState = () => {
 
     // 3. Albert default: zkopírovat Alexovo nastavení s resetnutými statistikami
     if (active === 'albert') {
+      // Pokud Albert už má svá vlastní data (ale prázdná {}), respektuj je
+      // Migrace běží jen pokud Albert vůbec neexistuje
       var alexRaw = localStorage.getItem(LS_PROFILE_PREFIX + 'alex') || localStorage.getItem(LS_KEY);
       if (alexRaw) {
         var alexData = JSON.parse(alexRaw);
@@ -738,6 +740,8 @@ const loadState = () => {
           else albertDefaults[k] = {}; // doneM, doneE, shopState, choreState, packState, packAwarded, weeklyDone, routineHistory, morningAlertsFired
         });
         albertDefaults.childName = PROFILE_DEFAULTS.albert.displayName;
+        // v75: ULOŽIT IMMEDIATELY aby se příště nevracela migrace (a nepřepsala existující Albie data)
+        localStorage.setItem(key, JSON.stringify(albertDefaults));
         return albertDefaults;
       }
     }
@@ -808,17 +812,21 @@ const saveState = (s) => {
 };
 
 // v70: přepnutí mezi profily - uloží current state, nastaví active, reload
+// v75: robustnější - vyčistí sessionStorage cache-bust a použije clean URL
 const switchProfile = (newProfile) => {
   if (PROFILES.indexOf(newProfile) < 0) return;
   try {
+    // 1. Aktivní profil
     localStorage.setItem(LS_ACTIVE_KEY, newProfile);
-    // Reload s URL parametrem aby kdokoli kdo má URL otevřenou viděl správný profile
-    var url = new URL(window.location.href);
-    url.searchParams.set('user', newProfile);
-    // Cache-bust pro fresh load
-    url.searchParams.set('v', '70_' + Date.now());
-    window.location.href = url.toString();
-  } catch(e) {}
+    // 2. Vyčistit cache-bust sessionStorage aby se mohl spustit znovu pro nový profil
+    for (var i = 0; i < sessionStorage.length; i++) {
+      var k = sessionStorage.key(i);
+      if (k && k.indexOf('_dompomocnik_cb_') === 0) sessionStorage.removeItem(k);
+    }
+    // 3. Clean URL + cache-bust v query
+    var base = window.location.origin + window.location.pathname;
+    window.location.href = base + '?user=' + newProfile + '&v=75_' + Date.now();
+  } catch(e) { console.error('[switchProfile]', e); }
 };
 
 // v71: SHARED storage (data napříč profily - tlačítka, hue webhook)
@@ -1899,17 +1907,51 @@ function App() {
     setChatThinking(true);
     setChatError('');
 
-    // System prompt s kontextem dítěte
-    // v73: ZJEDNODUŠENO pro nečtenáře — krátké věty, žádné emoji v textu (TTS by je četl)
-    const systemPrompt = 'Jsi Riki, kamarádský mluvící mascot. Mluvíš s dítětem ' +
-      (childName || PROFILE_DEFAULTS[activeProfile].displayName) + ', které ještě NEUMÍ ČÍST. ' +
-      'Tvoje odpověď se přečte nahlas robotickým hlasem, proto: ' +
-      'PIŠ VŽDY KRÁTCE (max 2 jednoduché věty), používej JEDNODUCHÁ slova jako pro 4-leté dítě, ' +
-      'NEPOUŽÍVEJ emoji (TTS by je četl), NEPOUŽÍVEJ závorky/uvozovky/pomlčky, ' +
-      'mluv vesele, tykej, povzbuzuj. Buď přátelský, hravý. ' +
-      'Aktuální stav: ' + points + ' bodů, ' + totalXp + ' XP, ' + streakDays + ' dní v řadě. ' +
-      'Pokud dítě zmíní něco vážného (smutek, problém, strach), řekni mu ať to řekne mámě nebo tátovi. ' +
-      'NIKDY nedávej rady k zdraví/léky/úrazy. Mluv VŽDY ČESKY.';
+    // v75: TERAPEUTICKÝ KAMARÁD — Riki je fakt kámoš, ne mascot. Validuje emoce, hraje hry, podporuje.
+    var kidName = childName || PROFILE_DEFAULTS[activeProfile].displayName;
+    const systemPrompt =
+      'Jsi Riki — neviditelný nejlepší kamarád dítěte ' + kidName + '. ' +
+      'Nejsi robot, nejsi maskot, nejsi učitel. Jsi prostě KAMARÁD, který je tady vždycky když ' + kidName + ' chce. ' +
+      '\n\n' +
+      'JAK MLUVÍŠ:\n' +
+      '- VŽDY KRÁTCE: 1-2 jednoduché věty, max 15 slov.\n' +
+      '- Slova pro 5-leté dítě (žádné cizí, žádné odborné).\n' +
+      '- NEPOUŽÍVEJ emoji ani symboly (čte se nahlas robotem, znělo by hloupě).\n' +
+      '- NEPOUŽÍVEJ závorky, uvozovky, pomlčky.\n' +
+      '- Tykáš, mluvíš česky, zníš jako kámoš ve stejném věku.\n' +
+      '- Neopakuj jméno v každé větě, používej ho občas.\n' +
+      '\n' +
+      'KDO JSI:\n' +
+      '- Hravý, vtipný, citlivý, empatický.\n' +
+      '- Máš rád stejné věci co ' + kidName + ' — Pikachu, dinosaury, auta, hry, cokoliv co řekne.\n' +
+      '- Můžeš si s ním povídat nesmysly, vymýšlet vtipy, zpívat (popisem).\n' +
+      '\n' +
+      'KDYŽ JE SMUTNÝ NEBO MÁ STRACH:\n' +
+      '- Neignoruj. Řekni: "Chápu." nebo "To je těžké, viď." nebo "Mně by taky bylo blbě."\n' +
+      '- Zeptej se: "Chceš mi o tom říct víc?"\n' +
+      '- NEPOUČUJ. Jen poslouchej a buď tam.\n' +
+      '- Když je to vážné (někdo mu ubližuje, je nemocný, hodně se bojí): "To je důležité, řekni mámě nebo tátovi. Pomůžou ti."\n' +
+      '\n' +
+      'KDYŽ MÁ RADOST NEBO VTIP:\n' +
+      '- Raduj se s ním. "To je super!" "Ha, to je dobrý vtip!" "Hustý!"\n' +
+      '- Reaguj s nadšením, ne vlažně.\n' +
+      '\n' +
+      'KDYŽ MLUVÍ NESMYSLY/SI HRAJE:\n' +
+      '- Hraj si s ním. Přidej se k blbosti. Buď taky bláznivý.\n' +
+      '- Nikdy mu neříkej že je to hloupé.\n' +
+      '\n' +
+      'KDYŽ SE PTÁ NA SVĚT:\n' +
+      '- Krátká jednoduchá odpověď na úrovni dítěte. "Auta jezdí, protože mají motor."\n' +
+      '- Pokud nevíš, řekni "Nevím, ale to je zajímavá otázka."\n' +
+      '\n' +
+      'NIKDY:\n' +
+      '- Nedávej rady o lécích, zdraví, jak léčit úrazy.\n' +
+      '- Nekritizuj, nepoučuj, neříkej "měl bys".\n' +
+      '- Nebuď příliš formální — jsi kámoš, ne paní učitelka.\n' +
+      '- Pokud se ptá na vážné téma (smrt, nemoc, hádka rodičů, sex, drogy): "To je důležité, popovídej si o tom s mámou nebo tátou."\n' +
+      '\n' +
+      'Aktuální stav ' + kidName + ': ' + points + ' bodů, ' + totalXp + ' XP, ' + streakDays + ' dní v řadě.\n' +
+      'Mluv vždy česky. Krátce. Lidsky. Jako kámoš.';
 
     try {
       const url = effectiveHueWebhookUrl;
@@ -4267,8 +4309,8 @@ function App() {
 
         {/* top bar */}
         <div style={{ display:'flex', alignItems:'center', gap:18, animation: ent(0) }}>
-          {/* v70: PROFILE SWITCHER - dva tappable avatary */}
-          <div style={{ display:'flex', alignItems:'center', gap:6, background:'var(--surface)', border:'var(--hair)', borderRadius:30, padding:5, boxShadow:'var(--shadow)', flex:'none' }}>
+          {/* v70: PROFILE SWITCHER - dva tappable avatary. v75: zvětšeno + label kdo je aktivní */}
+          <div style={{ display:'flex', alignItems:'center', gap:8, background:'var(--surface)', border:'2px solid var(--accent)', borderRadius:30, padding:'5px 14px 5px 5px', boxShadow:'var(--shadow)', flex:'none' }}>
             {PROFILES.map(function(p) {
               const isActive = activeProfile === p;
               const def = PROFILE_DEFAULTS[p];
@@ -4280,19 +4322,23 @@ function App() {
                   }
                 }} style={{
                   cursor: isActive ? 'default' : 'pointer',
-                  width: 52, height: 52, borderRadius: '50%',
+                  width: 56, height: 56, borderRadius: '50%',
                   background: isActive ? 'linear-gradient(135deg, var(--accent), var(--accent2))' : 'transparent',
                   display:'flex', alignItems:'center', justifyContent:'center',
-                  fontSize: 28,
+                  fontSize: 30,
                   transition: 'all .2s',
                   boxShadow: isActive ? '0 4px 14px rgba(0,0,0,.18)' : 'none',
                   border: isActive ? '2px solid #fff' : '2px solid transparent',
-                  opacity: isActive ? 1 : 0.55
+                  opacity: isActive ? 1 : 0.5
                 }} title={def.displayName}>
                   {def.avatar}
                 </div>
               );
             })}
+            <div style={{ display:'flex', flexDirection:'column', lineHeight:1 }}>
+              <div style={{ fontSize:9, fontWeight:800, color:'#94a3b8', textTransform:'uppercase', letterSpacing:'.08em' }}>aktivní</div>
+              <div style={{ fontFamily:'var(--display)', fontSize:18, fontWeight:700, color:'var(--accent)', marginTop:2 }}>{childName || PROFILE_DEFAULTS[activeProfile].displayName}</div>
+            </div>
           </div>
           {childPhoto && (
             <div style={{ width:64, height:64, borderRadius:'50%', background: `url(${childPhoto}) center/cover`, border:'3px solid #fff', boxShadow:'var(--shadow)', flex:'none' }}/>
@@ -4812,23 +4858,27 @@ function App() {
           </div>
         )}
 
-        {/* v72: CHAT s Rikim floating tlačítko — vlevo dole vedle Mystery Box */}
+        {/* v72: CHAT s Rikim floating tlačítko — vlevo dole. v75: ZVĚTŠENO + pulsing animace */}
         <div onClick={() => go('chat')} style={{
           cursor:'pointer',
           position:'absolute',
           bottom: 20,
           left: mysteryBox ? 380 : 20,
           zIndex: 30,
-          background:'linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%)',
-          borderRadius:'50%',
-          width:74, height:74,
-          display:'flex', alignItems:'center', justifyContent:'center',
-          boxShadow:'0 10px 28px rgba(251,191,36,.5), 0 0 30px rgba(251,191,36,.3)',
+          background:'linear-gradient(135deg, #fbbf24 0%, #f59e0b 50%, #d97706 100%)',
+          borderRadius: 24,
+          padding:'14px 22px 14px 18px',
+          display:'flex', alignItems:'center', gap:14,
+          boxShadow:'0 12px 30px rgba(251,191,36,.6), 0 0 50px rgba(251,191,36,.4), inset 0 1px 0 rgba(255,255,255,.4)',
           border:'3px solid #fff',
-          transition:'left .3s'
+          transition:'left .3s',
+          animation: 'softPulse 2s ease-in-out infinite'
         }}>
-          <div style={{ fontSize:42, lineHeight:1 }}>🎙️</div>
-          <div style={{ position:'absolute', bottom:-6, background:'#1a1530', color:'#fff', fontSize:9, fontWeight:900, letterSpacing:'.06em', padding:'2px 8px', borderRadius:5, whiteSpace:'nowrap', boxShadow:'0 3px 8px rgba(0,0,0,.3)' }}>POVÍDAT</div>
+          <div style={{ fontSize:50, lineHeight:1, filter:'drop-shadow(0 4px 8px rgba(0,0,0,.3))' }}>🎙️</div>
+          <div>
+            <div style={{ fontFamily:'var(--display)', fontSize:20, fontWeight:700, color:'#1a1530', lineHeight:1, textShadow:'0 1px 0 rgba(255,255,255,.4)' }}>Povídat s Rikim</div>
+            <div style={{ fontSize:11, fontWeight:800, color:'#7c2d12', marginTop:3, letterSpacing:'.04em' }}>👆 Klikni a mluv</div>
+          </div>
         </div>
 
         {/* v68: HLUKOMĚR floating widget — vpravo dole, jen pokud aktivní */}
@@ -8600,8 +8650,8 @@ function App() {
                   <div style={{ background:'#fff', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
                     <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:12, flexWrap:'wrap' }}>
                       <div style={{ flex:1, minWidth:0 }}>
-                        <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'#1a1530' }}>Verze: Domácí pomocník v74</div>
-                        <div style={{ fontSize:12, color:'#9a96ac', marginTop:4 }}>Build 2026-06-23 · 10:49 · TTS fix canceled race</div>
+                        <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'#1a1530' }}>Verze: Domácí pomocník v75</div>
+                        <div style={{ fontSize:12, color:'#9a96ac', marginTop:4 }}>Build 2026-06-23 · 18:41 · Albie + Riki kámoš</div>
                       </div>
                       <div onClick={() => {
                         audio.tap();
