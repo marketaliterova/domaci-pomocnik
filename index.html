@@ -12,11 +12,11 @@
   try {
     var url = location.href;
     var hasParam = url.indexOf('v=') >= 0 || url.indexOf('_cb=') >= 0;
-    var sessionKey = '_dompomocnik_cb_v73';
+    var sessionKey = '_dompomocnik_cb_v74';
     if (!hasParam && !sessionStorage.getItem(sessionKey)) {
       sessionStorage.setItem(sessionKey, '1');
       var sep = url.indexOf('?') >= 0 ? '&' : '?';
-      location.replace(url + sep + 'v=73_' + Date.now());
+      location.replace(url + sep + 'v=74_' + Date.now());
     }
   } catch(e) {}
 })();
@@ -1858,31 +1858,37 @@ function App() {
     if (!text || !window.speechSynthesis) return;
     opts = opts || {};
     try {
-      window.speechSynthesis.cancel(); // zrušit předchozí
-      const utter = new SpeechSynthesisUtterance(text);
-      utter.lang = 'cs-CZ';
-      utter.rate = opts.rate || 0.95; // mírně pomalu pro děti
-      utter.pitch = opts.pitch || 1.15; // mírně vyšší hlas (mascot)
-      utter.volume = 1.0;
-      if (ttsVoiceRef.current) utter.voice = ttsVoiceRef.current;
-      utter.onstart = function() { setChatSpeaking(true); };
-      utter.onend = function() {
-        setChatSpeaking(false);
-        // v73: auto-repeat — pro nečtenáře přečte 2x
-        if (opts.autoRepeat && !opts._wasRepeat) {
-          setTimeout(function() {
-            speakChatResponse(text, { autoRepeat: false, _wasRepeat: true, rate: 0.9 });
-          }, 900);
-        }
-      };
-      utter.onerror = function(ev) {
-        setChatSpeaking(false);
-        if (!ttsWarnedRef.current) {
-          ttsWarnedRef.current = true;
-          setChatError('Hlas: ' + (ev.error || 'chyba TTS') + ' (zkus jiný prohlížeč nebo zapni zvuk v iPadu)');
-        }
-      };
-      window.speechSynthesis.speak(utter);
+      // v74: cancel + kratičká pauza aby předchozí utterance opravdu skončil než spustíme nový
+      window.speechSynthesis.cancel();
+      setTimeout(function() {
+        try {
+          const utter = new SpeechSynthesisUtterance(text);
+          utter.lang = 'cs-CZ';
+          utter.rate = opts.rate || 0.95; // mírně pomalu pro děti
+          utter.pitch = opts.pitch || 1.15; // mírně vyšší hlas (mascot)
+          utter.volume = 1.0;
+          if (ttsVoiceRef.current) utter.voice = ttsVoiceRef.current;
+          utter.onstart = function() { setChatSpeaking(true); };
+          utter.onend = function() {
+            setChatSpeaking(false);
+            if (opts.autoRepeat && !opts._wasRepeat) {
+              setTimeout(function() {
+                speakChatResponse(text, { autoRepeat: false, _wasRepeat: true, rate: 0.9 });
+              }, 900);
+            }
+          };
+          utter.onerror = function(ev) {
+            setChatSpeaking(false);
+            // 'canceled' a 'interrupted' nejsou opravdové chyby — znamenají že byl spuštěn nový speak()
+            if (ev && (ev.error === 'canceled' || ev.error === 'interrupted')) return;
+            if (!ttsWarnedRef.current) {
+              ttsWarnedRef.current = true;
+              setChatError('Hlas selhal: ' + (ev.error || 'neznámá chyba') + ' (zkontroluj hlasitost a že tab není mute)');
+            }
+          };
+          window.speechSynthesis.speak(utter);
+        } catch(e) { console.error('[chat] TTS speak error', e); }
+      }, 80);
     } catch(e) { console.error('[chat] TTS error', e); }
   }, []);
 
@@ -4872,8 +4878,17 @@ function App() {
             <div style={{ fontFamily:'var(--display)', fontSize:30, fontWeight:600, color:'#fff', lineHeight:1 }}>🎙️ Povídej si s Rikim</div>
             <div style={{ fontSize:13, fontWeight:700, color:'#c4b5fd', marginTop:3 }}>Stiskni mikrofon a mluv. Riki tě poslouchá a odpoví hlasem.</div>
           </div>
-          {/* v73: Test hlasu - ověří že TTS funguje */}
-          <div onClick={() => speakChatResponse('Ahoj! Slyšíš mě? Já jsem Riki.')} style={{ cursor:'pointer', background:'rgba(251,191,36,.2)', border:'1px solid rgba(251,191,36,.5)', padding:'8px 14px', borderRadius:10, fontSize:12, fontWeight:800, color:'#fbbf24', display:'flex', alignItems:'center', gap:6 }}>🔊 Test</div>
+          {/* v73: Test hlasu - ověří že TTS funguje. v74: log info o použitém hlasu */}
+          <div onClick={() => {
+            var v = ttsVoiceRef.current;
+            if (v) {
+              console.log('[TTS] Aktivní hlas:', v.name, '(' + v.lang + ')');
+              showToast('Hlas: ' + v.name + ' (' + v.lang + ')', '🔊');
+            } else {
+              showToast('Žádný TTS hlas — instaluj český TTS', '⚠️');
+            }
+            speakChatResponse('Ahoj! Slyšíš mě? Já jsem Riki.');
+          }} style={{ cursor:'pointer', background:'rgba(251,191,36,.2)', border:'1px solid rgba(251,191,36,.5)', padding:'8px 14px', borderRadius:10, fontSize:12, fontWeight:800, color:'#fbbf24', display:'flex', alignItems:'center', gap:6 }}>🔊 Test hlasu</div>
           {chatHistory.length > 0 && (
             <div onClick={clearChat} style={{ cursor:'pointer', background:'rgba(255,255,255,.08)', border:'1px solid rgba(255,255,255,.2)', padding:'8px 14px', borderRadius:10, fontSize:12, fontWeight:700, color:'#cbd5e1' }}>🗑️ Nový</div>
           )}
@@ -8585,8 +8600,8 @@ function App() {
                   <div style={{ background:'#fff', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
                     <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:12, flexWrap:'wrap' }}>
                       <div style={{ flex:1, minWidth:0 }}>
-                        <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'#1a1530' }}>Verze: Domácí pomocník v73</div>
-                        <div style={{ fontSize:12, color:'#9a96ac', marginTop:4 }}>Build 2026-06-23 · 10:36 · TTS pro nečtenáře</div>
+                        <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'#1a1530' }}>Verze: Domácí pomocník v74</div>
+                        <div style={{ fontSize:12, color:'#9a96ac', marginTop:4 }}>Build 2026-06-23 · 10:49 · TTS fix canceled race</div>
                       </div>
                       <div onClick={() => {
                         audio.tap();
