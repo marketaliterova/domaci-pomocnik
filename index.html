@@ -12,11 +12,11 @@
   try {
     var url = location.href;
     var hasParam = url.indexOf('v=') >= 0 || url.indexOf('_cb=') >= 0;
-    var sessionKey = '_dompomocnik_cb_v77';
+    var sessionKey = '_dompomocnik_cb_v78';
     if (!hasParam && !sessionStorage.getItem(sessionKey)) {
       sessionStorage.setItem(sessionKey, '1');
       var sep = url.indexOf('?') >= 0 ? '&' : '?';
-      location.replace(url + sep + 'v=77_' + Date.now());
+      location.replace(url + sep + 'v=78_' + Date.now());
     }
   } catch(e) {}
 })();
@@ -825,7 +825,7 @@ const switchProfile = (newProfile) => {
     }
     // 3. Clean URL + cache-bust v query
     var base = window.location.origin + window.location.pathname;
-    window.location.href = base + '?user=' + newProfile + '&v=77_' + Date.now();
+    window.location.href = base + '?user=' + newProfile + '&v=78_' + Date.now();
   } catch(e) { console.error('[switchProfile]', e); }
 };
 
@@ -4145,7 +4145,8 @@ function App() {
         method: 'POST',
         // Content-Type text/plain aby se vyhnulo CORS preflight (Apps Script vzor)
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify({ action: 'pull' }),
+        // v78: profile parameter — sync per-profile (Alex a Albie mají oddělená data)
+        body: JSON.stringify({ action: 'pull', profile: activeProfile }),
       });
       const j = await r.json();
       if (!j.ok) throw new Error(j.error || 'pull failed');
@@ -4164,7 +4165,7 @@ function App() {
       setSyncStatus('error');
       setSyncError(e.message || String(e));
     }
-  }, [syncUrl, applySnapshot]);
+  }, [syncUrl, applySnapshot, activeProfile]);
 
   // PUSH na server
   const pushToServer = useCallback(async () => {
@@ -4175,7 +4176,8 @@ function App() {
       const r = await fetch(syncUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify({ action: 'push', state: snap }),
+        // v78: profile parameter — sync per-profile
+        body: JSON.stringify({ action: 'push', profile: activeProfile, state: snap }),
       });
       const j = await r.json();
       if (!j.ok) throw new Error(j.error || 'push failed');
@@ -4187,7 +4189,7 @@ function App() {
       setSyncStatus('error');
       setSyncError(e.message || String(e));
     }
-  }, [syncUrl, buildSnapshot]);
+  }, [syncUrl, buildSnapshot, activeProfile]);
 
   // Init pull při prvním načtení nebo změně URL
   useEffect(() => {
@@ -8884,8 +8886,8 @@ function App() {
                   <div style={{ background:'#fff', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
                     <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:12, flexWrap:'wrap' }}>
                       <div style={{ flex:1, minWidth:0 }}>
-                        <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'#1a1530' }}>Verze: Domácí pomocník v77</div>
-                        <div style={{ fontSize:12, color:'#9a96ac', marginTop:4 }}>Build 2026-06-23 · 18:59 · OpenAI TTS lidský hlas</div>
+                        <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'#1a1530' }}>Verze: Domácí pomocník v78</div>
+                        <div style={{ fontSize:12, color:'#9a96ac', marginTop:4 }}>Build 2026-06-24 · 06:12 · sync per-profile</div>
                       </div>
                       <div onClick={() => {
                         audio.tap();
