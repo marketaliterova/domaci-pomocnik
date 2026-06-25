@@ -12,11 +12,11 @@
   try {
     var url = location.href;
     var hasParam = url.indexOf('v=') >= 0 || url.indexOf('_cb=') >= 0;
-    var sessionKey = '_dompomocnik_cb_v78';
+    var sessionKey = '_dompomocnik_cb_v79';
     if (!hasParam && !sessionStorage.getItem(sessionKey)) {
       sessionStorage.setItem(sessionKey, '1');
       var sep = url.indexOf('?') >= 0 ? '&' : '?';
-      location.replace(url + sep + 'v=78_' + Date.now());
+      location.replace(url + sep + 'v=79_' + Date.now());
     }
   } catch(e) {}
 })();
@@ -803,7 +803,7 @@ const saveState = (s) => {
       // v45+
       routineHistory: s.routineHistory, spinWheelLastDate: s.spinWheelLastDate,
       cursusUnlocked: s.cursusUnlocked, morningAlertsFired: s.morningAlertsFired,
-      bombEnabled: s.bombEnabled, bombFiredToday: s.bombFiredToday,
+      bombEnabled: s.bombEnabled, bombFiredToday: s.bombFiredToday, morningAlertsEnabled: s.morningAlertsEnabled,
     };
     // v70: ukládáme do per-profile klíče (ne univerzálního)
     var active = getActiveProfile();
@@ -825,7 +825,7 @@ const switchProfile = (newProfile) => {
     }
     // 3. Clean URL + cache-bust v query
     var base = window.location.origin + window.location.pathname;
-    window.location.href = base + '?user=' + newProfile + '&v=78_' + Date.now();
+    window.location.href = base + '?user=' + newProfile + '&v=79_' + Date.now();
   } catch(e) { console.error('[switchProfile]', e); }
 };
 
@@ -1580,6 +1580,8 @@ function App() {
   const [morningAlertsFired, setMorningAlertsFired] = useState((persisted && Array.isArray(persisted.morningAlertsFired)) ? persisted.morningAlertsFired : []);
   // v48: BOMBA - když rutina není hotová v čase odchodu, vybuchne. Default vypnutá.
   const [bombEnabled, setBombEnabled] = useState((persisted && typeof persisted.bombEnabled === 'boolean') ? persisted.bombEnabled : false);
+  // v79: master toggle pro ranní alarmy (Megy si může vypnout pokud jí přijde "otravne")
+  const [morningAlertsEnabled, setMorningAlertsEnabled] = useState((persisted && typeof persisted.morningAlertsEnabled === 'boolean') ? persisted.morningAlertsEnabled : true);
   const [showBomb, setShowBomb] = useState(false); // overlay modal
   const [bombFiredToday, setBombFiredToday] = useState((persisted && persisted.bombFiredToday) || '');
   // v44: CURSUS - pole odemčených stage ID (např. ['forest', 'mountain'])
@@ -1763,7 +1765,7 @@ function App() {
       hueWebhookUrl, hueButtons,
       routineHistory, spinWheelLastDate,
       cursusUnlocked, morningAlertsFired,
-      bombEnabled, bombFiredToday,
+      bombEnabled, bombFiredToday, morningAlertsEnabled,
       walletBalance, walletHistory, walletGoalAmount, walletGoalName,
       mysteryBox, dailyDeal,
       noiseMeterEnabled, noiseThreshold, noiseQuietRewardMins, noiseQuietRewardPts,
@@ -1783,7 +1785,7 @@ function App() {
       hueWebhookUrl, hueButtons,
       routineHistory, spinWheelLastDate,
       cursusUnlocked, morningAlertsFired,
-      bombEnabled, bombFiredToday,
+      bombEnabled, bombFiredToday, morningAlertsEnabled,
       walletBalance, walletHistory, walletGoalAmount, walletGoalName,
       mysteryBox, dailyDeal,
       noiseMeterEnabled, noiseThreshold, noiseQuietRewardMins, noiseQuietRewardPts]);
@@ -2348,17 +2350,33 @@ function App() {
   }, []); // empty deps = pouze 1× při mountu
 
   // v47: Ranní alarmy - pípne když se blíží odchod do školy
-  // Thresholdy v minutách před departMin: 30 (jemné), 15 (jemné), 5 (urgentní), 0 (BUDÍK)
+  // v79: TVRDŠÍ debounce — localStorage marker per (profil + den + threshold),
+  //      odolný proti sync pull i tab reloadu. Plus master toggle morningAlertsEnabled.
   useEffect(() => {
+    if (!morningAlertsEnabled) return; // úplně vypnuto
+    const alarmStorageKey = (min) => 'dompomocnik_alarm_' + activeProfile + '_' + todayISO() + '_' + min;
+    const wasAlarmFired = (min) => { try { return localStorage.getItem(alarmStorageKey(min)) === '1'; } catch(e) { return false; } };
+    const markAlarmFired = (min) => {
+      try {
+        localStorage.setItem(alarmStorageKey(min), '1');
+        // Cleanup včerejších/starších klíčů
+        var today = todayISO();
+        for (var i = localStorage.length - 1; i >= 0; i--) {
+          var k = localStorage.key(i);
+          if (k && k.indexOf('dompomocnik_alarm_') === 0 && k.indexOf(today) < 0) {
+            localStorage.removeItem(k);
+          }
+        }
+      } catch(e) {}
+    };
+
     const check = () => {
       const now = new Date();
       const dow = now.getDay();
-      if (dow === 0 || dow === 6) return; // víkend - žádné alarmy
+      if (dow === 0 || dow === 6) return;
       const nowMin = now.getHours() * 60 + now.getMinutes();
       const remaining = departMin - nowMin;
-      // Mimo aktivní okno - od 1 hod před departMin do +2 min
       if (remaining > 45 || remaining < -2) return;
-      // Pokud je ranní rutina už hotová, žádné pípání
       const morningList = morning.filter(s => s.on);
       const allMorningDone = morningList.length > 0 && morningList.every(s => doneM[s.id]);
       if (allMorningDone) return;
@@ -2371,25 +2389,22 @@ function App() {
         { min: 0,  sound: 'urgentAlarm', msg: 'Čas vyrazit! 🏃',            voiceText: 'Čas vyrazit do školy!' },
       ];
       for (const t of thresholds) {
-        // Trigger pokud nowMin překročil práh + ještě jsme ho dnes neodpálili
-        // remaining = departMin - nowMin → remaining <= t.min znamená že jsme prošli prahem
-        if (remaining <= t.min && morningAlertsFired.indexOf(t.min) < 0) {
-          // Odpal!
+        // v79: hlavní guard = localStorage marker (odolný proti sync pull/tab reload)
+        if (remaining <= t.min && !wasAlarmFired(t.min) && morningAlertsFired.indexOf(t.min) < 0) {
+          markAlarmFired(t.min); // IHNED synchronně
           if (audio[t.sound]) audio[t.sound]();
           showToast(t.msg, '⏰');
           if (playVoiceRef.current) {
             playVoiceRef.current(['alarm-' + t.min, 'alarm'], t.voiceText);
           }
-          setMorningAlertsFired(arr => [...arr, t.min]);
-          break; // jeden threshold za check, ne všechny najednou
+          setMorningAlertsFired(arr => arr.indexOf(t.min) < 0 ? [...arr, t.min] : arr);
+          break;
         }
       }
 
-      // v48: BOMBA - odpálí pokud rutina není hotová v čase odchodu a bomba je zapnutá
       if (bombEnabled && remaining <= 0 && bombFiredToday !== todayISO() && !allMorningDone) {
         setBombFiredToday(todayISO());
         setShowBomb(true);
-        // Velký BOOM zvuk
         try {
           if (audio.urgentAlarm) audio.urgentAlarm();
           setTimeout(() => { if (audio.urgentAlarm) audio.urgentAlarm(); }, 800);
@@ -2397,9 +2412,9 @@ function App() {
       }
     };
     check();
-    const id = setInterval(check, 30 * 1000); // každých 30s
+    const id = setInterval(check, 30 * 1000);
     return () => clearInterval(id);
-  }, [departMin, morning, doneM, morningAlertsFired, bombEnabled, bombFiredToday, audio, showToast]);
+  }, [departMin, morning, doneM, morningAlertsFired, bombEnabled, bombFiredToday, morningAlertsEnabled, activeProfile, audio, showToast]);
 
   // v41: Denní snapshot - když se změní den, ulož včerejší rutinu do historie
   useEffect(() => {
@@ -4024,7 +4039,7 @@ function App() {
     hueWebhookUrl, hueButtons,
     routineHistory, spinWheelLastDate,
     cursusUnlocked, morningAlertsFired,
-    bombEnabled, bombFiredToday,
+    bombEnabled, bombFiredToday, morningAlertsEnabled,
     walletBalance, walletHistory, walletGoalAmount, walletGoalName,
   }), [
     theme, points, totalXp, streak,
@@ -4043,7 +4058,7 @@ function App() {
     hueWebhookUrl, hueButtons,
     routineHistory, spinWheelLastDate,
     cursusUnlocked, morningAlertsFired,
-    bombEnabled, bombFiredToday,
+    bombEnabled, bombFiredToday, morningAlertsEnabled,
     walletBalance, walletHistory, walletGoalAmount, walletGoalName,
   ]);
 
@@ -4119,6 +4134,7 @@ function App() {
     if (Array.isArray(s.morningAlertsFired)) setMorningAlertsFired(s.morningAlertsFired);
     if (typeof s.bombEnabled === 'boolean') setBombEnabled(s.bombEnabled);
     if (typeof s.bombFiredToday === 'string') setBombFiredToday(s.bombFiredToday);
+    if (typeof s.morningAlertsEnabled === 'boolean') setMorningAlertsEnabled(s.morningAlertsEnabled);
     if (typeof s.walletBalance === 'number') setWalletBalance(s.walletBalance);
     if (Array.isArray(s.walletHistory)) setWalletHistory(s.walletHistory);
     if (typeof s.walletGoalAmount === 'number') setWalletGoalAmount(s.walletGoalAmount);
@@ -6875,6 +6891,36 @@ function App() {
                   </div>
 
                   {/* v48: BOMBA - opce kdy nestihne ráno */}
+                  {/* v79: Ranní alarmy master toggle */}
+                  <div style={{ background: morningAlertsEnabled ? 'linear-gradient(135deg, #dbeafe, #bfdbfe)' : '#fff', border: morningAlertsEnabled ? '2px solid #2563eb' : '1px solid #e7ebf3', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
+                    <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:12 }}>
+                      <div style={{ flex:1, minWidth:0 }}>
+                        <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:4 }}>
+                          <div style={{ fontSize:24 }}>⏰</div>
+                          <div style={{ fontFamily:'var(--display)', fontSize:17, fontWeight:600, color: morningAlertsEnabled ? '#1e40af' : '#1a1530' }}>Ranní alarmy do školy</div>
+                        </div>
+                        <div style={{ fontSize:12, fontWeight:700, color: morningAlertsEnabled ? '#1e3a8a' : '#5a566e', lineHeight:1.4 }}>
+                          {morningAlertsEnabled
+                            ? 'Zapnuto: Pípne v 30 / 15 / 5 / 2 minutách před odchodem a v čase odchodu. Jen ve všední dny a jen dokud není ranní rutina splněná.'
+                            : 'Vypnuto: žádné pípání před školou. Můžeš znovu zapnout, kdykoliv.'}
+                        </div>
+                      </div>
+                      <div onClick={() => { setMorningAlertsEnabled(!morningAlertsEnabled); audio.tap(); }} style={{
+                        cursor:'pointer', width:54, height:30, borderRadius:15,
+                        background: morningAlertsEnabled ? '#2563eb' : '#cbd5e1',
+                        position:'relative', flexShrink:0,
+                        transition:'background .2s'
+                      }}>
+                        <div style={{
+                          position:'absolute', top:3, left: morningAlertsEnabled ? 27 : 3,
+                          width:24, height:24, borderRadius:'50%', background:'#fff',
+                          boxShadow:'0 2px 4px rgba(0,0,0,.2)',
+                          transition:'left .2s'
+                        }}/>
+                      </div>
+                    </div>
+                  </div>
+
                   <div style={{ background: bombEnabled ? 'linear-gradient(135deg, #fee2e2, #fecaca)' : '#fff', border: bombEnabled ? '2px solid #dc2626' : '1px solid #e7ebf3', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
                     <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:12 }}>
                       <div style={{ flex:1, minWidth:0 }}>
@@ -8886,8 +8932,8 @@ function App() {
                   <div style={{ background:'#fff', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
                     <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:12, flexWrap:'wrap' }}>
                       <div style={{ flex:1, minWidth:0 }}>
-                        <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'#1a1530' }}>Verze: Domácí pomocník v78</div>
-                        <div style={{ fontSize:12, color:'#9a96ac', marginTop:4 }}>Build 2026-06-24 · 06:12 · sync per-profile</div>
+                        <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'#1a1530' }}>Verze: Domácí pomocník v79</div>
+                        <div style={{ fontSize:12, color:'#9a96ac', marginTop:4 }}>Build 2026-06-25 · 05:18 · ranní alarmy fix</div>
                       </div>
                       <div onClick={() => {
                         audio.tap();
