@@ -12,11 +12,11 @@
   try {
     var url = location.href;
     var hasParam = url.indexOf('v=') >= 0 || url.indexOf('_cb=') >= 0;
-    var sessionKey = '_dompomocnik_cb_v79';
+    var sessionKey = '_dompomocnik_cb_v80';
     if (!hasParam && !sessionStorage.getItem(sessionKey)) {
       sessionStorage.setItem(sessionKey, '1');
       var sep = url.indexOf('?') >= 0 ? '&' : '?';
-      location.replace(url + sep + 'v=79_' + Date.now());
+      location.replace(url + sep + 'v=80_' + Date.now());
     }
   } catch(e) {}
 })();
@@ -779,7 +779,7 @@ const saveState = (s) => {
       choresList: s.choresList,
       weeklyChores: s.weeklyChores,
       // v7 sync
-      syncUrl: s.syncUrl,
+      syncUrl: s.syncUrl, autoSyncEnabled: s.autoSyncEnabled,
       lastSyncTime: s.lastSyncTime,
       // v8 tamagotchi
       petSleeping: s.petSleeping,
@@ -825,7 +825,7 @@ const switchProfile = (newProfile) => {
     }
     // 3. Clean URL + cache-bust v query
     var base = window.location.origin + window.location.pathname;
-    window.location.href = base + '?user=' + newProfile + '&v=79_' + Date.now();
+    window.location.href = base + '?user=' + newProfile + '&v=80_' + Date.now();
   } catch(e) { console.error('[switchProfile]', e); }
 };
 
@@ -1559,6 +1559,9 @@ function App() {
   const [parentPin, setParentPin] = useState((persisted && persisted.parentPin) || '1234');
   // v7 sync state
   const [syncUrl, setSyncUrl] = useState((persisted && persisted.syncUrl) || 'https://script.google.com/macros/s/AKfycbxS4JjTqFljX1ndbzdhIubLKJDhJqr5nZryKkaztZu293jScRzoSdicL_JBbN4w9lWnmg/exec');
+  // v80: auto-sync toggle (default OFF — Megy ztratila body kvůli automatickému přepisu).
+  //      Pokud chce zapnout, dá si ho v adminu. Manuální backup/restore zůstávají vždy.
+  const [autoSyncEnabled, setAutoSyncEnabled] = useState((persisted && typeof persisted.autoSyncEnabled === 'boolean') ? persisted.autoSyncEnabled : false);
   const [syncStatus, setSyncStatus] = useState('idle'); // idle | syncing | ok | error | disabled
   const [lastSyncTime, setLastSyncTime] = useState(persisted && persisted.lastSyncTime || null);
   const [syncError, setSyncError] = useState(null);
@@ -1757,7 +1760,7 @@ function App() {
       streakDays, streakLastDate, eveningStreakDays, eveningStreakLast,
       moodLog, lastMoodDate, parentPin, childName,
       weekEvents, worryMessages, readingList, stickers, childPhoto, choresList, weeklyChores,
-      syncUrl, lastSyncTime,
+      syncUrl, autoSyncEnabled, lastSyncTime,
       petSleeping,
       inventory,
       lastDayKey, gcalUrl, gcalEvents, gcalLastFetch, gcalHourOffset, gcalAutoRefresh, whoHomeSchedule,
@@ -1777,7 +1780,7 @@ function App() {
       streakDays, streakLastDate, eveningStreakDays, eveningStreakLast,
       moodLog, lastMoodDate, parentPin, childName,
       weekEvents, worryMessages, readingList, stickers, childPhoto, choresList, weeklyChores,
-      syncUrl, lastSyncTime,
+      syncUrl, autoSyncEnabled, lastSyncTime,
       petSleeping,
       inventory,
       lastDayKey, gcalUrl, gcalEvents, gcalLastFetch, gcalHourOffset, gcalAutoRefresh, whoHomeSchedule,
@@ -4207,29 +4210,30 @@ function App() {
     }
   }, [syncUrl, buildSnapshot, activeProfile]);
 
-  // Init pull při prvním načtení nebo změně URL
+  // Init pull při prvním načtení (jen pokud auto-sync zapnut)
   useEffect(() => {
-    if (!syncUrl) { setSyncStatus('disabled'); initialPullDoneRef.current = false; return; }
+    if (!syncUrl || !autoSyncEnabled) { setSyncStatus('disabled'); initialPullDoneRef.current = false; return; }
     if (initialPullDoneRef.current) return;
     initialPullDoneRef.current = true;
     pullFromServer(false);
     // eslint-disable-next-line
-  }, [syncUrl]);
+  }, [syncUrl, autoSyncEnabled]);
 
-  // Periodický pull každých 30s
+  // Periodický pull každých 30s (jen pokud auto-sync zapnut)
   useEffect(() => {
-    if (!syncUrl) return;
+    if (!syncUrl || !autoSyncEnabled) return;
     const id = setInterval(() => pullFromServer(true), 30000);
     return () => clearInterval(id);
-  }, [syncUrl, pullFromServer]);
+  }, [syncUrl, autoSyncEnabled, pullFromServer]);
 
-  // Debounced push při změně stavu (3s po poslední změně)
+  // Debounced push při změně stavu (jen pokud auto-sync zapnut)
   useEffect(() => {
-    if (!syncUrl || !initialPullDoneRef.current) return;
+    if (!syncUrl || !autoSyncEnabled || !initialPullDoneRef.current) return;
     const t = setTimeout(() => { pushToServer(); }, 3000);
     return () => clearTimeout(t);
     // eslint-disable-next-line
   }, [
+    autoSyncEnabled,
     points, totalXp, doneM, doneE, choreState, pendingApprovals,
     shopState, weeklyDone, challenges, packState, packAwarded,
     streakDays, eveningStreakDays, moodLog,
@@ -4240,6 +4244,49 @@ function App() {
     bedtime, wakeTime, praiseMessages, parentPin,
     whoHome, departMin,
   ]);
+
+  // v80: LOKÁLNÍ ZÁLOHA HISTORIE — automaticky uloží 10 posledních snapshot do localStorage
+  //      (každých 5 minut nebo na klíčových změnách). Nezávislé na cloud sync.
+  //      Kdyby se body zase ztratily, Megy může obnovit z této historie.
+  const LS_BACKUP_PREFIX = 'dompomocnik_backup_';
+  const saveLocalBackup = useCallback(() => {
+    try {
+      const snap = buildSnapshot();
+      const key = LS_BACKUP_PREFIX + activeProfile;
+      const existing = JSON.parse(localStorage.getItem(key) || '[]');
+      const entry = {
+        ts: new Date().toISOString(),
+        points: snap.points,
+        totalXp: snap.totalXp,
+        snapshot: snap
+      };
+      // Max 10 záloh, nejnovější první
+      const updated = [entry, ...existing].slice(0, 10);
+      localStorage.setItem(key, JSON.stringify(updated));
+    } catch(e) { console.error('[backup] save', e); }
+  }, [buildSnapshot, activeProfile]);
+
+  const getLocalBackups = useCallback(() => {
+    try {
+      const key = LS_BACKUP_PREFIX + activeProfile;
+      return JSON.parse(localStorage.getItem(key) || '[]');
+    } catch(e) { return []; }
+  }, [activeProfile]);
+
+  const restoreLocalBackup = useCallback((entry) => {
+    try {
+      if (!entry || !entry.snapshot) return false;
+      applySnapshot(entry.snapshot);
+      return true;
+    } catch(e) { console.error('[backup] restore', e); return false; }
+  }, [applySnapshot]);
+
+  // Auto-save lokální zálohy každých 5 minut
+  useEffect(() => {
+    saveLocalBackup(); // hned při loadu
+    const id = setInterval(saveLocalBackup, 5 * 60 * 1000);
+    return () => clearInterval(id);
+  }, [saveLocalBackup]);
 
   // Funkce pro testovací sync (z UI)
   const manualSync = useCallback(async () => {
@@ -8826,6 +8873,82 @@ function App() {
                   </>)}
 
                   {settingsSubTab === 'sync' && (<>
+                  {/* v80: AUTO-SYNC TOGGLE — Megy si zapne pokud chce automatickou synchronizaci. Default OFF. */}
+                  <div style={{ background: autoSyncEnabled ? 'linear-gradient(135deg, #fef3c7, #fde68a)' : 'linear-gradient(135deg, #f3f4f6, #e5e7eb)', border: autoSyncEnabled ? '2px solid #d97706' : '2px solid #9ca3af', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
+                    <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:12, marginBottom:8 }}>
+                      <div style={{ flex:1, minWidth:0 }}>
+                        <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:4 }}>
+                          <div style={{ fontSize:24 }}>{autoSyncEnabled ? '☁️' : '💾'}</div>
+                          <div style={{ fontFamily:'var(--display)', fontSize:17, fontWeight:600, color: autoSyncEnabled ? '#92400e' : '#374151' }}>
+                            {autoSyncEnabled ? 'Auto-sync ZAPNUT' : 'Auto-sync VYPNUT (data jen v tomto tabletu)'}
+                          </div>
+                        </div>
+                        <div style={{ fontSize:12, fontWeight:700, color: autoSyncEnabled ? '#78350f' : '#4b5563', lineHeight:1.4 }}>
+                          {autoSyncEnabled
+                            ? '⚠️ POZOR: Mezi profily se občas mísily body. Pokud používáš jen tento tablet, raději vypni a používej ruční zálohy dole.'
+                            : '✓ Bezpečné: data se neukládají do cloudu automaticky. Tlačítka „Zálohovat / Obnovit" jsou ruční.'}
+                        </div>
+                      </div>
+                      <div onClick={() => { setAutoSyncEnabled(!autoSyncEnabled); audio.tap(); }} style={{
+                        cursor:'pointer', width:54, height:30, borderRadius:15,
+                        background: autoSyncEnabled ? '#d97706' : '#cbd5e1',
+                        position:'relative', flexShrink:0,
+                        transition:'background .2s'
+                      }}>
+                        <div style={{
+                          position:'absolute', top:3, left: autoSyncEnabled ? 27 : 3,
+                          width:24, height:24, borderRadius:'50%', background:'#fff',
+                          boxShadow:'0 2px 4px rgba(0,0,0,.2)',
+                          transition:'left .2s'
+                        }}/>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* v80: LOKÁLNÍ ZÁLOHA HISTORIE — obnovit body kdyby se ztratily */}
+                  <div style={{ background:'#fff', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)', border:'2px solid #22c55e' }}>
+                    <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:8 }}>
+                      <div style={{ fontSize:28 }}>🛟</div>
+                      <div>
+                        <div style={{ fontFamily:'var(--display)', fontSize:17, fontWeight:600, color:'#1a1530' }}>Záchranná záloha</div>
+                        <div style={{ fontSize:11, fontWeight:700, color:'#6b7280' }}>10 posledních snapshotů (lokálně, auto každých 5 min)</div>
+                      </div>
+                    </div>
+                    {(() => {
+                      const backups = getLocalBackups();
+                      if (backups.length === 0) {
+                        return <div style={{ fontSize:12, color:'#9ca3af', padding:'10px 0' }}>Zatím žádné zálohy. První se uloží za chvíli.</div>;
+                      }
+                      return (
+                        <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
+                          {backups.map((b, i) => {
+                            const dt = new Date(b.ts);
+                            const dateStr = dt.toLocaleDateString('cs-CZ', { day:'numeric', month:'short' }) + ' ' + dt.toLocaleTimeString('cs-CZ', { hour:'2-digit', minute:'2-digit' });
+                            return (
+                              <div key={b.ts + '_' + i} style={{ background:'#f9fafb', borderRadius:10, padding:'8px 12px', display:'flex', alignItems:'center', justifyContent:'space-between', gap:8 }}>
+                                <div style={{ flex:1, minWidth:0 }}>
+                                  <div style={{ fontSize:12, fontWeight:700, color:'#1a1530' }}>{dateStr}</div>
+                                  <div style={{ fontSize:11, fontWeight:700, color:'#6b7280' }}>{b.points || 0} bodů · {b.totalXp || 0} XP</div>
+                                </div>
+                                <div onClick={() => {
+                                  if (window.confirm('Obnovit ' + activeProfile + ' z této zálohy (' + dateStr + ')? Aktuální stav se přepíše. ' + b.points + ' bodů, ' + b.totalXp + ' XP.')) {
+                                    const ok = restoreLocalBackup(b);
+                                    if (ok) {
+                                      showToast('Obnoveno z ' + dateStr, '🛟');
+                                    } else {
+                                      showToast('Obnovení selhalo', '⚠️');
+                                    }
+                                  }
+                                }} style={{ cursor:'pointer', background:'#22c55e', color:'#fff', borderRadius:8, padding:'6px 12px', fontSize:11, fontWeight:800 }}>Obnov</div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      );
+                    })()}
+                    <div onClick={() => { saveLocalBackup(); showToast('Záloha uložena', '✓'); }} style={{ marginTop:10, cursor:'pointer', background:'#22c55e', color:'#fff', borderRadius:10, padding:'10px 12px', textAlign:'center', fontWeight:800, fontSize:13 }}>💾 Uložit zálohu teď</div>
+                  </div>
+
                   {/* v7: Synchronizace */}
                   <div style={{ background:'#fff', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
                     <div style={{ fontFamily:'var(--display)', fontSize:18, fontWeight:600, color:'#1a1530', marginBottom:10, display:'flex', alignItems:'center', gap:8 }}>
@@ -8932,8 +9055,8 @@ function App() {
                   <div style={{ background:'#fff', borderRadius:20, padding:16, boxShadow:'0 4px 16px rgba(20,16,40,.06)' }}>
                     <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:12, flexWrap:'wrap' }}>
                       <div style={{ flex:1, minWidth:0 }}>
-                        <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'#1a1530' }}>Verze: Domácí pomocník v79</div>
-                        <div style={{ fontSize:12, color:'#9a96ac', marginTop:4 }}>Build 2026-06-25 · 05:18 · ranní alarmy fix</div>
+                        <div style={{ fontFamily:'var(--display)', fontSize:14, fontWeight:600, color:'#1a1530' }}>Verze: Domácí pomocník v80</div>
+                        <div style={{ fontSize:12, color:'#9a96ac', marginTop:4 }}>Build 2026-06-25 · 05:34 · auto-sync OFF + zachranna zaloha</div>
                       </div>
                       <div onClick={() => {
                         audio.tap();
